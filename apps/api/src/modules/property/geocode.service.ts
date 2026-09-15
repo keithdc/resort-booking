@@ -36,6 +36,9 @@ interface NominatimAddress {
   town?: string;
   village?: string;
   hamlet?: string;
+  suburb?: string;
+  neighbourhood?: string;
+  city_district?: string;
   municipality?: string;
   county?: string;
   postcode?: string;
@@ -66,8 +69,10 @@ export class GeocodeService {
    * Pin drop: Nominatim first (town/postcode/country), Photon fills any blanks.
    */
   public async reverse(latitude: number, longitude: number): Promise<GeocodeHit | null> {
-    const nominatim = await this.reverseNominatim(latitude, longitude);
-    const photon = await this.reversePhoton(latitude, longitude);
+    const [nominatim, photon] = await Promise.all([
+      this.reverseNominatim(latitude, longitude),
+      this.reversePhoton(latitude, longitude),
+    ]);
     return mergeReverseHits(nominatim, photon);
   }
 
@@ -228,6 +233,9 @@ function mapNominatim(hit: NominatimHit): GeocodeHit {
     address?.town ??
     address?.village ??
     address?.hamlet ??
+    address?.suburb ??
+    address?.neighbourhood ??
+    address?.city_district ??
     address?.municipality ??
     address?.county ??
     '';

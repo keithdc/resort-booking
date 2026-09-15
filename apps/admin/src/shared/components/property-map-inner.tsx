@@ -8,7 +8,7 @@
 
 import { Map, Marker, NavigationControl, Popup, type Map as MapLibreMap, type StyleSpecification } from 'maplibre-gl';
 import { useTheme } from '@mui/material/styles';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 interface PropertyMapInnerProps {
@@ -17,6 +17,13 @@ interface PropertyMapInnerProps {
   label: string;
   zoom?: number | undefined;
   onPinChange?: ((latitude: number, longitude: number) => void) | undefined;
+}
+
+interface PinView {
+  latitude: number;
+  longitude: number;
+  label: string;
+  zoom: number;
 }
 
 const OSM_RASTER_STYLE: StyleSpecification = {
@@ -42,6 +49,8 @@ const OSM_RASTER_STYLE: StyleSpecification = {
   ],
 };
 
+const SAME_POINT_DEG = 0.00001;
+
 /**
  * OSM raster tiles. Staff can drag the pin or click the map.
  */
@@ -57,12 +66,17 @@ export function PropertyMapInner({
   const markerRef = useRef<Marker | null>(null);
   const onPinChangeRef = useRef(onPinChange);
   onPinChangeRef.current = onPinChange;
+  const userMovedRef = useRef(false);
   const theme = useTheme();
   const markerColor = theme.palette.primary.main;
   const canMove = onPinChange !== undefined;
-
   const resolvedZoom = zoom ?? 13;
-  const start = useRef({ latitude, longitude, zoom: resolvedZoom, label });
+  const view: PinView = { latitude, longitude, label, zoom: resolvedZoom };
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const start = useRef(view);
+  const lastJumpRef = useRef({ latitude, longitude });
+  const [mapEpoch, setMapEpoch] = useState(0);
 
   useEffect((): (() => void) => {
     const node = containerRef.current;
@@ -83,12 +97,13 @@ export function PropertyMapInner({
     map.addControl(new NavigationControl({ showCompass: false }), 'top-right');
     const marker = new Marker({ color: markerColor, draggable: canMove })
       .setLngLat([origin.longitude, origin.latitude])
+      .setPopup(new Popup({ offset: 24 }).setText(origin.label))
       .addTo(map);
-    marker.setPopup(new Popup({ offset: 24 }).setText(origin.label));
     mapRef.current = map;
     markerRef.current = marker;
 
     const emit = (lat: number, lng: number): void => {
+      userMovedRef.current = true;
       const next = onPinChangeRef.current;
       if (next !== undefined) {
         next(lat, lng);
@@ -103,15 +118,22 @@ export function PropertyMapInner({
       if (!canMove) {
         return;
       }
-      marker.setLngLat(event.lngLat);
+      showPinAt(map, marker, {
+        latitude: event.lngLat.lat,
+        longitude: event.lngLat.lng,
+        label: viewRef.current.label,
+        zoom: viewRef.current.zoom,
+      });
       emit(event.lngLat.lat, event.lngLat.lng);
     });
 
     const resize = (): void => {
       map.resize();
+      showPinAt(map, marker, viewRef.current);
     };
     map.on('load', resize);
     const timeout = window.setTimeout(resize, 250);
+    setMapEpoch((epoch): number => epoch + 1);
 
     return (): void => {
       window.clearTimeout(timeout);
@@ -127,10 +149,20 @@ export function PropertyMapInner({
     if (map === null || marker === null) {
       return;
     }
-    marker.setLngLat([longitude, latitude]);
-    marker.setPopup(new Popup({ offset: 24 }).setText(label));
-    map.flyTo({ center: [longitude, latitude], zoom: zoom ?? 13, essential: true });
-  }, [latitude, longitude, label, zoom]);
+    const next: PinView = { latitude, longitude, label, zoom: resolvedZoom };
+    showPinAt(map, marker, next);
+    const movedByUser = userMovedRef.current;
+    userMovedRef.current = false;
+    const previous = lastJumpRef.current;
+    const jumpedFromOutside =
+      Math.abs(previous.latitude - next.latitude) >= SAME_POINT_DEG ||
+      Math.abs(previous.longitude - next.longitude) >= SAME_POINT_DEG;
+    lastJumpRef.current = { latitude: next.latitude, longitude: next.longitude };
+    if (movedByUser || !jumpedFromOutside) {
+      return;
+    }
+    map.flyTo({ center: [next.longitude, next.latitude], zoom: next.zoom, essential: true });
+  }, [latitude, longitude, label, resolvedZoom, mapEpoch]);
 
   return (
     <div
@@ -139,4 +171,12 @@ export function PropertyMapInner({
       aria-label={label}
     />
   );
+}
+
+function showPinAt(map: MapLibreMap, marker: Marker, view: PinView): void {
+  if (marker.getElement().parentNode === null) {
+    marker.addTo(map);
+  }
+  marker.setLngLat([view.longitude, view.latitude]);
+  marker.getPopup().setText(view.label);
 }

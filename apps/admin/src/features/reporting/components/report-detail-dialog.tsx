@@ -118,6 +118,12 @@ function statusLabel(stay: StaffReservation): string {
   if (stay.status === 'expired') {
     return 'Expired hold';
   }
+  if (stay.status === 'confirmed' && stay.arrivalStatus === 'checked_in') {
+    return 'In-house';
+  }
+  if (stay.status === 'confirmed' && stay.arrivalStatus === 'checked_out') {
+    return 'Checked out';
+  }
   if (stay.status === 'confirmed') {
     return 'Confirmed';
   }

@@ -5,12 +5,13 @@
  */
 
 import type {
+  ArrivalStatus,
   PropertyBookingConfig,
   StaffCalendar,
   StaffReport,
   StaffReservation,
 } from '@resort-booking/shared-types';
-import { getStaffApiOk } from '@/shared/services/api-client';
+import { getStaffApiOk, mutateStaffApiOk } from '@/shared/services/api-client';
 
 /**
  * Occupancy dots for the staff calendar.
@@ -57,4 +58,16 @@ export function fetchStaffReport(from: string, to: string, propertyId: string): 
  */
 export function fetchStaffConfiguration(): Promise<PropertyBookingConfig[]> {
   return getStaffApiOk<PropertyBookingConfig[]>('/staff/configuration');
+}
+
+/**
+ * Staff check-in or check-out. Payment status stays confirmed.
+ */
+export function patchStaffReservationArrival(
+  id: string,
+  arrivalStatus: ArrivalStatus,
+): Promise<StaffReservation> {
+  return mutateStaffApiOk<StaffReservation>(`/staff/reservations/${id}/arrival`, 'PATCH', {
+    arrivalStatus,
+  });
 }

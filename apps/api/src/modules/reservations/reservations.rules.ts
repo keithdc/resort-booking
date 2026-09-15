@@ -113,6 +113,70 @@ export type PipelineBucket = 'confirmed' | 'pending_payment' | 'cancelled' | 'ex
 
 export type CalendarLane = 'booking' | 'rebook' | 'cancelled' | 'pending';
 
+const DEFAULT_AS_OF_TIME_ZONE = 'Europe/Paris';
+
+/**
+ * Civil date in a property timezone (not UTC).
+ */
+export function isoTodayInTimeZone(timeZone: string, now: Date = new Date()): string {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: timeZone === '' ? DEFAULT_AS_OF_TIME_ZONE : timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now);
+  const year = parts.find((part): boolean => part.type === 'year')?.value;
+  const month = parts.find((part): boolean => part.type === 'month')?.value;
+  const day = parts.find((part): boolean => part.type === 'day')?.value;
+  if (year === undefined || month === undefined || day === undefined) {
+    return reportAsOfDateFallback(now);
+  }
+  return `${year}-${month}-${day}`;
+}
+
+export function reportAsOfDate(now: Date = new Date()): string {
+  return isoTodayInTimeZone(DEFAULT_AS_OF_TIME_ZONE, now);
+}
+
+function reportAsOfDateFallback(now: Date): string {
+  const year = now.getUTCFullYear();
+  const month = String(now.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(now.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Future confirmed stay that has not arrived and has not already ended.
+ */
+export function isUpcomingArrival(stay: StaffReservation, asOfDate: string): boolean {
+  if (stay.kind !== 'reservation' || stay.status !== 'confirmed') {
+    return false;
+  }
+  if (stay.arrivalStatus === 'checked_in' || stay.arrivalStatus === 'checked_out') {
+    return false;
+  }
+  if (stay.checkOut <= asOfDate) {
+    return false;
+  }
+  return stay.checkIn > asOfDate;
+}
+
+/**
+ * Guest is on site: staff checked them in, or the dates say they occupy tonight.
+ */
+export function isInHouseNow(stay: StaffReservation, asOfDate: string): boolean {
+  if (stay.kind !== 'reservation' || stay.status !== 'confirmed') {
+    return false;
+  }
+  if (stay.arrivalStatus === 'checked_out') {
+    return false;
+  }
+  if (stay.arrivalStatus === 'checked_in') {
+    return true;
+  }
+  return stayOccupiesDate(stay.checkIn, stay.checkOut, asOfDate);
+}
+
 const LANE_ORDER: Record<CalendarLane, number> = {
   booking: 0,
   rebook: 1,

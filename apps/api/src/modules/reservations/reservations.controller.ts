@@ -4,7 +4,7 @@
  * @dependencies ReservationsService, StaffGuard
  */
 
-import { Body, Controller, Get, Param, Put, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Put, Query, UseGuards } from '@nestjs/common';
 import type {
   ApiOkBody,
   PropertyBookingConfig,
@@ -16,6 +16,7 @@ import { StaffGuard } from '../identity/staff.guard';
 import { SaveBookingConfigDto } from './dto/save-booking-config.dto';
 import { StaffDayQueryDto } from './dto/staff-day.query.dto';
 import { StaffRangeQueryDto } from './dto/staff-range.query.dto';
+import { UpdateArrivalDto } from './dto/update-arrival.dto';
 import { ReservationsService } from './reservations.service';
 
 @Controller('staff')
@@ -45,6 +46,17 @@ export class ReservationsController {
   @Get('reports')
   public async getReport(@Query() query: StaffRangeQueryDto): Promise<ApiOkBody<StaffReport>> {
     return { status: 'ok', data: await this.reservations.getReport(query) };
+  }
+
+  /**
+   * Staff check-in or check-out. Confirmed stays only.
+   */
+  @Patch('reservations/:id/arrival')
+  public async setArrival(
+    @Param('id') id: string,
+    @Body() body: UpdateArrivalDto,
+  ): Promise<ApiOkBody<StaffReservation>> {
+    return { status: 'ok', data: await this.reservations.setArrival(id, body.arrivalStatus) };
   }
 
   /**

@@ -29,7 +29,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ApiRequestError } from '@/shared/services/api-client';
 import { formatCents } from '@/shared/utils/money';
-import { currentMonthBounds, monthBounds, type MonthBounds } from '@/shared/utils/month-bounds';
+import { currentMonthBounds, localTodayIso, monthBounds, type MonthBounds } from '@/shared/utils/month-bounds';
 import { fetchStaffCalendar, fetchStaffReservationsOnDate } from '../services/staff-reservations-api';
 import { StayDetailDialog } from './stay-detail-dialog';
 
@@ -50,10 +50,11 @@ export function OccupancyCalendar({ properties }: OccupancyCalendarProps): React
   const [days, setDays] = useState<CalendarDayOccupancy[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [selectedDate, setSelectedDate] = useState<string>(() => localTodayIso());
   const [dayGuests, setDayGuests] = useState<StaffReservation[]>([]);
   const [dayLoading, setDayLoading] = useState(false);
   const [openStayId, setOpenStayId] = useState<string | null>(null);
+  const todayIso = localTodayIso();
 
   const occupancy = useMemo((): Map<string, CalendarDayOccupancy> => {
     const map = new Map<string, CalendarDayOccupancy>();
@@ -81,9 +82,7 @@ export function OccupancyCalendar({ properties }: OccupancyCalendarProps): React
     void loadCalendar();
   }, [loadCalendar]);
 
-  const openDay = async (date: string): Promise<void> => {
-    setSelectedDate(date);
-    setOpenStayId(null);
+  const loadDay = useCallback(async (date: string): Promise<void> => {
     setDayLoading(true);
     try {
       setDayGuests(await fetchStaffReservationsOnDate(date, propertyId));
@@ -92,6 +91,21 @@ export function OccupancyCalendar({ properties }: OccupancyCalendarProps): React
     } finally {
       setDayLoading(false);
     }
+  }, [propertyId]);
+
+  useEffect((): void => {
+    void loadDay(selectedDate);
+  }, [loadDay, selectedDate]);
+
+  const openDay = (date: string): void => {
+    setSelectedDate(date);
+    setOpenStayId(null);
+  };
+
+  const goToMonth = (next: MonthBounds): void => {
+    setMonth(next);
+    setSelectedDate(selectedDateInMonth(next, todayIso));
+    setOpenStayId(null);
   };
 
   const cells = buildMonthCells(month.year, month.month);
@@ -116,7 +130,7 @@ export function OccupancyCalendar({ properties }: OccupancyCalendarProps): React
             onClick={(): void => {
               const prev =
                 month.month === 1 ? monthBounds(month.year - 1, 12) : monthBounds(month.year, month.month - 1);
-              setMonth(prev);
+              goToMonth(prev);
             }}
           >
             Previous
@@ -127,7 +141,7 @@ export function OccupancyCalendar({ properties }: OccupancyCalendarProps): React
             onClick={(): void => {
               const next =
                 month.month === 12 ? monthBounds(month.year + 1, 1) : monthBounds(month.year, month.month + 1);
-              setMonth(next);
+              goToMonth(next);
             }}
           >
             Next
@@ -141,8 +155,6 @@ export function OccupancyCalendar({ properties }: OccupancyCalendarProps): React
               onChange={(event): void => {
                 const next = event.target.value;
                 setPropertyId(next === ALL_PROPERTIES ? '' : next);
-                setSelectedDate(null);
-                setDayGuests([]);
                 setOpenStayId(null);
               }}
             >
@@ -157,13 +169,22 @@ export function OccupancyCalendar({ properties }: OccupancyCalendarProps): React
         </Stack>
       </Stack>
       <Typography color="text.secondary" sx={{ mb: 1 }}>
-        Click a day to list who is in-house. Booked, rebooked, cancelled, and unpaid holds are split by colour.
+        Click a day to list who is in-house. Today is selected when you open the page. Status colour is on the labels
+        only.
       </Typography>
-      <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mb: 2 }}>
-        <Chip size="small" label="Booked" sx={{ bgcolor: 'success.light', color: 'success.dark' }} />
-        <Chip size="small" label="Rebook" sx={{ bgcolor: 'info.light', color: 'info.dark' }} />
-        <Chip size="small" label="Hold" sx={{ bgcolor: 'warning.light', color: 'warning.dark' }} />
-        <Chip size="small" label="Cancelled" sx={{ bgcolor: 'error.light', color: 'error.dark' }} />
+      <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap sx={{ mb: 2 }}>
+        <Typography variant="caption" sx={{ color: 'success.main', fontWeight: 600 }}>
+          Booked
+        </Typography>
+        <Typography variant="caption" sx={{ color: 'info.main', fontWeight: 600 }}>
+          Rebook
+        </Typography>
+        <Typography variant="caption" sx={{ color: 'warning.main', fontWeight: 600 }}>
+          Hold
+        </Typography>
+        <Typography variant="caption" sx={{ color: 'error.main', fontWeight: 600 }}>
+          Cancelled
+        </Typography>
       </Stack>
       {error !== null ? <Alert severity="error">{error}</Alert> : null}
       {loading ? (
@@ -187,28 +208,32 @@ export function OccupancyCalendar({ properties }: OccupancyCalendarProps): React
             }
             const day = occupancy.get(cell);
             const selected = cell === selectedDate;
+            const isToday = cell === todayIso;
             return (
               <Box
                 key={cell}
                 component="button"
                 type="button"
                 aria-pressed={selected}
+                aria-current={isToday ? 'date' : undefined}
                 onClick={(): void => {
-                  void openDay(cell);
+                  openDay(cell);
                 }}
                 sx={{
-                  minHeight: 104,
+                  minHeight: 108,
                   p: 1,
                   textAlign: 'left',
                   border: 1,
-                  borderColor: selected ? 'primary.main' : 'divider',
+                  borderColor: selected ? 'primary.main' : isToday ? 'primary.light' : 'divider',
                   borderRadius: 1,
-                  bgcolor: selected ? 'action.selected' : dayCellBg(day),
+                  bgcolor: selected ? 'action.selected' : 'background.paper',
                   cursor: 'pointer',
                   color: 'text.primary',
                 }}
               >
-                <Typography variant="body2">{Number.parseInt(cell.slice(8), 10)}</Typography>
+                <Typography variant="body2" sx={{ fontWeight: isToday ? 700 : 400 }}>
+                  {Number.parseInt(cell.slice(8), 10)}
+                </Typography>
                 <DayLaneLabels day={day} />
               </Box>
             );
@@ -216,7 +241,7 @@ export function OccupancyCalendar({ properties }: OccupancyCalendarProps): React
         </Box>
       )}
       <Box sx={{ mt: 4, border: 1, borderColor: 'divider', borderRadius: 1, p: { xs: 2, md: 3 } }}>
-        {selectedDate === null ? (
+        {selectedDate === '' ? (
           <Typography color="text.secondary">Select a day to see who is in-house.</Typography>
         ) : (
           <>
@@ -277,6 +302,11 @@ export function OccupancyCalendar({ properties }: OccupancyCalendarProps): React
                 onClose={(): void => {
                   setOpenStayId(null);
                 }}
+                onUpdated={(updated): void => {
+                  setDayGuests((rows): StaffReservation[] =>
+                    rows.map((row): StaffReservation => (row.id === updated.id ? updated : row)),
+                  );
+                }}
               />
               </>
             )}
@@ -300,25 +330,25 @@ function DayLaneLabels({ day }: DayLaneLabelsProps): React.JSX.Element {
     );
   }
   return (
-    <Stack spacing={0.25}>
+    <Stack spacing={0.15}>
       {day.bookingCount > 0 ? (
-        <Typography variant="caption" sx={{ color: 'success.dark' }}>
-          {day.bookingCount} booked
+        <Typography variant="caption" sx={{ color: 'success.main', fontWeight: 600, display: 'block' }}>
+          {day.bookingCount} Booked
         </Typography>
       ) : null}
       {day.rebookCount > 0 ? (
-        <Typography variant="caption" sx={{ color: 'info.dark' }}>
-          {day.rebookCount} rebook
+        <Typography variant="caption" sx={{ color: 'info.main', fontWeight: 600, display: 'block' }}>
+          {day.rebookCount} Rebook
         </Typography>
       ) : null}
       {day.pendingCount > 0 ? (
-        <Typography variant="caption" sx={{ color: 'warning.dark' }}>
-          {day.pendingCount} hold
+        <Typography variant="caption" sx={{ color: 'warning.main', fontWeight: 600, display: 'block' }}>
+          {day.pendingCount} Hold
         </Typography>
       ) : null}
       {day.cancelledCount > 0 ? (
-        <Typography variant="caption" sx={{ color: 'error.dark' }}>
-          {day.cancelledCount} cancelled
+        <Typography variant="caption" sx={{ color: 'error.main', fontWeight: 600, display: 'block' }}>
+          {day.cancelledCount} Cancelled
         </Typography>
       ) : null}
     </Stack>
@@ -329,27 +359,17 @@ function dayHasActivity(day: CalendarDayOccupancy): boolean {
   return day.bookingCount + day.rebookCount + day.cancelledCount + day.pendingCount > 0;
 }
 
-function dayCellBg(day: CalendarDayOccupancy | undefined): string {
-  if (day === undefined || !dayHasActivity(day)) {
-    return 'background.paper';
-  }
-  if (day.bookingCount > 0) {
-    return 'success.light';
-  }
-  if (day.pendingCount > 0) {
-    return 'warning.light';
-  }
-  if (day.rebookCount > 0) {
-    return 'info.light';
-  }
-  return 'error.light';
-}
-
 function stayChipLabel(stay: StaffReservation): string {
   if (stay.rebookOfId !== null && stay.status !== 'cancelled' && stay.status !== 'released') {
     return 'Rebook';
   }
   if (stay.status === 'confirmed') {
+    if (stay.arrivalStatus === 'checked_in') {
+      return 'In-house';
+    }
+    if (stay.arrivalStatus === 'checked_out') {
+      return 'Checked out';
+    }
     return 'Booked';
   }
   if (stay.status === 'active') {
@@ -368,6 +388,9 @@ function stayChipColor(stay: StaffReservation): 'success' | 'warning' | 'info' |
   if (stay.rebookOfId !== null && stay.status !== 'cancelled' && stay.status !== 'released') {
     return 'info';
   }
+  if (stay.status === 'confirmed' && stay.arrivalStatus === 'checked_out') {
+    return 'default';
+  }
   if (stay.status === 'confirmed') {
     return 'success';
   }
@@ -378,6 +401,13 @@ function stayChipColor(stay: StaffReservation): 'success' | 'warning' | 'info' |
     return 'error';
   }
   return 'default';
+}
+
+function selectedDateInMonth(bounds: MonthBounds, today: string): string {
+  if (today >= bounds.from && today < bounds.to) {
+    return today;
+  }
+  return bounds.from;
 }
 
 function buildMonthCells(year: number, month: number): Array<string | null> {

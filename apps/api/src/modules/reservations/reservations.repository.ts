@@ -6,6 +6,7 @@
 
 import { Injectable } from '@nestjs/common';
 import type {
+  ArrivalStatus,
   CancellationTier,
   HoldStatus,
   InventoryKind,
@@ -37,6 +38,7 @@ interface ReservationRow {
   nightly_rate_cents: number;
   request_names: string[];
   kind: InventoryKind;
+  arrival_status: ArrivalStatus;
   rebook_of_id: string | null;
 }
 
@@ -75,7 +77,7 @@ export class ReservationsRepository {
         to_char(ib.check_out, 'YYYY-MM-DD') AS check_out, ib.guest_count,
         ib.booker_name, ib.booker_email, ib.booker_phone, COALESCE(ib.guest_note, '') AS guest_note, ib.payment_method, ib.status,
         ib.total_cents, ib.currency_code, h.nightly_rate_cents,
-        ib.kind, ib.rebook_of_id,
+        ib.kind, ib.rebook_of_id, ib.arrival_status,
         COALESCE((
           SELECT array_agg(pro.name ORDER BY pro.name)
           FROM inventory_block_requests ibr
@@ -111,7 +113,7 @@ export class ReservationsRepository {
         to_char(ib.check_out, 'YYYY-MM-DD') AS check_out, ib.guest_count,
         ib.booker_name, ib.booker_email, ib.booker_phone, COALESCE(ib.guest_note, '') AS guest_note, ib.payment_method, ib.status,
         ib.total_cents, ib.currency_code, h.nightly_rate_cents,
-        ib.kind, ib.rebook_of_id,
+        ib.kind, ib.rebook_of_id, ib.arrival_status,
         COALESCE((
           SELECT array_agg(pro.name ORDER BY pro.name)
           FROM inventory_block_requests ibr
@@ -148,7 +150,7 @@ export class ReservationsRepository {
         to_char(ib.check_out, 'YYYY-MM-DD') AS check_out, ib.guest_count,
         ib.booker_name, ib.booker_email, ib.booker_phone, COALESCE(ib.guest_note, '') AS guest_note, ib.payment_method, ib.status,
         ib.total_cents, ib.currency_code, h.nightly_rate_cents,
-        ib.kind, ib.rebook_of_id,
+        ib.kind, ib.rebook_of_id, ib.arrival_status,
         COALESCE((
           SELECT array_agg(pro.name ORDER BY pro.name)
           FROM inventory_block_requests ibr
@@ -186,7 +188,7 @@ export class ReservationsRepository {
         to_char(ib.check_out, 'YYYY-MM-DD') AS check_out, ib.guest_count,
         ib.booker_name, ib.booker_email, ib.booker_phone, COALESCE(ib.guest_note, '') AS guest_note, ib.payment_method, ib.status,
         ib.total_cents, ib.currency_code, h.nightly_rate_cents,
-        ib.kind, ib.rebook_of_id,
+        ib.kind, ib.rebook_of_id, ib.arrival_status,
         COALESCE((
           SELECT array_agg(pro.name ORDER BY pro.name)
           FROM inventory_block_requests ibr
@@ -320,6 +322,53 @@ export class ReservationsRepository {
     }
     return saved;
   }
+
+  /**
+   * One stay for staff arrival actions.
+   */
+  public async getById(id: string): Promise<StaffReservation | null> {
+    const result = await this.database.query<ReservationRow>(
+      `
+      SELECT ib.id, ib.organization_id, ib.property_id, p.name AS property_name,
+        ib.house_id, h.name AS house_name,
+        to_char(ib.check_in, 'YYYY-MM-DD') AS check_in,
+        to_char(ib.check_out, 'YYYY-MM-DD') AS check_out, ib.guest_count,
+        ib.booker_name, ib.booker_email, ib.booker_phone, COALESCE(ib.guest_note, '') AS guest_note, ib.payment_method, ib.status,
+        ib.total_cents, ib.currency_code, h.nightly_rate_cents,
+        ib.kind, ib.rebook_of_id, ib.arrival_status,
+        COALESCE((
+          SELECT array_agg(pro.name ORDER BY pro.name)
+          FROM inventory_block_requests ibr
+          INNER JOIN property_request_options pro ON pro.id = ibr.request_option_id
+          WHERE ibr.inventory_block_id = ib.id
+        ), ARRAY[]::text[]) AS request_names
+      FROM inventory_blocks ib
+      INNER JOIN properties p ON p.id = ib.property_id
+      INNER JOIN houses h ON h.id = ib.house_id
+      WHERE ib.id = $1
+      `,
+      [id],
+    );
+    const row = result.rows[0];
+    return row === undefined ? null : mapReservation(row);
+  }
+
+  /**
+   * Check-in / check-out on a confirmed stay. Payment status is unchanged.
+   */
+  public async updateArrivalStatus(id: string, arrivalStatus: ArrivalStatus): Promise<StaffReservation | null> {
+    await this.database.query(
+      `
+      UPDATE inventory_blocks
+      SET arrival_status = $2
+      WHERE id = $1
+        AND kind = 'reservation'
+        AND status = 'confirmed'
+      `,
+      [id, arrivalStatus],
+    );
+    return this.getById(id);
+  }
 }
 
 function mapReservation(row: ReservationRow): StaffReservation {
@@ -347,6 +396,7 @@ function mapReservation(row: ReservationRow): StaffReservation {
     currencyCode: row.currency_code,
     requestNames: row.request_names ?? [],
     kind: row.kind,
+    arrivalStatus: row.arrival_status,
     rebookOfId: row.rebook_of_id,
   };
 }

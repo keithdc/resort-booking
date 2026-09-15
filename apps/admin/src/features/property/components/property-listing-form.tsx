@@ -51,6 +51,7 @@ interface FormState {
 }
 
 const FRANCE_CENTER = { latitude: 46.6, longitude: 2.2 };
+const PIN_REVERSE_MS = 150;
 
 /**
  * Place, map pin, and contact. Coordinates stay off-screen.
@@ -63,7 +64,8 @@ export function PropertyListingForm({ property }: PropertyListingFormProps): Rea
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
-  const skipReverseRef = useRef(property !== null);
+  const reverseTimerRef = useRef<number | null>(null);
+  const reverseGenRef = useRef(0);
   const [lookupHint, setLookupHint] = useState<string | null>(null);
   const pin = useMemo((): { latitude: number; longitude: number } => {
     const latitude = Number.parseFloat(form.latitude);
@@ -74,61 +76,44 @@ export function PropertyListingForm({ property }: PropertyListingFormProps): Rea
     return { latitude, longitude };
   }, [form.latitude, form.longitude]);
 
-  const applyGeocodeHit = (hit: GeocodeHit): void => {
-    skipReverseRef.current = true;
-    setPinReady(true);
-    setLookupHint(null);
+  const applyPlaceFromHit = (hit: GeocodeHit, snapPin: boolean): void => {
+    setLookupHint(
+      [
+        hit.city !== '' ? hit.city : null,
+        hit.postalCode !== '' ? hit.postalCode : null,
+        hit.countryCode !== '' ? hit.countryCode : null,
+      ]
+        .filter((part): part is string => part !== null)
+        .join(' · ') || 'Pin moved. Edit town, postcode, or country if the lookup missed them.',
+    );
     setForm((current): FormState => ({
       ...current,
-      addressLine: hit.addressLine,
-      city: hit.city === '' ? current.city : hit.city,
-      postalCode: hit.postalCode === '' ? current.postalCode : hit.postalCode,
-      countryCode: hit.countryCode,
-      latitude: String(hit.latitude),
-      longitude: String(hit.longitude),
+      addressLine: hit.addressLine !== '' ? hit.addressLine : current.addressLine,
+      city: hit.city !== '' ? hit.city : current.city,
+      postalCode: hit.postalCode !== '' ? hit.postalCode : current.postalCode,
+      countryCode: hit.countryCode !== '' ? hit.countryCode : current.countryCode,
+      latitude: snapPin ? String(hit.latitude) : current.latitude,
+      longitude: snapPin ? String(hit.longitude) : current.longitude,
     }));
   };
 
-  useEffect((): (() => void) | undefined => {
-    if (!pinReady) {
-      return undefined;
+  const applyGeocodeHit = (hit: GeocodeHit): void => {
+    if (reverseTimerRef.current !== null) {
+      window.clearTimeout(reverseTimerRef.current);
+      reverseTimerRef.current = null;
     }
-    if (skipReverseRef.current) {
-      skipReverseRef.current = false;
-      return undefined;
-    }
-    const timer = window.setTimeout((): void => {
-      void reverseStaffGeocode(pin.latitude, pin.longitude)
-        .then((hit): void => {
-          if (hit === null) {
-            setLookupHint('Pin moved. Street lookup did not return a name — edit the fields if needed.');
-            return;
-          }
-          setLookupHint(
-            [
-              hit.city !== '' ? hit.city : null,
-              hit.postalCode !== '' ? hit.postalCode : null,
-              hit.countryCode !== '' ? hit.countryCode : null,
-            ]
-              .filter((part): part is string => part !== null)
-              .join(' · ') || 'Pin moved. Edit town, postcode, or country if the lookup missed them.',
-          );
-          setForm((current): FormState => ({
-            ...current,
-            addressLine: hit.addressLine !== '' ? hit.addressLine : current.addressLine,
-            city: hit.city !== '' ? hit.city : current.city,
-            postalCode: hit.postalCode !== '' ? hit.postalCode : current.postalCode,
-            countryCode: hit.countryCode !== '' ? hit.countryCode : current.countryCode,
-          }));
-        })
-        .catch((): void => {
-          setLookupHint('Pin moved. Street lookup failed — you can type the address.');
-        });
-    }, 650);
+    reverseGenRef.current += 1;
+    setPinReady(true);
+    applyPlaceFromHit(hit, true);
+  };
+
+  useEffect((): (() => void) => {
     return (): void => {
-      window.clearTimeout(timer);
+      if (reverseTimerRef.current !== null) {
+        window.clearTimeout(reverseTimerRef.current);
+      }
     };
-  }, [pin.latitude, pin.longitude, pinReady]);
+  }, []);
 
   const body = (): CreatePropertyRequest => ({
     name: form.name.trim(),
@@ -336,6 +321,32 @@ export function PropertyListingForm({ property }: PropertyListingFormProps): Rea
                     latitude: String(latitude),
                     longitude: String(longitude),
                   }));
+                  if (reverseTimerRef.current !== null) {
+                    window.clearTimeout(reverseTimerRef.current);
+                  }
+                  const gen = reverseGenRef.current + 1;
+                  reverseGenRef.current = gen;
+                  reverseTimerRef.current = window.setTimeout((): void => {
+                    void reverseStaffGeocode(latitude, longitude)
+                      .then((hit): void => {
+                        if (gen !== reverseGenRef.current) {
+                          return;
+                        }
+                        if (hit === null) {
+                          setLookupHint(
+                            'Pin moved. Street lookup did not return a name — edit the fields if needed.',
+                          );
+                          return;
+                        }
+                        applyPlaceFromHit(hit, false);
+                      })
+                      .catch((): void => {
+                        if (gen !== reverseGenRef.current) {
+                          return;
+                        }
+                        setLookupHint('Pin moved. Street lookup failed — you can type the address.');
+                      });
+                  }, PIN_REVERSE_MS);
                 }}
               />
             </Stack>

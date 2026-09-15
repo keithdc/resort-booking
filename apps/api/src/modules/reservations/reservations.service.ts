@@ -6,6 +6,7 @@
 
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import type {
+  ArrivalStatus,
   CalendarDayOccupancy,
   HouseReportRow,
   PaymentMethodSlice,
@@ -27,7 +28,10 @@ import {
   classifyPipelineRow,
   eachIsoDate,
   hasInvertedRefundLadder,
+  isInHouseNow,
+  isUpcomingArrival,
   overlapNights,
+  reportAsOfDate,
   sortCalendarDayStays,
   stayOccupiesDate,
   uniquePropertyCount,
@@ -91,7 +95,7 @@ export class ReservationsService {
     let occupiedNights = 0;
     let revenueCents = 0;
     let guestCount = 0;
-    const today = isoUtcToday();
+    const asOfDate = reportAsOfDate();
 
     for (const stay of stays) {
       const stayNights = nightsBetween(stay.checkIn, stay.checkOut) ?? 1;
@@ -197,6 +201,7 @@ export class ReservationsService {
     return {
       from: query.from,
       to: query.to,
+      asOfDate,
       propertyId,
       currencyCode: firstProperty?.currencyCode ?? 'EUR',
       houseCount,
@@ -206,10 +211,8 @@ export class ReservationsService {
       revenueCents,
       averageNightlyCents: occupiedNights === 0 ? 0 : Math.round(revenueCents / occupiedNights),
       occupancyPercent: availableNights === 0 ? 0 : Math.round((occupiedNights / availableNights) * 1000) / 10,
-      upcomingStayCount: stays.filter((stay: StaffReservation): boolean => stay.checkIn > today).length,
-      inHouseStayCount: stays.filter((stay: StaffReservation): boolean =>
-        stayOccupiesDate(stay.checkIn, stay.checkOut, today),
-      ).length,
+      upcomingStayCount: stays.filter((stay: StaffReservation): boolean => isUpcomingArrival(stay, asOfDate)).length,
+      inHouseStayCount: stays.filter((stay: StaffReservation): boolean => isInHouseNow(stay, asOfDate)).length,
       guestCount,
       propertyBookedCount: uniquePropertyCount(stays),
       pendingPaymentCount,
@@ -272,6 +275,27 @@ export class ReservationsService {
     return { config, invertedWarning: hasInvertedRefundLadder(input.tiers) };
   }
 
+  /**
+   * Staff mark check-in or check-out. Confirmed payment status stays confirmed.
+   */
+  public async setArrival(id: string, arrivalStatus: ArrivalStatus): Promise<StaffReservation> {
+    const existing = await this.reservations.getById(id);
+    if (existing === null) {
+      throw new NotFoundException({ message: 'Stay not found', code: 'STAY_NOT_FOUND' });
+    }
+    if (existing.kind !== 'reservation' || existing.status !== 'confirmed') {
+      throw new BadRequestException({
+        message: 'Check-in and check-out are only for confirmed stays',
+        code: 'STAY_NOT_CONFIRMED',
+      });
+    }
+    const updated = await this.reservations.updateArrivalStatus(id, arrivalStatus);
+    if (updated === null) {
+      throw new NotFoundException({ message: 'Stay not found', code: 'STAY_NOT_FOUND' });
+    }
+    return updated;
+  }
+
   private assertRange(from: string, to: string): void {
     if (nightsBetween(from, to) === null) {
       throw new BadRequestException({
@@ -280,12 +304,4 @@ export class ReservationsService {
       });
     }
   }
-}
-
-function isoUtcToday(): string {
-  const now = new Date();
-  const year = now.getUTCFullYear();
-  const month = String(now.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(now.getUTCDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
 }

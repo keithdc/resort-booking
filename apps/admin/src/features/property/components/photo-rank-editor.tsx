@@ -9,7 +9,7 @@
 import type { PhotoWrite } from '@resort-booking/shared-types';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
-import { Box, Button, Chip, IconButton, Stack, TextField, Typography } from '@mui/material';
+import { Box, Button, IconButton, Stack, TextField, Typography } from '@mui/material';
 
 interface PhotoRankEditorProps {
   photos: PhotoWrite[];
@@ -21,33 +21,66 @@ interface PhotoRankEditorProps {
  */
 export function PhotoRankEditor({ photos, onChange }: PhotoRankEditorProps): React.JSX.Element {
   return (
-    <Stack spacing={1.5}>
+    <Stack spacing={2}>
       <Typography variant="body2" color="text.secondary">
         Rank 1 is the cover on search cards and the first image guests see. Use the arrows to change order.
       </Typography>
       {photos.map((photo, index): React.JSX.Element => (
-        <Stack
+        <Box
           key={`photo-${index}`}
-          direction={{ xs: 'column', sm: 'row' }}
-          spacing={1}
-          alignItems={{ xs: 'stretch', sm: 'flex-start' }}
+          sx={{
+            display: 'grid',
+            alignItems: 'center',
+            columnGap: 1.5,
+            rowGap: 1.5,
+            gridTemplateColumns: {
+              xs: '96px 56px 40px 1fr',
+              md: '96px 56px 40px minmax(0, 1.2fr) minmax(0, 1fr) auto',
+            },
+            gridTemplateAreas: {
+              xs: `
+                "thumb rank move remove"
+                "url url url url"
+                "caption caption caption caption"
+              `,
+              md: `"thumb rank move url caption remove"`,
+            },
+          }}
         >
           {photo.url.trim() !== '' ? (
             <Box
               component="img"
               src={photo.url}
               alt={photo.altText === '' ? 'Photo preview' : photo.altText}
-              sx={{ width: 96, height: 72, objectFit: 'cover', borderRadius: 1, bgcolor: 'action.hover' }}
+              sx={{
+                gridArea: 'thumb',
+                width: 96,
+                height: 72,
+                objectFit: 'cover',
+                borderRadius: 1,
+                bgcolor: 'action.hover',
+              }}
             />
           ) : (
-            <Box sx={{ width: 96, height: 72, borderRadius: 1, bgcolor: 'action.hover' }} />
+            <Box
+              sx={{
+                gridArea: 'thumb',
+                width: 96,
+                height: 72,
+                borderRadius: 1,
+                bgcolor: 'action.hover',
+              }}
+            />
           )}
-          <Chip
-            size="small"
-            label={index === 0 ? '1 · Cover' : String(index + 1)}
-            sx={{ alignSelf: { xs: 'flex-start', sm: 'center' } }}
-          />
-          <Stack direction="row" spacing={0.5} sx={{ alignSelf: { xs: 'flex-start', sm: 'center' } }}>
+          <Box sx={{ gridArea: 'rank', textAlign: 'center' }}>
+            <Typography variant="body2" fontWeight={600}>
+              {index + 1}
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ visibility: index === 0 ? 'visible' : 'hidden' }}>
+              Cover
+            </Typography>
+          </Box>
+          <Stack spacing={0} alignItems="center" sx={{ gridArea: 'move' }}>
             <IconButton
               aria-label="Move photo up"
               size="small"
@@ -71,8 +104,9 @@ export function PhotoRankEditor({ photos, onChange }: PhotoRankEditorProps): Rea
           </Stack>
           <TextField
             label="Photo URL"
-            fullWidth
+            size="small"
             value={photo.url}
+            sx={{ gridArea: 'url' }}
             onChange={(event): void => {
               const url = event.target.value;
               onChange(
@@ -82,8 +116,9 @@ export function PhotoRankEditor({ photos, onChange }: PhotoRankEditorProps): Rea
           />
           <TextField
             label="Caption"
-            fullWidth
+            size="small"
             value={photo.altText}
+            sx={{ gridArea: 'caption' }}
             onChange={(event): void => {
               const altText = event.target.value;
               onChange(
@@ -92,13 +127,14 @@ export function PhotoRankEditor({ photos, onChange }: PhotoRankEditorProps): Rea
             }}
           />
           <Button
+            sx={{ gridArea: 'remove', justifySelf: { xs: 'end', md: 'stretch' }, whiteSpace: 'nowrap' }}
             onClick={(): void => {
               onChange(photos.filter((_row, rowIndex): boolean => rowIndex !== index));
             }}
           >
             Remove
           </Button>
-        </Stack>
+        </Box>
       ))}
       <Button
         variant="outlined"

@@ -7,6 +7,7 @@
 export type PaymentMethod = 'card' | 'bank_transfer';
 export type HoldStatus = 'active' | 'expired' | 'released' | 'confirmed' | 'cancelled';
 export type InventoryKind = 'hold' | 'reservation' | 'block';
+export type ArrivalStatus = 'expected' | 'checked_in' | 'checked_out';
 
 export interface Organization {
   id: string;
@@ -337,6 +338,7 @@ export interface StaffReservation {
   paymentMethod: PaymentMethod | null;
   status: HoldStatus;
   kind: InventoryKind;
+  arrivalStatus: ArrivalStatus;
   rebookOfId: string | null;
   totalCents: number;
   currencyCode: string;
@@ -409,6 +411,7 @@ export interface PaymentMethodSlice {
 export interface StaffReport {
   from: string;
   to: string;
+  asOfDate: string;
   propertyId: string | null;
   currencyCode: string;
   houseCount: number;

@@ -40,7 +40,7 @@ import {
   REPORT_RANGE_OPTIONS,
   type RangePreset,
 } from '../utils/report-range';
-import { stayOccupiesDay, utcTodayIso } from '../utils/stay-window';
+import { stayOccupiesDay, isInHouseStay, isUpcomingArrivalStay } from '../utils/stay-window';
 
 const ALL_PROPERTIES = 'all';
 
@@ -80,7 +80,6 @@ export function ReportsPage(): React.JSX.Element {
   }, [load]);
 
   const stays = report?.stays ?? [];
-  const today = utcTodayIso();
   const selectedName =
     properties.find((property): boolean => property.id === propertyId)?.name ?? 'All properties';
 
@@ -276,12 +275,12 @@ export function ReportsPage(): React.JSX.Element {
               label="In-house now"
               value={String(report.inHouseStayCount)}
               tone="success"
-              hint={`Confirmed stays occupying ${today} (UTC)`}
+              hint={`Confirmed stays occupying ${report.asOfDate}, or checked in`}
               onOpen={(): void => {
                 openStays(
                   'In-house now',
-                  `Stays occupying ${today} (UTC).`,
-                  stays.filter((stay): boolean => stayOccupiesDay(stay, today)),
+                  `Occupying ${report.asOfDate}, or staff checked in.`,
+                  stays.filter((stay): boolean => isInHouseStay(stay, report.asOfDate)),
                 );
               }}
             />
@@ -289,12 +288,12 @@ export function ReportsPage(): React.JSX.Element {
               label="Upcoming arrivals"
               value={String(report.upcomingStayCount)}
               tone="warning"
-              hint="Confirmed check-in after today"
+              hint="Confirmed check-in after today, not yet arrived"
               onOpen={(): void => {
                 openStays(
                   'Upcoming arrivals',
-                  `Check-in after ${today}.`,
-                  stays.filter((stay): boolean => stay.checkIn > today),
+                  `Check-in after ${report.asOfDate}, excluding completed and in-house stays.`,
+                  stays.filter((stay): boolean => isUpcomingArrivalStay(stay, report.asOfDate)),
                 );
               }}
             />

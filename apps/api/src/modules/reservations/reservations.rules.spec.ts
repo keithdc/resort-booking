@@ -11,7 +11,10 @@ import {
   classifyPipelineRow,
   eachIsoDate,
   hasInvertedRefundLadder,
+  isInHouseNow,
+  isUpcomingArrival,
   overlapNights,
+  reportAsOfDate,
   sortCalendarDayStays,
   stayOccupiesDate,
   uniquePropertyCount,
@@ -166,6 +169,57 @@ describe('staff calendar lanes', (): void => {
     const booked: StaffReservation = { ...stubStay('p1'), id: 'b', houseName: 'Zulu' };
     expect(sortCalendarDayStays([cancelled, booked]).map((row): string => row.id)).toEqual(['b', 'c']);
   });
+
+  it('uses the Europe/Paris civil date for report as-of', (): void => {
+    expect(reportAsOfDate(new Date('2026-09-15T22:00:00.000Z'))).toBe('2026-09-16');
+    expect(reportAsOfDate(new Date('2026-09-15T21:00:00.000Z'))).toBe('2026-09-15');
+  });
+
+  it('drops completed stays from upcoming arrivals', (): void => {
+    const asOf = '2026-09-16';
+    const past: StaffReservation = {
+      ...stubStay('p1'),
+      checkIn: '2026-09-10',
+      checkOut: '2026-09-14',
+    };
+    const arriving: StaffReservation = {
+      ...stubStay('p1'),
+      id: 'next',
+      checkIn: '2026-09-18',
+      checkOut: '2026-09-20',
+    };
+    const occupying: StaffReservation = {
+      ...stubStay('p1'),
+      id: 'now',
+      checkIn: '2026-09-15',
+      checkOut: '2026-09-18',
+    };
+    const checkedIn: StaffReservation = { ...arriving, id: 'in', arrivalStatus: 'checked_in' };
+    expect(isUpcomingArrival(past, asOf)).toBe(false);
+    expect(isUpcomingArrival(occupying, asOf)).toBe(false);
+    expect(isUpcomingArrival(arriving, asOf)).toBe(true);
+    expect(isUpcomingArrival(checkedIn, asOf)).toBe(false);
+  });
+
+  it('counts in-house from dates or staff check-in, not after check-out', (): void => {
+    const asOf = '2026-09-16';
+    const occupying: StaffReservation = {
+      ...stubStay('p1'),
+      checkIn: '2026-09-15',
+      checkOut: '2026-09-18',
+    };
+    const departed: StaffReservation = { ...occupying, arrivalStatus: 'checked_out' };
+    const stillHere: StaffReservation = {
+      ...stubStay('p1'),
+      id: 'late',
+      checkIn: '2026-09-10',
+      checkOut: '2026-09-12',
+      arrivalStatus: 'checked_in',
+    };
+    expect(isInHouseNow(occupying, asOf)).toBe(true);
+    expect(isInHouseNow(departed, asOf)).toBe(false);
+    expect(isInHouseNow(stillHere, asOf)).toBe(true);
+  });
 });
 
 function stubStay(propertyId: string): StaffReservation {
@@ -186,6 +240,7 @@ function stubStay(propertyId: string): StaffReservation {
     paymentMethod: 'card',
     status: 'confirmed',
     kind: 'reservation',
+    arrivalStatus: 'expected',
     rebookOfId: null,
     totalCents: 100,
     currencyCode: 'EUR',
