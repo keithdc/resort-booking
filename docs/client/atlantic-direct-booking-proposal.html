@@ -138,9 +138,9 @@
       <p class="kicker">Confidential — proposal pack</p>
       <h1>Direct-booking platform</h1>
       <p class="lede">
-        Architectural design, delivery plan to <strong>June 2027</strong>, client brand checklist, technical
-        guidelines, and a mutual non-disclosure agreement. Prepared so both parties can print, review, and
-        sign.
+        Architectural design, delivery plan to a <strong>tested June 2027 go-live</strong>, source-code
+        handover, a modest post-launch watch period, client brand checklist, technical guidelines, and a
+        mutual non-disclosure agreement. Prepared so both parties can print, review, and sign.
       </p>
       <div class="meta">
         <p><strong>Working product name:</strong> Atlantic (placeholder until your trademark is applied)</p>
@@ -148,7 +148,7 @@
         <p><strong>Client / Operator:</strong> ________________________________</p>
         <p><strong>Document date:</strong> 16 September 2026</p>
         <p><strong>Target go-live:</strong> June 2027</p>
-        <p><strong>Version:</strong> 1.0 — initial development proposal</p>
+        <p><strong>Version:</strong> 1.1 — proposal, architecture, deliverables, and mutual NDA</p>
       </div>
       <div class="box warn">
         <p>
@@ -270,8 +270,17 @@
           <td>5 — Open the doors</td>
           <td>June 2027</td>
           <td>
-            Production go-live. Parallel Airbnb only if you still need it until listings expire. Handover:
-            how to add a property, publish a house, verify a transfer.
+            Production go-live on your domain, after UAT and legal sign-off. Parallel Airbnb only if listings
+            have not yet expired. Handover of the source-code package and runbook.
+          </td>
+        </tr>
+        <tr>
+          <td>6 — Watch and settle</td>
+          <td>Jul–Dec 2027</td>
+          <td>
+            Three to six months of production monitoring after go-live (defects in the delivered system, backups,
+            holds and payments). Modest monthly retainer — not a second build. Then ordinary support if you want
+            it.
           </td>
         </tr>
       </tbody>
@@ -280,7 +289,9 @@
       <p>
         <strong>June 2027 success:</strong> a guest can find a house on your domain, pay without Airbnb, and
         you see the stay on the admin calendar. You can add another property yourself. Refunds follow the
-        ladder you configured and that was shown at checkout.
+        ladder you configured and that was shown at checkout. The system has been used end-to-end in May UAT
+        (staff + sample guest journeys, including card/wallet test and a bank-transfer verify) before that
+        go-live.
       </p>
     </div>
     <p class="small">
@@ -498,104 +509,264 @@
       <li>If hosting is in the Contractor’s name during prototype only, a written DPA is needed before real guests.</li>
     </ul>
 
+    <h2>7. Deliverables — including the source-code package</h2>
+    <p>
+      In addition to the running guest site, staff admin, and API, go-live includes a
+      <strong>source-code package</strong> so you are not locked to a black box. Exact media, hosting account,
+      and fee schedule sit in the statement of work. This pack records what “done” means.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Item</th>
+          <th>What you receive</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Guest website</td>
+          <td>Published listings, search, hold, checkout on your domain (after brand and payments)</td>
+        </tr>
+        <tr>
+          <td>Staff admin</td>
+          <td>Properties, houses, calendar, extras, bank-transfer verify, reports, account</td>
+        </tr>
+        <tr>
+          <td>API and database</td>
+          <td>NestJS service, PostgreSQL ledger, Redis for holds only, sequential SQL migrations</td>
+        </tr>
+        <tr>
+          <td>Source-code package</td>
+          <td>
+            Private git history of the Project as delivered; application source; SQL migrations; environment
+            templates <em>without</em> live secrets; README / runbook (start, backup, restore, add a property,
+            publish a house, verify a transfer)
+          </td>
+        </tr>
+        <tr>
+          <td>Handover session</td>
+          <td>Walkthrough with your staff before June 2027 go-live (recorded if you ask in writing)</td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="small">
+      Open-source libraries remain under their own licences. Stripe live keys, DNS, and the production database
+      belong in accounts you control. Original code written uniquely for you is assigned as set out in the NDA,
+      upon full payment of the agreed fees for that work.
+    </p>
+
+    <h2>8. After go-live — watch period and modest retainer</h2>
+    <p>
+      A new booking system should not be left alone the week after the first real guest. The plan is
+      <strong>June 2027 go-live after May UAT</strong>, then a <strong>stabilisation (watch) period of three
+      (3) months, extendable to six (6) months</strong> if both Parties agree in the statement of work.
+    </p>
+    <h3>What the watch period covers</h3>
+    <ul class="tight">
+      <li>Monitoring that the site, API, holds, and (once live) Stripe/bank-transfer paths are up</li>
+      <li>Correction of defects in the software that was delivered (bugs, not new features)</li>
+      <li>Help with backups and a restore drill once during the period</li>
+      <li>A short monthly written note: what was watched, what was fixed, what is still on you (content, photos, legal copy)</li>
+    </ul>
+    <h3>What it does not cover</h3>
+    <ul class="tight">
+      <li>New properties beyond training you to add them yourselves</li>
+      <li>New product (chat, PayPal, marketplace, mobile apps)</li>
+      <li>Your Stripe KYC, bank, photography, or lawyer</li>
+      <li>Hosting invoices from the cloud provider (those stay in your name)</li>
+    </ul>
+    <div class="box">
+      <p>
+        <strong>Indicative retainer (to confirm in the statement of work, ex-VAT):</strong>
+        <strong>€180 to €320 per month</strong> for the watch period — on the order of
+        <em>one mid-week night</em>, not a second build. Three months is the default (July–September 2027 if
+        go-live is June). A further three months is optional if you want a quieter first winter. Either Party
+        may end the optional extension with 30 days’ written notice after the first three months. Hours above
+        a small included allowance (for example four hours per month) are billed at the SOW rate or deferred
+        to a change request — the retainer is meant to sit comfortably, not to surprise you.
+      </p>
+    </div>
+    <p class="small">
+      Figures are commercial guidance for discussion, not an invoice. Hosting, Stripe fees, and domain renewals
+      are extra and paid by the Operator to those suppliers.
+    </p>
+
+    <h2>9. How we work until June 2027</h2>
+    <ul class="tight">
+      <li>Demo on local or staging URLs; production domain only after phase 4 (May UAT)</li>
+      <li>You review in writing at the end of each phase</li>
+      <li>Build fees, watch-period retainer, and hosting costs belong in a separate statement of work</li>
+      <li>The source repository remains private; this PDF is stored with the project documentation</li>
+      <li>Go-live in June 2027 means the system is used and signed off in UAT first — not “deploy and hope”</li>
+    </ul>
+    <p>
+      Related engineering notes (internal): architecture, coding standards, EU payments, cancellation, UI
+      theme — held in the project <span class="mono">docs/</span> folder.
+    </p>
+
     <section class="page">
-      <h2>7. Mutual non-disclosure agreement (draft)</h2>
-      <p class="kicker">Schedule A — to be signed</p>
+      <h2>10. Mutual non-disclosure agreement (draft)</h2>
+      <p class="kicker">Schedule A — to be signed by both Parties</p>
       <div class="box warn">
         <p>
-          Draft for counsel. Insert full legal names and an effective date. Governing law below is
-          <strong>France</strong> because the prototype listings are in France; change this if the Operator is
-          established elsewhere in the EU.
+          <strong>Draft for counsel — not legal advice.</strong> Insert the Operator’s full legal name, registered
+          office, and an effective date before signing. Governing law is the
+          <strong>French Republic</strong> because the prototype listings are in France; change the seat of the
+          courts if the Operator is established elsewhere. This NDA does not, by itself, create an obligation to
+          perform the Project or to pay fees. Those obligations arise only under a signed statement of work.
         </p>
       </div>
       <p>
-        This mutual non-disclosure agreement (“<strong>NDA</strong>”) is between
-        <strong>Keith Cordova</strong> (“<strong>Contractor</strong>”) and
-        ________________________________ (“<strong>Operator</strong>”), together the “<strong>Parties</strong>.”
-        Effective date: ____________________.
+        This mutual non-disclosure agreement (the “<strong>Agreement</strong>”) is entered into as of
+        ____________________ (the “<strong>Effective Date</strong>”) between:
       </p>
-      <h3>7.1 Purpose</h3>
       <p>
-        The Parties wish to discuss and build a direct-booking website and admin tools (the
-        “<strong>Project</strong>”). Each may share confidential information. This NDA protects both sides. It
-        is not by itself an obligation to complete the Project or to pay fees.
+        <strong>(1) Keith Cordova</strong>, independent contractor, (“<strong>Contractor</strong>”); and
       </p>
-      <h3>7.2 Confidential information</h3>
-      <p>Means non-public information a Party discloses, including:</p>
+      <p>
+        <strong>(2)</strong> ________________________________, a company organised under the laws of
+        ____________________, with registered office at ________________________________
+        (“<strong>Operator</strong>”).
+      </p>
+      <p>The Contractor and the Operator are each a “<strong>Party</strong>” and together the “<strong>Parties</strong>.”</p>
+
+      <h3>10.1 Recitals and purpose</h3>
+      <p>
+        The Parties wish to evaluate and, if they so agree in a separate statement of work, to design, build,
+        test, and put into production a direct-booking website, staff administration tools, and related
+        software (the “<strong>Project</strong>”), targeting a tested go-live in <strong>June 2027</strong>.
+        In the course of those discussions and that work, each Party may disclose Confidential Information
+        (as defined below). The Parties agree to protect that information on the terms of this Agreement.
+      </p>
+
+      <h3>10.2 Definitions</h3>
+      <p>
+        “<strong>Confidential Information</strong>” means all non-public information, in any form, that a Party
+        (the “<strong>Disclosing Party</strong>”) discloses to the other (the “<strong>Receiving Party</strong>”),
+        whether or not marked confidential, including: business plans, occupancy, rates, guest or staff personal
+        data, bank and Stripe details; trademarks, unpublished logos, brand guides, photographs and copy;
+        source code, architecture, credentials, unpublished documentation (including this proposal pack); and
+        any other information that a reasonable hospitality operator or software contractor would treat as
+        confidential.
+      </p>
+      <p>
+        “<strong>Representatives</strong>” means a Party’s employees, officers, professional advisers, and
+        subcontractors who have a need to know and who are bound by written confidentiality obligations no less
+        protective than this Agreement.
+      </p>
+
+      <h3>10.3 Exclusions</h3>
+      <p>Confidential Information does not include information that the Receiving Party can show:</p>
       <ul class="tight">
-        <li>Business plans, prices, occupancy, guest or staff personal data, bank details</li>
-        <li>Trademarks, unpublished logos, brand guides, photos, copy</li>
-        <li>Source code, architecture, credentials, unpublished documentation (including this pack)</li>
-        <li>Information marked confidential or that a reasonable operator would treat as confidential</li>
+        <li>is or becomes public other than by breach of this Agreement;</li>
+        <li>was already in its possession without a duty of confidence;</li>
+        <li>is independently developed without use of the Disclosing Party’s Confidential Information; or</li>
+        <li>is received lawfully from a third party without a duty of confidence.</li>
       </ul>
-      <h3>7.3 Exclusions</h3>
-      <p>Information is not confidential if it is public without breach, already known without duty, independently developed, or required by law (with notice where lawful).</p>
-      <h3>7.4 Use and care</h3>
+
+      <h3>10.4 Use, care, and compelled disclosure</h3>
       <p>
-        A receiving Party shall use confidential information only for the Project, share it only with people
-        who need it and are bound to keep it secret, and use at least reasonable care. Personal data shall be
-        handled under GDPR. The Operator is controller of guest data; the Contractor is a processor only if
-        hosting or support so requires, in which case a GDPR Article 28 data-processing agreement will be
-        signed before processing live guest data.
+        The Receiving Party shall (a) use Confidential Information solely for the Project; (b) disclose it only
+        to Representatives who need it; (c) protect it with at least the same care it uses for its own similar
+        information, and in any event no less than reasonable care; and (d) not reverse engineer software
+        provided solely in object form except as mandatory law allows. If law or a competent authority requires
+        disclosure, the Receiving Party shall, where lawful, give prompt notice so the Disclosing Party may
+        seek a protective order, and shall disclose only what is required.
       </p>
-      <h3>7.5 Brand and trademarks</h3>
+      <p>
+        Personal data shall be handled under the GDPR. The Operator is controller of guest data. The Contractor
+        acts as processor only if hosting or support so requires; in that case the Parties shall sign a GDPR
+        Article 28 data-processing agreement <strong>before</strong> any processing of live guest data.
+      </p>
+
+      <h3>10.5 Brand and trademarks</h3>
       <p>
         The Operator retains all rights in names, logos, and artwork it supplies. The Contractor receives a
-        limited licence to use them solely to build and demonstrate the Project. The Contractor shall not file
-        trademarks that copy the Operator’s marks. The placeholder name “Atlantic” is not a claim against the
-        Operator’s future brand.
+        limited, revocable, non-exclusive licence to use them solely to build and demonstrate the Project. The
+        Contractor shall not file trademarks that copy the Operator’s marks. The placeholder name “Atlantic”
+        confers no rights against the Operator’s future brand.
       </p>
-      <h3>7.6 Software and intellectual property</h3>
+
+      <h3>10.6 Software and intellectual property</h3>
       <p>
-        Unless a signed statement of work says otherwise: (a) pre-existing tools, snippets, and know-how of the
-        Contractor remain the Contractor’s; (b) original code written uniquely for the Operator is assigned to
-        the Operator upon full payment of the agreed fees for that work; (c) third-party and open-source
-        components stay under their licences; (d) the Contractor may show non-confidential screenshots in a
-        portfolio only with the Operator’s written consent after go-live, or with brand removed.
+        Unless a signed statement of work says otherwise: (a) pre-existing tools, libraries, snippets, and
+        know-how of the Contractor remain the Contractor’s; (b) original source code written uniquely for the
+        Operator, together with the source-code package described in this proposal, is assigned to the Operator
+        upon <strong>full payment</strong> of the agreed fees for that work; (c) third-party and open-source
+        components remain under their licences; (d) the Contractor may show non-confidential screenshots in a
+        portfolio only with the Operator’s prior written consent after go-live, or with brand identifiers
+        removed.
       </p>
-      <h3>7.7 Term</h3>
+
+      <h3>10.7 Term and survival</h3>
       <p>
-        Confidentiality lasts from the effective date until three (3) years after the Project ends, except trade
-        secrets, which last as long as they remain secrets, and personal data, which follows GDPR.
+        This Agreement begins on the Effective Date. Duties of confidence last until three (3) years after the
+        Project ends or is abandoned, except that trade secrets remain protected for so long as they remain
+        trade secrets, and personal data follows the GDPR. Clauses 10.5, 10.6, 10.8, 10.11, 10.12 and 10.13
+        survive expiry.
       </p>
-      <h3>7.8 Return</h3>
+
+      <h3>10.8 Return or destruction</h3>
       <p>
-        On written request, a Party shall return or destroy the other’s confidential materials, except copies
-        required by law, backups that are overwritten in the ordinary cycle, or code assigned to the Operator.
+        On written request, or when the Project ends, the Receiving Party shall return or securely destroy the
+        Disclosing Party’s Confidential Information, except: copies required by law or professional retention
+        rules; routine backups overwritten in the ordinary cycle; and source code assigned to the Operator
+        under clause 10.6. At the Disclosing Party’s request, the Receiving Party shall confirm destruction in
+        writing.
       </p>
-      <h3>7.9 No licence / no public statements</h3>
+
+      <h3>10.9 No licence; no public statements</h3>
       <p>
-        No patent, copyright, or trademark licence is granted except as stated. Neither Party shall issue a
-        press release about the Project without written consent, except to professional advisers under duty.
+        No patent, copyright, or trademark licence is granted except as expressly stated. Neither Party shall
+        issue a press release or public case study about the Project without prior written consent, except to
+        Representatives under duty.
       </p>
-      <h3>7.10 Residuals</h3>
+
+      <h3>10.10 Residuals</h3>
       <p>
-        Either Party may use residual knowledge retained in unaided memory (ideas, skills, know-how) that is
-        not the other’s trade secret or personal data, provided it does not copy documents or code.
+        Either Party may use residual knowledge retained in unaided memory (general ideas, skills, and
+        know-how) that is not the other’s trade secret or personal data, provided it does not copy documents,
+        source code, or guest lists.
       </p>
-      <h3>7.11 Remedies</h3>
+
+      <h3>10.11 Remedies</h3>
       <p>
-        Breach may cause harm that money cannot fix. A Party may seek an injunction in addition to other
-        remedies, without limiting damages where the law allows.
+        Unauthorised use or disclosure may cause harm that money alone cannot repair. A Party may seek
+        injunctive or other equitable relief in addition to damages and any other remedy available by law,
+        without proving actual damage as a condition of interim relief where the competent court so allows.
       </p>
-      <h3>7.12 Independent contractors</h3>
-      <p>Nothing here creates a partnership, joint venture, or employment. Neither Party may bind the other.</p>
-      <h3>7.13 Governing law</h3>
+
+      <h3>10.12 Status; no assignment of this NDA</h3>
       <p>
-        This NDA is governed by the laws of the <strong>French Republic</strong>, excluding conflict-of-law
+        Nothing in this Agreement creates a partnership, joint venture, mandate to bind, or employment. Neither
+        Party may assign this Agreement without the other’s prior written consent, except to a successor of
+        substantially all of its relevant business, provided the successor is bound in writing.
+      </p>
+
+      <h3>10.13 Governing law and jurisdiction</h3>
+      <p>
+        This Agreement is governed by the laws of the <strong>French Republic</strong>, excluding conflict-of-law
         rules. The courts of <strong>________________________</strong> (city) have exclusive jurisdiction,
         without prejudice to mandatory EU consumer or data-protection venues that cannot be waived.
       </p>
-      <h3>7.14 Entire NDA</h3>
+
+      <h3>10.14 Notices, counterparts, language</h3>
       <p>
-        This section 7 is the entire confidentiality agreement and may be signed in counterparts (including
-        scans). Changes must be in writing and signed. If a clause is invalid, the rest remains. English is
-        the authentic language unless a signed French translation says otherwise.
+        Notices under this Agreement shall be in writing (including email to the addresses the Parties exchange
+        on signature). This Agreement may be signed in counterparts, including scanned or qualified electronic
+        signature, each of which is an original. Changes must be in writing and signed by both Parties. If a
+        clause is invalid, the remainder remains in force. English is the authentic language unless a signed
+        French translation states that it prevails.
       </p>
+      <p>
+        Each signatory warrants that they have authority to bind the Party they represent.
+      </p>
+
       <div class="sig">
         <div>
           <p><strong>Contractor</strong></p>
           <p>Name: Keith Cordova</p>
+          <p class="small">Capacity: Independent contractor</p>
           <div class="line"></div>
           <p class="small">Signature</p>
           <div class="line"></div>
@@ -603,6 +774,7 @@
         </div>
         <div>
           <p><strong>Operator</strong></p>
+          <p>Legal name: ____________________</p>
           <p>Name / title: ____________________</p>
           <div class="line"></div>
           <p class="small">Signature / company stamp</p>
@@ -612,20 +784,9 @@
       </div>
     </section>
 
-    <h2>8. How we work until June 2027</h2>
-    <ul class="tight">
-      <li>Demo on local or staging URLs; production domain only after phase 4</li>
-      <li>You review in writing at the end of each phase</li>
-      <li>Fees, hours, and hosting costs belong in a separate statement of work</li>
-      <li>Source repository remains private; this PDF is stored with the project documentation</li>
-    </ul>
-    <p>
-      Related engineering notes (internal): architecture, coding standards, EU payments, cancellation, UI
-      theme — held in the project <span class="mono">docs/</span> folder.
-    </p>
     <p class="footer-note">
-      End of proposal pack v1.0 — 16 September 2026. Print double-sided if you wish; signature page is section
-      7. Keep a signed copy each.
+      End of proposal pack v1.1 — 16 September 2026. Print double-sided if you wish; the signature block is
+      section 10. Keep a signed copy each. Counsel should review before signature.
     </p>
   </body>
 </html>

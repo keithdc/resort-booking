@@ -4,7 +4,13 @@
  * @dependencies inventory.rules
  */
 
-import type { CancellationTierWrite } from '@resort-booking/shared-types';
+import type {
+  CalendarDayOccupancy,
+  CancellationTierWrite,
+  HoldStatus,
+  InventoryKind,
+  StaffReservation,
+} from '@resort-booking/shared-types';
 import { nightsBetween } from '../inventory/inventory.rules';
 
 export const DEFAULT_CANCELLATION_TIERS: CancellationTierWrite[] = [
@@ -101,6 +107,111 @@ export function overlapNights(
   const end = checkOut < toExclusive ? checkOut : toExclusive;
   const n = nightsBetween(start, end);
   return n === null ? 0 : n;
+}
+
+export type PipelineBucket = 'confirmed' | 'pending_payment' | 'cancelled' | 'expired' | 'other';
+
+export type CalendarLane = 'booking' | 'rebook' | 'cancelled' | 'pending';
+
+const LANE_ORDER: Record<CalendarLane, number> = {
+  booking: 0,
+  rebook: 1,
+  pending: 2,
+  cancelled: 3,
+};
+
+/**
+ * How a stay should appear on a staff calendar day (not inventory occupancy).
+ */
+export function classifyCalendarLane(stay: StaffReservation): CalendarLane | null {
+  if (stay.status === 'expired') {
+    return null;
+  }
+  if (stay.rebookOfId !== null && stay.status !== 'cancelled' && stay.status !== 'released') {
+    return 'rebook';
+  }
+  if (stay.kind === 'reservation' && stay.status === 'confirmed') {
+    return 'booking';
+  }
+  if (stay.status === 'cancelled' || stay.status === 'released') {
+    return 'cancelled';
+  }
+  if (stay.status === 'active') {
+    return 'pending';
+  }
+  return null;
+}
+
+/**
+ * Booked / rebook / cancelled / pending counts for one night.
+ */
+export function calendarDayCounts(stays: StaffReservation[], date: string): CalendarDayOccupancy {
+  let bookingCount = 0;
+  let rebookCount = 0;
+  let cancelledCount = 0;
+  let pendingCount = 0;
+  for (const stay of stays) {
+    if (!stayOccupiesDate(stay.checkIn, stay.checkOut, date)) {
+      continue;
+    }
+    const lane = classifyCalendarLane(stay);
+    if (lane === 'booking') {
+      bookingCount += 1;
+    } else if (lane === 'rebook') {
+      rebookCount += 1;
+    } else if (lane === 'cancelled') {
+      cancelledCount += 1;
+    } else if (lane === 'pending') {
+      pendingCount += 1;
+    }
+  }
+  return { date, bookingCount, rebookCount, cancelledCount, pendingCount };
+}
+
+/**
+ * Confirmed bookings first, then rebooks, holds, cancelled.
+ */
+export function sortCalendarDayStays(stays: StaffReservation[]): StaffReservation[] {
+  return [...stays]
+    .filter((stay: StaffReservation): boolean => classifyCalendarLane(stay) !== null)
+    .sort((left: StaffReservation, right: StaffReservation): number => {
+      const leftLane = classifyCalendarLane(left);
+      const rightLane = classifyCalendarLane(right);
+      if (leftLane === null || rightLane === null) {
+        return 0;
+      }
+      const byLane = LANE_ORDER[leftLane] - LANE_ORDER[rightLane];
+      if (byLane !== 0) {
+        return byLane;
+      }
+      return left.houseName.localeCompare(right.houseName);
+    });
+}
+
+/**
+ * How a hold or stay should appear on the staff report.
+ */
+export function classifyPipelineRow(kind: InventoryKind, status: HoldStatus): PipelineBucket {
+  if (kind === 'reservation' && status === 'confirmed') {
+    return 'confirmed';
+  }
+  if (status === 'cancelled' || status === 'released') {
+    return 'cancelled';
+  }
+  if (status === 'active') {
+    return 'pending_payment';
+  }
+  if (status === 'expired') {
+    return 'expired';
+  }
+  return 'other';
+}
+
+/**
+ * Destinations that have at least one confirmed stay in the set.
+ */
+export function uniquePropertyCount(stays: StaffReservation[]): number {
+  return new Set(stays.map((stay: StaffReservation): string => stay.propertyId)).size;
 }
 
 function isoFromUtcMs(ms: number): string {

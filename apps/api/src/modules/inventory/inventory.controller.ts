@@ -5,9 +5,10 @@
  */
 
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
-import type { ApiOkBody, Hold, Quote } from '@resort-booking/shared-types';
+import type { ApiOkBody, Hold, HouseSearchResult, Quote } from '@resort-booking/shared-types';
 import { CreateHoldDto } from './dto/create-hold.dto';
 import { QuoteQueryDto } from './dto/quote-query.dto';
+import { SearchQueryDto } from './dto/search-query.dto';
 import { InventoryService } from './inventory.service';
 
 @Controller()
@@ -20,6 +21,14 @@ export class InventoryController {
   @Get('quotes')
   public async getQuote(@Query() query: QuoteQueryDto): Promise<ApiOkBody<Quote>> {
     return { status: 'ok', data: await this.inventory.getQuote(query, true) };
+  }
+
+  /**
+   * Guest stay search across one property or all properties.
+   */
+  @Get('search')
+  public async searchStays(@Query() query: SearchQueryDto): Promise<ApiOkBody<HouseSearchResult[]>> {
+    return { status: 'ok', data: await this.inventory.searchStays(query) };
   }
 
   /**

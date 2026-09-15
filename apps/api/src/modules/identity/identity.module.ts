@@ -6,12 +6,13 @@
 
 import { Module } from '@nestjs/common';
 import { IdentityController } from './identity.controller';
+import { IdentityRepository } from './identity.repository';
 import { IdentityService } from './identity.service';
 import { StaffGuard } from './staff.guard';
 
 @Module({
   controllers: [IdentityController],
-  providers: [IdentityService, StaffGuard],
-  exports: [StaffGuard],
+  providers: [IdentityService, IdentityRepository, StaffGuard],
+  exports: [StaffGuard, IdentityService],
 })
 export class IdentityModule {}

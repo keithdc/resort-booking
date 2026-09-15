@@ -4,12 +4,13 @@
  * @dependencies class-validator
  */
 
-import { IsEmail, IsIn, IsInt, IsString, IsUUID, Matches, Max, MaxLength, Min } from 'class-validator';
+import { IsArray, IsEmail, IsIn, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import type { CreateHoldRequest, PaymentMethod } from '@resort-booking/shared-types';
+import { UUID_LIKE } from '../../../shared/validation/uuid-like';
 
 export class CreateHoldDto implements CreateHoldRequest {
-  @IsUUID()
+  @Matches(UUID_LIKE)
   public houseId!: string;
 
   @Matches(/^\d{4}-\d{2}-\d{2}$/)
@@ -37,4 +38,14 @@ export class CreateHoldDto implements CreateHoldRequest {
   @IsString()
   @MaxLength(40)
   public bookerPhone!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  public guestNote: string = '';
+
+  @IsOptional()
+  @IsArray()
+  @Matches(UUID_LIKE, { each: true })
+  public requestOptionIds: string[] = [];
 }

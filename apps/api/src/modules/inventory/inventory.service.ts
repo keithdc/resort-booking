@@ -10,12 +10,13 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { Hold, Quote } from '@resort-booking/shared-types';
+import type { Hold, HouseSearchResult, Quote } from '@resort-booking/shared-types';
 import { DatabaseService } from '../../shared/database/database.service';
 import { RedisService } from '../../shared/redis/redis.service';
 import { PropertyRepository } from '../property/property.repository';
 import type { CreateHoldDto } from './dto/create-hold.dto';
 import type { QuoteQueryDto } from './dto/quote-query.dto';
+import type { SearchQueryDto } from './dto/search-query.dto';
 import type { HoldRow } from './inventory.repository';
 import { InventoryRepository } from './inventory.repository';
 import {
@@ -93,6 +94,38 @@ export class InventoryService {
   }
 
   /**
+   * Stay search: API decides which houses fit the dates, guests, and calendar.
+   */
+  public async searchStays(query: SearchQueryDto): Promise<HouseSearchResult[]> {
+    const propertySlug =
+      query.propertySlug !== undefined && query.propertySlug.trim() !== ''
+        ? query.propertySlug.trim()
+        : null;
+    const houses = await this.houses.listHousesByPropertySlug(propertySlug, true);
+    const matches: HouseSearchResult[] = [];
+
+    for (const house of houses) {
+      if (query.guestCount > house.capacity) {
+        continue;
+      }
+      const quote = await this.getQuote(
+        {
+          houseId: house.id,
+          checkIn: query.checkIn,
+          checkOut: query.checkOut,
+          guestCount: query.guestCount,
+        },
+        true,
+      );
+      if (quote.available) {
+        matches.push({ house, quote });
+      }
+    }
+
+    return matches;
+  }
+
+  /**
    * Creates a per-house hold. Redis TTL is secondary to the Postgres row.
    */
   public async createHold(dto: CreateHoldDto, rejectPastCheckIn: boolean): Promise<Hold> {
@@ -140,7 +173,20 @@ export class InventoryService {
             bookerName: dto.bookerName.trim(),
             bookerEmail: dto.bookerEmail.trim(),
             bookerPhone: dto.bookerPhone.trim(),
+            guestNote: (dto.guestNote ?? '').trim(),
           });
+          const optionIds = dto.requestOptionIds ?? [];
+          const allowed = await this.houses.listRequestOptions(house.propertyId, true);
+          const allowedIds = new Set(allowed.map((row): string => row.id));
+          for (const optionId of optionIds) {
+            if (!allowedIds.has(optionId)) {
+              throw new BadRequestException({
+                message: 'Unknown house request option',
+                code: 'INVALID_REQUEST_OPTION',
+              });
+            }
+          }
+          await this.inventory.insertBlockRequests(client, inserted.id, optionIds);
           await client.query('COMMIT');
           return inserted;
         } catch (error: unknown) {
@@ -225,6 +271,7 @@ export class InventoryService {
       bookerName: row.booker_name,
       bookerEmail: row.booker_email,
       bookerPhone: row.booker_phone,
+      guestNote: row.guest_note,
       quote,
     };
   }

@@ -9,6 +9,7 @@ describe('UUID_LIKE', (): void => {
   it('accepts hyphenated seed ids that are not RFC variants', (): void => {
     expect(UUID_LIKE.test('22222222-2222-2222-2222-222222222221')).toBe(true);
     expect(UUID_LIKE.test('11111111-1111-1111-1111-111111111111')).toBe(true);
+    expect(UUID_LIKE.test('33333333-3333-3333-3333-333333333332')).toBe(true);
   });
 
   it('rejects empty, short, and unhyphenated values', (): void => {

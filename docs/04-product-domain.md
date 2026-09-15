@@ -76,9 +76,10 @@ Guests must see **where** the resort is, **what it looks like**, and **how to ca
 
 Map rules:
 
-- Embed with **Leaflet + OpenStreetMap** (no Google script on page load). EU-friendly; no Maps API key for the default pin.
+- Embed with **MapLibre GL** and **OpenStreetMap** tiles (no Google script on page load, no Mapbox/Google/CARTO key for the pin).
+- Do not use the Google Maps JavaScript SDK (or Mapbox GL billed tokens) on the listing. Leaflet raster OSM is a fallback, not the default.
 - **Directions:** buttons that open Google Maps and Apple Maps in a new tab (`https://maps.google.com/?q=lat,lng` and the Apple maps URL). That is enough for turn-by-turn.
-- Do not load the Google Maps JavaScript SDK unless the guest has given cookie consent. Prefer the OSM embed + external directions links so ads/maps consent stays simple.
+- Do not load the Google Maps JavaScript SDK unless the guest has given cookie consent. Prefer the OSM-data embed + external directions links so ads/maps consent stays simple.
 - Admin places the pin (address search or lat/lng). Do not hardcode coordinates in the frontend.
 - Unpublished properties still have a map in admin preview; guests never see it.
 

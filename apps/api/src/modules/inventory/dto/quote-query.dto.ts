@@ -4,11 +4,12 @@
  * @dependencies class-validator
  */
 
-import { IsInt, IsUUID, Matches, Max, Min } from 'class-validator';
+import { IsInt, Matches, Max, Min } from 'class-validator';
 import { Type } from 'class-transformer';
+import { UUID_LIKE } from '../../../shared/validation/uuid-like';
 
 export class QuoteQueryDto {
-  @IsUUID()
+  @Matches(UUID_LIKE)
   public houseId!: string;
 
   @Matches(/^\d{4}-\d{2}-\d{2}$/)

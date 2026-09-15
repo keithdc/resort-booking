@@ -172,7 +172,7 @@ Prisma/Stripe client types: wrap in our interfaces at the module boundary. Do no
 
 - **UserAvatar** (`shared/components/user-avatar.tsx`) — all staff/guest avatars. Deterministic color from initials. Never a raw MUI `Avatar` with a hardcoded `bgcolor` for people.
 - **getAvatarColor / getInitials** (`shared/utils/avatar-color.ts`) — same person, same color in web and admin.
-- **PropertyMap** (`shared/components/property-map.tsx`) — Leaflet + OSM pin from `lat`/`lng`. Directions links to Google Maps and Apple Maps. Never paste a raw iframe with hardcoded coordinates.
+- **PropertyMap** (`shared/components/property-map.tsx`) — MapLibre + OpenFreeMap pin from `lat`/`lng`. Directions links to Google Maps and Apple Maps. Never paste a raw iframe with hardcoded coordinates.
 - **PhotoGallery** (`shared/components/photo-gallery.tsx`) — all property and house galleries.
 - Do not port CRM-only editors (mention chips, workflow localStorage) unless a story explicitly needs them.
 

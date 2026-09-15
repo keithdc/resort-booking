@@ -34,7 +34,13 @@ Never hardcode hex in components. Dark mode still uses theme tokens (`docs/02-co
 
 - Cards: 8px radius, light border (`divider`) or quiet elevation — not heavy Material shadows.
 - Guest house cards: image, name, capacity, price for selected dates; whole card clickable.
-- Property / house pages: photo gallery (8px), contact row (phone, email), map (8px container). Map is full width under the gallery or in a side column on desktop — never a tiny unreadable widget.
+- Property / house pages: photo **mosaic** (8px), contact row (phone, email), **full-width** MapLibre map under the copy or beside checkout on desktop — never a tiny unreadable widget.
 - Checkout: one column on mobile, two on desktop (summary sticky). Same 8px fields.
+
+## Flow we take from Airbnb (not the look)
+
+Guests should feel a **straight path**: dates and guest count → houses that are free → one house page → name, email, phone, pay. No marketplace, no host chat, no request-to-book.
+
+We do **not** copy Airbnb’s brand, coral pills, round search capsule, or card chrome. Visual language stays this file: navy primary, sand accent, 8px controls, warm paper, photography-led house pages.
 
 Brand photos and exact hex can wait until the client’s identity pack. **Radius 8 and the payment layout do not wait.**

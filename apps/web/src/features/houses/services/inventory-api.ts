@@ -4,7 +4,7 @@
  * @dependencies api-client
  */
 
-import type { CreateHoldRequest, Hold, Quote } from '@resort-booking/shared-types';
+import type { CreateHoldRequest, Hold, HouseSearchResult, Quote } from '@resort-booking/shared-types';
 import { getApiOk } from '@/shared/services/api-client';
 
 /**
@@ -23,6 +23,26 @@ export function fetchQuote(
     guestCount: String(guestCount),
   });
   return getApiOk<Quote>(`/quotes?${params.toString()}`);
+}
+
+/**
+ * Stay search. Nest filters availability and capacity.
+ */
+export function fetchStaySearch(
+  checkIn: string,
+  checkOut: string,
+  guestCount: number,
+  propertySlug: string,
+): Promise<HouseSearchResult[]> {
+  const params = new URLSearchParams({
+    checkIn,
+    checkOut,
+    guestCount: String(guestCount),
+  });
+  if (propertySlug !== '') {
+    params.set('propertySlug', propertySlug);
+  }
+  return getApiOk<HouseSearchResult[]>(`/search?${params.toString()}`);
 }
 
 /**

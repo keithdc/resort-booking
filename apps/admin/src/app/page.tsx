@@ -1,16 +1,16 @@
 /**
  * @file apps/admin/src/app/page.tsx
- * @feature property
- * @dependencies StaffHomePage
+ * @feature reservations
+ * @dependencies OccupancyHomePage
  */
 
-import { StaffHomePage } from '@/features/property';
+import { OccupancyHomePage } from '@/features/reservations';
 
 export const dynamic = 'force-dynamic';
 
 /**
- * Admin home.
+ * Admin home calendar.
  */
 export default async function Home(): Promise<React.JSX.Element> {
-  return <StaffHomePage />;
+  return <OccupancyHomePage />;
 }

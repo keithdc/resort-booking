@@ -23,6 +23,7 @@ export interface HoldRow {
   booker_name: string;
   booker_email: string;
   booker_phone: string;
+  guest_note: string;
 }
 
 interface InsertHoldInput {
@@ -37,6 +38,7 @@ interface InsertHoldInput {
   bookerName: string;
   bookerEmail: string;
   bookerPhone: string;
+  guestNote: string;
 }
 
 @Injectable()
@@ -95,15 +97,15 @@ export class InventoryRepository {
       INSERT INTO inventory_blocks (
         organization_id, property_id, house_id, kind, status,
         check_in, check_out, guest_count, payment_method, expires_at,
-        booker_name, booker_email, booker_phone
+        booker_name, booker_email, booker_phone, guest_note
       ) VALUES (
         $1, $2, $3, 'hold', 'active',
         $4, $5, $6, $7, $8,
-        $9, $10, $11
+        $9, $10, $11, $12
       )
       RETURNING id, organization_id, property_id, house_id, status,
         check_in::text, check_out::text, guest_count, payment_method, expires_at,
-        booker_name, booker_email, booker_phone
+        booker_name, booker_email, booker_phone, guest_note
       `,
       [
         input.organizationId,
@@ -117,6 +119,7 @@ export class InventoryRepository {
         input.bookerName,
         input.bookerEmail,
         input.bookerPhone,
+        input.guestNote,
       ],
     );
     const row = result.rows[0];
@@ -127,6 +130,25 @@ export class InventoryRepository {
   }
 
   /**
+   * Guest-chosen house requests on a hold/stay.
+   */
+  public async insertBlockRequests(
+    client: PoolClient,
+    inventoryBlockId: string,
+    optionIds: string[],
+  ): Promise<void> {
+    for (const optionId of optionIds) {
+      await client.query(
+        `
+        INSERT INTO inventory_block_requests (inventory_block_id, request_option_id)
+        VALUES ($1, $2)
+        `,
+        [inventoryBlockId, optionId],
+      );
+    }
+  }
+
+  /**
    * Loads a hold by id.
    */
   public async getHoldById(holdId: string): Promise<HoldRow | null> {
@@ -134,7 +156,7 @@ export class InventoryRepository {
       `
       SELECT id, organization_id, property_id, house_id, status,
         check_in::text, check_out::text, guest_count, payment_method, expires_at,
-        booker_name, booker_email, booker_phone
+        booker_name, booker_email, booker_phone, guest_note
       FROM inventory_blocks
       WHERE id = $1 AND kind = 'hold'
       `,

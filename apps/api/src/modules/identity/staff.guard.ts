@@ -1,30 +1,42 @@
 /**
  * @file apps/api/src/modules/identity/staff.guard.ts
  * @feature identity
- * @dependencies @nestjs/common
+ * @dependencies IdentityService
  */
 
 import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import type { StaffProfile } from '@resort-booking/shared-types';
 import type { Request } from 'express';
+import { IdentityService } from './identity.service';
+
+export interface StaffRequest extends Request {
+  staff?: StaffProfile;
+}
 
 @Injectable()
 export class StaffGuard implements CanActivate {
-  public constructor(private readonly config: ConfigService) {}
+  public constructor(private readonly identity: IdentityService) {}
 
   /**
-   * Prototype staff gate. Guest tokens must never satisfy this.
+   * Accepts a staff session token or the prototype STAFF_TOKEN env value.
    */
-  public canActivate(context: ExecutionContext): boolean {
-    const request = context.switchToHttp().getRequest<Request>();
+  public async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request = context.switchToHttp().getRequest<StaffRequest>();
     const header = request.header('x-staff-token');
-    const expected = this.config.getOrThrow<string>('STAFF_TOKEN');
-    if (header !== expected) {
+    if (header === undefined || header === '') {
       throw new UnauthorizedException({
         message: 'Staff authentication required',
         code: 'STAFF_UNAUTHORIZED',
       });
     }
+    const staff = await this.identity.staffFromToken(header);
+    if (staff === null) {
+      throw new UnauthorizedException({
+        message: 'Staff authentication required',
+        code: 'STAFF_UNAUTHORIZED',
+      });
+    }
+    request.staff = staff;
     return true;
   }
 }

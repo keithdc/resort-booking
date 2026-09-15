@@ -4,11 +4,17 @@
  * @dependencies reservations.rules
  */
 
+import type { StaffReservation } from '@resort-booking/shared-types';
 import {
+  calendarDayCounts,
+  classifyCalendarLane,
+  classifyPipelineRow,
   eachIsoDate,
   hasInvertedRefundLadder,
   overlapNights,
+  sortCalendarDayStays,
   stayOccupiesDate,
+  uniquePropertyCount,
   validateCancellationTiers,
 } from './reservations.rules';
 
@@ -89,3 +95,100 @@ describe('reservations.rules', (): void => {
     expect(stayOccupiesDate('2026-09-20', '2026-09-23', '2026-09-19')).toBe(false);
   });
 });
+
+describe('report pipeline buckets', (): void => {
+  it('treats unpaid holds as pending payment', (): void => {
+    expect(classifyPipelineRow('hold', 'active')).toBe('pending_payment');
+  });
+
+  it('groups cancelled stays and released holds together', (): void => {
+    expect(classifyPipelineRow('reservation', 'cancelled')).toBe('cancelled');
+    expect(classifyPipelineRow('hold', 'released')).toBe('cancelled');
+  });
+
+  it('counts unique destinations with confirmed stays', (): void => {
+    const stays: StaffReservation[] = [
+      stubStay('p1'),
+      stubStay('p1'),
+      stubStay('p2'),
+    ];
+    expect(uniquePropertyCount(stays)).toBe(2);
+  });
+});
+
+describe('staff calendar lanes', (): void => {
+  it('keeps confirmed stays, rebooks, and cancellations on separate counts', (): void => {
+    const stays: StaffReservation[] = [
+      { ...stubStay('p1'), id: 'b', checkIn: '2026-09-14', checkOut: '2026-09-16', rebookOfId: null },
+      {
+        ...stubStay('p1'),
+        id: 'r',
+        checkIn: '2026-09-14',
+        checkOut: '2026-09-16',
+        rebookOfId: 'old',
+      },
+      {
+        ...stubStay('p1'),
+        id: 'c',
+        checkIn: '2026-09-14',
+        checkOut: '2026-09-16',
+        status: 'cancelled',
+        rebookOfId: null,
+      },
+    ];
+    expect(calendarDayCounts(stays, '2026-09-14')).toEqual({
+      date: '2026-09-14',
+      bookingCount: 1,
+      rebookCount: 1,
+      cancelledCount: 1,
+      pendingCount: 0,
+    });
+  });
+
+  it('does not treat a cancelled rebook as a live rebook', (): void => {
+    const stay: StaffReservation = {
+      ...stubStay('p1'),
+      status: 'cancelled',
+      rebookOfId: 'old',
+      checkIn: '2026-09-14',
+      checkOut: '2026-09-15',
+    };
+    expect(classifyCalendarLane(stay)).toBe('cancelled');
+  });
+
+  it('sorts live bookings ahead of cancelled rows', (): void => {
+    const cancelled: StaffReservation = {
+      ...stubStay('p1'),
+      id: 'c',
+      houseName: 'Alpha',
+      status: 'cancelled',
+    };
+    const booked: StaffReservation = { ...stubStay('p1'), id: 'b', houseName: 'Zulu' };
+    expect(sortCalendarDayStays([cancelled, booked]).map((row): string => row.id)).toEqual(['b', 'c']);
+  });
+});
+
+function stubStay(propertyId: string): StaffReservation {
+  return {
+    id: propertyId,
+    organizationId: 'org',
+    propertyId,
+    propertyName: 'Prop',
+    houseId: 'h',
+    houseName: 'House',
+    checkIn: '2026-09-01',
+    checkOut: '2026-09-03',
+    guestCount: 2,
+    bookerName: 'A',
+    bookerEmail: 'a@example.com',
+    bookerPhone: '+330',
+    guestNote: '',
+    paymentMethod: 'card',
+    status: 'confirmed',
+    kind: 'reservation',
+    rebookOfId: null,
+    totalCents: 100,
+    currencyCode: 'EUR',
+    requestNames: [],
+  };
+}

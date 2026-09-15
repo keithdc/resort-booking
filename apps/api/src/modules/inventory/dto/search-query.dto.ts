@@ -1,0 +1,26 @@
+/**
+ * @file apps/api/src/modules/inventory/dto/search-query.dto.ts
+ * @feature inventory
+ * @dependencies class-validator
+ */
+
+import { Type } from 'class-transformer';
+import { IsInt, IsOptional, IsString, Matches, Max, Min } from 'class-validator';
+
+export class SearchQueryDto {
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  public checkIn!: string;
+
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  public checkOut!: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(50)
+  public guestCount!: number;
+
+  @IsOptional()
+  @IsString()
+  public propertySlug?: string;
+}

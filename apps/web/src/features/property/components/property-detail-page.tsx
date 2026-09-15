@@ -4,73 +4,91 @@
  * @dependencies gallery, map, houses
  */
 
-import { Box, Card, CardActionArea, CardContent, CardMedia, Container, Link as MuiLink, Stack, Typography } from '@mui/material';
-import NextLink from 'next/link';
+import { Box, Container, Link as MuiLink, Stack, Typography } from '@mui/material';
+import { BlurFade, Highlighter } from '@resort-booking/ui';
+import { HouseListingCard } from '@/features/houses/components/house-listing-card';
 import { PhotoGallery } from '@/shared/components/photo-gallery';
 import { PropertyMap } from '@/shared/components/property-map';
-import { formatCents } from '@/shared/utils/money';
+import { formatAddress } from '@/shared/utils/format-address';
+import { withDefaultStay, type StayQuery } from '@/shared/utils/stay-query';
 import { fetchHouses, fetchProperty } from '../services/property-api';
+import { StaySearchBar } from './stay-search-bar';
 
 interface PropertyDetailPageProps {
   slug: string;
 }
 
 /**
- * Property listing: photos, contact, map, houses.
+ * Property listing: short header, photos, houses to book, map.
  */
 export async function PropertyDetailPage({ slug }: PropertyDetailPageProps): Promise<React.JSX.Element> {
   const [property, houses] = await Promise.all([fetchProperty(slug), fetchHouses(slug)]);
-
+  const stay: StayQuery = withDefaultStay({
+    checkIn: '',
+    checkOut: '',
+    nights: '1',
+    guestCount: '2',
+    propertySlug: property.slug,
+  });
   return (
-    <Container sx={{ py: 6 }}>
-      <Typography variant="h3" component="h1" gutterBottom>
-        {property.name}
-      </Typography>
-      <Typography color="text.secondary" sx={{ mb: 3, maxWidth: 720 }}>
-        {property.description}
-      </Typography>
-      <PhotoGallery photos={property.photos} altFallback={property.name} />
-      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ my: 3 }}>
-        <MuiLink href={`tel:${property.phone}`}>{property.phone}</MuiLink>
-        <MuiLink href={`mailto:${property.email}`}>{property.email}</MuiLink>
-        <Typography color="text.secondary">
-          {property.addressLine}, {property.postalCode} {property.city}
+    <Box>
+      <Container sx={{ pt: { xs: 3, md: 5 }, pb: 2 }} maxWidth="lg">
+        <BlurFade inView={false}>
+          <Typography variant="h3" component="h1">
+            {property.name}
+          </Typography>
+          <Typography color="text.secondary" sx={{ mb: 2, lineHeight: 2 }}>
+            Stay in{' '}
+            <Highlighter action="underline" tone="secondary" isView={false}>
+              {property.city}
+            </Highlighter>
+          </Typography>
+          <Typography color="text.secondary" sx={{ mb: 3, maxWidth: 720 }}>
+            {property.description}
+          </Typography>
+        </BlurFade>
+        <StaySearchBar initial={stay} />
+      </Container>
+      <Container maxWidth="lg" sx={{ py: 3 }}>
+        <PhotoGallery photos={property.photos} altFallback={property.name} />
+      </Container>
+      <Container maxWidth="lg" sx={{ pb: 8 }}>
+        <Typography variant="h4" component="h2" gutterBottom sx={{ mt: 2 }}>
+          Choose a property
         </Typography>
-      </Stack>
-      <Box sx={{ mb: 4 }}>
+        <Typography color="text.secondary" sx={{ mb: 3 }}>
+          Open a property to hold the dates and pay. The map below is this destination.
+        </Typography>
+        {houses.length === 0 ? (
+          <Typography>No published properties here yet.</Typography>
+        ) : (
+          <Box
+            sx={{
+              display: 'grid',
+              gap: 3,
+              gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
+              mb: 6,
+            }}
+          >
+            {houses.map((house, index) => (
+              <BlurFade key={house.id} delay={index * 0.06}>
+                <HouseListingCard house={house} quote={null} stay={stay} />
+              </BlurFade>
+            ))}
+          </Box>
+        )}
+        <Typography variant="h5" component="h2" gutterBottom>
+          Where you will stay
+        </Typography>
+        <Typography sx={{ mb: 1 }}>
+          {formatAddress(property.addressLine, property.postalCode, property.city, property.countryCode)}
+        </Typography>
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mb: 2 }}>
+          <MuiLink href={`tel:${property.phone}`}>{property.phone}</MuiLink>
+          <MuiLink href={`mailto:${property.email}`}>{property.email}</MuiLink>
+        </Stack>
         <PropertyMap latitude={property.latitude} longitude={property.longitude} label={property.name} />
-      </Box>
-      <Typography variant="h4" component="h2" gutterBottom>
-        Houses
-      </Typography>
-      {houses.length === 0 ? (
-        <Typography>No published houses at this property yet.</Typography>
-      ) : (
-        <Box
-          sx={{
-            display: 'grid',
-            gap: 2,
-            gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
-          }}
-        >
-          {houses.map((house) => (
-            <Card key={house.id}>
-              <CardActionArea component={NextLink} href={`/properties/${property.slug}/houses/${house.slug}`}>
-                {house.coverPhotoUrl !== null ? (
-                  <CardMedia component="img" height="200" image={house.coverPhotoUrl} alt={house.name} />
-                ) : null}
-                <CardContent>
-                  <Typography variant="h6">{house.name}</Typography>
-                  <Typography color="text.secondary">Up to {house.capacity} guests</Typography>
-                  <Typography sx={{ mt: 1 }}>
-                    From {formatCents(house.nightlyRateCents, house.currencyCode)} / night
-                  </Typography>
-                </CardContent>
-              </CardActionArea>
-            </Card>
-          ))}
-        </Box>
-      )}
-    </Container>
+      </Container>
+    </Box>
   );
 }

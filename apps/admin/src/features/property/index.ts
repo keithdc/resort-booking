@@ -1,7 +1,8 @@
 /**
  * @file apps/admin/src/features/property/index.ts
  * @feature property
- * @dependencies staff home
+ * @dependencies staff properties
  */
 
-export { StaffHomePage } from './components/staff-home-page';
+export { StaffPropertiesPage } from './components/staff-properties-page';
+export { PropertyWorkspacePage } from './components/property-workspace-page';

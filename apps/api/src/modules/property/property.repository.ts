@@ -5,8 +5,24 @@
  */
 
 import { Injectable } from '@nestjs/common';
-import type { HouseDetail, HouseSummary, Photo, PropertyDetail, PropertySummary } from '@resort-booking/shared-types';
+import type {
+  CreatePropertyRequest,
+  HouseAmenity,
+  HouseAmenityWrite,
+  HouseDetail,
+  HouseRequestOption,
+  HouseRequestOptionWrite,
+  HouseSummary,
+  HouseWrite,
+  Photo,
+  PhotoWrite,
+  PropertyDetail,
+  PropertySummary,
+  UpdatePropertyRequest,
+} from '@resort-booking/shared-types';
+import type { PoolClient } from 'pg';
 import { DatabaseService } from '../../shared/database/database.service';
+import { DEFAULT_CANCELLATION_TIERS } from '../reservations/reservations.rules';
 
 interface PropertyRow {
   id: string;
@@ -24,6 +40,7 @@ interface PropertyRow {
   email: string;
   published: boolean;
   timezone: string;
+  custom_requests_enabled: boolean;
   cover_photo_url: string | null;
 }
 
@@ -38,7 +55,10 @@ interface HouseRow {
   property_latitude: string;
   property_longitude: string;
   property_address_line: string;
+  property_postal_code: string;
   property_city: string;
+  property_country_code: string;
+  property_timezone: string;
   slug: string;
   name: string;
   description: string;
@@ -123,7 +143,7 @@ export class PropertyRepository {
    * Lists houses for a property slug.
    */
   public async listHousesByPropertySlug(
-    propertySlug: string,
+    propertySlug: string | null,
     publishedOnly: boolean,
   ): Promise<HouseSummary[]> {
     const result = await this.database.query<HouseRow>(
@@ -131,7 +151,8 @@ export class PropertyRepository {
       SELECT h.*, p.slug AS property_slug, p.name AS property_name,
         p.phone AS property_phone, p.email AS property_email,
         p.latitude AS property_latitude, p.longitude AS property_longitude,
-        p.address_line AS property_address_line, p.city AS property_city,
+        p.address_line AS property_address_line, p.postal_code AS property_postal_code, p.city AS property_city,
+        p.country_code AS property_country_code, p.timezone AS property_timezone,
         (
           SELECT hp.url FROM house_photos hp
           WHERE hp.house_id = h.id
@@ -140,9 +161,9 @@ export class PropertyRepository {
         ) AS cover_photo_url
       FROM houses h
       INNER JOIN properties p ON p.id = h.property_id
-      WHERE p.slug = $1
+      WHERE ($1::text IS NULL OR p.slug = $1)
         AND ($2::boolean = false OR (p.published = true AND h.published = true))
-      ORDER BY h.name ASC
+      ORDER BY p.name ASC, h.name ASC
       `,
       [propertySlug, publishedOnly],
     );
@@ -162,7 +183,8 @@ export class PropertyRepository {
       SELECT h.*, p.slug AS property_slug, p.name AS property_name,
         p.phone AS property_phone, p.email AS property_email,
         p.latitude AS property_latitude, p.longitude AS property_longitude,
-        p.address_line AS property_address_line, p.city AS property_city,
+        p.address_line AS property_address_line, p.postal_code AS property_postal_code, p.city AS property_city,
+        p.country_code AS property_country_code, p.timezone AS property_timezone,
         (
           SELECT hp.url FROM house_photos hp
           WHERE hp.house_id = h.id
@@ -181,7 +203,8 @@ export class PropertyRepository {
       return null;
     }
     const photos = await this.listHousePhotos(row.id);
-    return mapHouseDetail(row, photos);
+    const amenities = await this.listHouseAmenities(row.id);
+    return mapHouseDetail(row, photos, amenities);
   }
 
   /**
@@ -193,7 +216,8 @@ export class PropertyRepository {
       SELECT h.*, p.slug AS property_slug, p.name AS property_name,
         p.phone AS property_phone, p.email AS property_email,
         p.latitude AS property_latitude, p.longitude AS property_longitude,
-        p.address_line AS property_address_line, p.city AS property_city,
+        p.address_line AS property_address_line, p.postal_code AS property_postal_code, p.city AS property_city,
+        p.country_code AS property_country_code, p.timezone AS property_timezone,
         (
           SELECT hp.url FROM house_photos hp
           WHERE hp.house_id = h.id
@@ -211,7 +235,510 @@ export class PropertyRepository {
       return null;
     }
     const photos = await this.listHousePhotos(row.id);
-    return mapHouseDetail(row, photos);
+    const amenities = await this.listHouseAmenities(row.id);
+    return mapHouseDetail(row, photos, amenities);
+  }
+
+  /**
+   * Staff property by id, including unpublished.
+   */
+  public async getPropertyById(propertyId: string): Promise<PropertyDetail | null> {
+    const result = await this.database.query<PropertyRow>(
+      `
+      SELECT p.*,
+        (
+          SELECT pp.url FROM property_photos pp
+          WHERE pp.property_id = p.id
+          ORDER BY pp.sort_order ASC
+          LIMIT 1
+        ) AS cover_photo_url
+      FROM properties p
+      WHERE p.id = $1
+      `,
+      [propertyId],
+    );
+    const row = result.rows[0];
+    if (row === undefined) {
+      return null;
+    }
+    const photos = await this.listPropertyPhotos(row.id);
+    return {
+      ...mapPropertySummary(row),
+      addressLine: row.address_line,
+      postalCode: row.postal_code,
+      photos,
+    };
+  }
+
+  /**
+   * Houses for a property id (staff: unpublished included).
+   */
+  public async listHousesByPropertyId(propertyId: string): Promise<HouseSummary[]> {
+    const result = await this.database.query<HouseRow>(
+      `
+      SELECT h.*, p.slug AS property_slug, p.name AS property_name,
+        p.phone AS property_phone, p.email AS property_email,
+        p.latitude AS property_latitude, p.longitude AS property_longitude,
+        p.address_line AS property_address_line, p.postal_code AS property_postal_code, p.city AS property_city,
+        p.country_code AS property_country_code, p.timezone AS property_timezone,
+        (
+          SELECT hp.url FROM house_photos hp
+          WHERE hp.house_id = h.id
+          ORDER BY hp.sort_order ASC
+          LIMIT 1
+        ) AS cover_photo_url
+      FROM houses h
+      INNER JOIN properties p ON p.id = h.property_id
+      WHERE h.property_id = $1
+      ORDER BY h.name ASC
+      `,
+      [propertyId],
+    );
+    return result.rows.map(mapHouseSummary);
+  }
+
+  /**
+   * True when this org already uses the slug.
+   */
+  public async slugTaken(organizationId: string, slug: string, exceptPropertyId: string | null): Promise<boolean> {
+    const result = await this.database.query<{ exists: boolean }>(
+      `
+      SELECT EXISTS (
+        SELECT 1 FROM properties
+        WHERE organization_id = $1 AND slug = $2 AND ($3::uuid IS NULL OR id <> $3)
+      ) AS exists
+      `,
+      [organizationId, slug, exceptPropertyId],
+    );
+    return result.rows[0]?.exists === true;
+  }
+
+  /**
+   * How many refund tiers this property has (publish gate).
+   */
+  public async countCancellationTiers(propertyId: string): Promise<number> {
+    const result = await this.database.query<{ count: string }>(
+      'SELECT COUNT(*)::text AS count FROM cancellation_tiers WHERE property_id = $1',
+      [propertyId],
+    );
+    return Number.parseInt(result.rows[0]?.count ?? '0', 10);
+  }
+
+  /**
+   * Inserts a property, seed refund ladder, and rebook flags in one transaction.
+   */
+  public async createProperty(
+    organizationId: string,
+    input: CreatePropertyRequest,
+  ): Promise<PropertyDetail> {
+    return this.database.withClient(async (client: PoolClient): Promise<PropertyDetail> => {
+      await client.query('BEGIN');
+      try {
+        const inserted = await client.query<PropertyRow>(
+          `
+          INSERT INTO properties (
+            organization_id, slug, name, description, address_line, city, country_code, postal_code,
+            latitude, longitude, phone, email, published, timezone, custom_requests_enabled
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+          RETURNING *, NULL::text AS cover_photo_url
+          `,
+          [
+            organizationId,
+            input.slug,
+            input.name,
+            input.description,
+            input.addressLine,
+            input.city,
+            input.countryCode,
+            input.postalCode,
+            input.latitude,
+            input.longitude,
+            input.phone,
+            input.email,
+            input.published,
+            input.timezone,
+            input.customRequestsEnabled,
+          ],
+        );
+        const row = inserted.rows[0];
+        if (row === undefined) {
+          throw new Error('Property insert returned no row');
+        }
+        await client.query(
+          `
+          INSERT INTO property_rebook_settings (
+            property_id, organization_id, rebookable, rebook_fee_type, rebook_fee_value
+          ) VALUES ($1, $2, false, 'none', 0)
+          `,
+          [row.id, organizationId],
+        );
+        for (const tier of DEFAULT_CANCELLATION_TIERS) {
+          await client.query(
+            `
+            INSERT INTO cancellation_tiers (
+              organization_id, property_id, min_days_before_check_in, refund_percent
+            ) VALUES ($1, $2, $3, $4)
+            `,
+            [organizationId, row.id, tier.minDaysBeforeCheckIn, tier.refundPercent],
+          );
+        }
+        let sort = 0;
+        for (const photo of input.photos) {
+          await client.query(
+            `
+            INSERT INTO property_photos (organization_id, property_id, url, alt_text, sort_order)
+            VALUES ($1,$2,$3,$4,$5)
+            `,
+            [organizationId, row.id, photo.url.trim(), photo.altText.trim(), sort],
+          );
+          sort += 1;
+        }
+        await client.query('COMMIT');
+        const photos = await this.listPropertyPhotos(row.id);
+        return {
+          ...mapPropertySummary(row),
+          addressLine: row.address_line,
+          postalCode: row.postal_code,
+          photos,
+        };
+      } catch (error: unknown) {
+        await client.query('ROLLBACK');
+        throw error;
+      }
+    });
+  }
+
+  /**
+   * Updates listing fields. Publish is allowed only when the caller already checked tiers.
+   */
+  public async updateProperty(propertyId: string, input: UpdatePropertyRequest): Promise<PropertyDetail | null> {
+    const result = await this.database.query<PropertyRow>(
+      `
+      UPDATE properties SET
+        slug = $2, name = $3, description = $4, address_line = $5, city = $6, country_code = $7,
+        postal_code = $8, latitude = $9, longitude = $10, phone = $11, email = $12,
+        published = $13, timezone = $14, custom_requests_enabled = $15
+      WHERE id = $1
+      RETURNING *,
+        (
+          SELECT pp.url FROM property_photos pp
+          WHERE pp.property_id = properties.id
+          ORDER BY pp.sort_order ASC
+          LIMIT 1
+        ) AS cover_photo_url
+      `,
+      [
+        propertyId,
+        input.slug,
+        input.name,
+        input.description,
+        input.addressLine,
+        input.city,
+        input.countryCode,
+        input.postalCode,
+        input.latitude,
+        input.longitude,
+        input.phone,
+        input.email,
+        input.published,
+        input.timezone,
+        input.customRequestsEnabled,
+      ],
+    );
+    const row = result.rows[0];
+    if (row === undefined) {
+      return null;
+    }
+    await this.replacePropertyPhotos(row.organization_id, row.id, input.photos);
+    const photos = await this.listPropertyPhotos(row.id);
+    return {
+      ...mapPropertySummary(row),
+      addressLine: row.address_line,
+      postalCode: row.postal_code,
+      photos,
+    };
+  }
+
+  /**
+   * House slug uniqueness inside one property.
+   */
+  public async houseSlugTaken(
+    propertyId: string,
+    slug: string,
+    exceptHouseId: string | null,
+  ): Promise<boolean> {
+    const result = await this.database.query<{ exists: boolean }>(
+      `
+      SELECT EXISTS (
+        SELECT 1 FROM houses
+        WHERE property_id = $1 AND slug = $2 AND ($3::uuid IS NULL OR id <> $3)
+      ) AS exists
+      `,
+      [propertyId, slug, exceptHouseId],
+    );
+    return result.rows[0]?.exists === true;
+  }
+
+  /**
+   * Creates a house and its amenity list.
+   */
+  public async createHouse(
+    organizationId: string,
+    propertyId: string,
+    input: HouseWrite,
+  ): Promise<HouseDetail> {
+    const inserted = await this.database.query<{ id: string }>(
+      `
+      INSERT INTO houses (
+        organization_id, property_id, slug, name, description, capacity, published,
+        nightly_rate_cents, currency_code
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+      RETURNING id
+      `,
+      [
+        organizationId,
+        propertyId,
+        input.slug,
+        input.name,
+        input.description,
+        input.capacity,
+        input.published,
+        input.nightlyRateCents,
+        input.currencyCode,
+      ],
+    );
+    const id = inserted.rows[0]?.id;
+    if (id === undefined) {
+      throw new Error('House insert returned no row');
+    }
+    await this.replaceAmenities(organizationId, propertyId, id, input.amenities);
+    await this.replaceHousePhotos(organizationId, propertyId, id, input.photos);
+    const house = await this.getHouseById(id);
+    if (house === null) {
+      throw new Error('House missing after insert');
+    }
+    return house;
+  }
+
+  /**
+   * Updates a house and replaces amenities.
+   */
+  public async updateHouse(houseId: string, input: HouseWrite): Promise<HouseDetail | null> {
+    const existing = await this.getHouseById(houseId);
+    if (existing === null) {
+      return null;
+    }
+    await this.database.query(
+      `
+      UPDATE houses SET
+        slug = $2, name = $3, description = $4, capacity = $5, published = $6,
+        nightly_rate_cents = $7, currency_code = $8
+      WHERE id = $1
+      `,
+      [
+        houseId,
+        input.slug,
+        input.name,
+        input.description,
+        input.capacity,
+        input.published,
+        input.nightlyRateCents,
+        input.currencyCode,
+      ],
+    );
+    await this.replaceAmenities(existing.organizationId, existing.propertyId, houseId, input.amenities);
+    await this.replaceHousePhotos(existing.organizationId, existing.propertyId, houseId, input.photos);
+    return this.getHouseById(houseId);
+  }
+
+  /**
+   * Amenities shown on the guest house page.
+   */
+  public async listHouseAmenities(houseId: string): Promise<HouseAmenity[]> {
+    const result = await this.database.query<{
+      id: string;
+      house_id: string;
+      name: string;
+      details: string;
+    }>(
+      `
+      SELECT id, house_id, name, details
+      FROM house_amenities
+      WHERE house_id = $1
+      ORDER BY sort_order ASC, name ASC
+      `,
+      [houseId],
+    );
+    return result.rows.map(
+      (row): HouseAmenity => ({
+        id: row.id,
+        houseId: row.house_id,
+        name: row.name,
+        details: row.details,
+      }),
+    );
+  }
+
+  public async listRequestOptions(propertyId: string, publishedOnly: boolean): Promise<HouseRequestOption[]> {
+    const result = await this.database.query<{
+      id: string;
+      organization_id: string;
+      property_id: string;
+      name: string;
+      description: string;
+      published: boolean;
+    }>(
+      `
+      SELECT id, organization_id, property_id, name, description, published
+      FROM property_request_options
+      WHERE property_id = $1
+        AND ($2::boolean = false OR published = true)
+      ORDER BY name ASC
+      `,
+      [propertyId, publishedOnly],
+    );
+    return result.rows.map(
+      (row): HouseRequestOption => ({
+        id: row.id,
+        organizationId: row.organization_id,
+        propertyId: row.property_id,
+        name: row.name,
+        description: row.description,
+        published: row.published,
+      }),
+    );
+  }
+
+  public async createRequestOption(
+    organizationId: string,
+    propertyId: string,
+    input: HouseRequestOptionWrite,
+  ): Promise<HouseRequestOption> {
+    const result = await this.database.query<{
+      id: string;
+      organization_id: string;
+      property_id: string;
+      name: string;
+      description: string;
+      published: boolean;
+    }>(
+      `
+      INSERT INTO property_request_options (organization_id, property_id, name, description, published)
+      VALUES ($1,$2,$3,$4,$5)
+      RETURNING id, organization_id, property_id, name, description, published
+      `,
+      [organizationId, propertyId, input.name, input.description, input.published],
+    );
+    const row = result.rows[0];
+    if (row === undefined) {
+      throw new Error('Request option insert returned no row');
+    }
+    return {
+      id: row.id,
+      organizationId: row.organization_id,
+      propertyId: row.property_id,
+      name: row.name,
+      description: row.description,
+      published: row.published,
+    };
+  }
+
+  public async updateRequestOption(
+    optionId: string,
+    input: HouseRequestOptionWrite,
+  ): Promise<HouseRequestOption | null> {
+    const result = await this.database.query<{
+      id: string;
+      organization_id: string;
+      property_id: string;
+      name: string;
+      description: string;
+      published: boolean;
+    }>(
+      `
+      UPDATE property_request_options
+      SET name = $2, description = $3, published = $4
+      WHERE id = $1
+      RETURNING id, organization_id, property_id, name, description, published
+      `,
+      [optionId, input.name, input.description, input.published],
+    );
+    const row = result.rows[0];
+    if (row === undefined) {
+      return null;
+    }
+    return {
+      id: row.id,
+      organizationId: row.organization_id,
+      propertyId: row.property_id,
+      name: row.name,
+      description: row.description,
+      published: row.published,
+    };
+  }
+
+  public async deleteRequestOption(optionId: string): Promise<boolean> {
+    const result = await this.database.query('DELETE FROM property_request_options WHERE id = $1', [optionId]);
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  private async replaceAmenities(
+    organizationId: string,
+    propertyId: string,
+    houseId: string,
+    amenities: HouseAmenityWrite[],
+  ): Promise<void> {
+    await this.database.query('DELETE FROM house_amenities WHERE house_id = $1', [houseId]);
+    let sort = 0;
+    for (const amenity of amenities) {
+      await this.database.query(
+        `
+        INSERT INTO house_amenities (organization_id, property_id, house_id, name, details, sort_order)
+        VALUES ($1,$2,$3,$4,$5,$6)
+        `,
+        [organizationId, propertyId, houseId, amenity.name.trim(), amenity.details.trim(), sort],
+      );
+      sort += 1;
+    }
+  }
+
+  private async replacePropertyPhotos(
+    organizationId: string,
+    propertyId: string,
+    photos: PhotoWrite[],
+  ): Promise<void> {
+    await this.database.query('DELETE FROM property_photos WHERE property_id = $1', [propertyId]);
+    let sort = 0;
+    for (const photo of photos) {
+      await this.database.query(
+        `
+        INSERT INTO property_photos (organization_id, property_id, url, alt_text, sort_order)
+        VALUES ($1,$2,$3,$4,$5)
+        `,
+        [organizationId, propertyId, photo.url.trim(), photo.altText.trim(), sort],
+      );
+      sort += 1;
+    }
+  }
+
+  private async replaceHousePhotos(
+    organizationId: string,
+    propertyId: string,
+    houseId: string,
+    photos: PhotoWrite[],
+  ): Promise<void> {
+    await this.database.query('DELETE FROM house_photos WHERE house_id = $1', [houseId]);
+    let sort = 0;
+    for (const photo of photos) {
+      await this.database.query(
+        `
+        INSERT INTO house_photos (organization_id, property_id, house_id, url, alt_text, sort_order)
+        VALUES ($1,$2,$3,$4,$5,$6)
+        `,
+        [organizationId, propertyId, houseId, photo.url.trim(), photo.altText.trim(), sort],
+      );
+      sort += 1;
+    }
   }
 
   private async listPropertyPhotos(propertyId: string): Promise<Photo[]> {
@@ -266,6 +793,9 @@ function mapPropertySummary(row: PropertyRow): PropertySummary {
     published: row.published,
     timezone: row.timezone,
     coverPhotoUrl: row.cover_photo_url,
+    customRequestsEnabled: row.custom_requests_enabled,
+    addressLine: row.address_line,
+    postalCode: row.postal_code,
   };
 }
 
@@ -275,6 +805,12 @@ function mapHouseSummary(row: HouseRow): HouseSummary {
     organizationId: row.organization_id,
     propertyId: row.property_id,
     propertySlug: row.property_slug,
+    propertyName: row.property_name,
+    propertyCity: row.property_city,
+    propertyCountryCode: row.property_country_code,
+    propertyTimezone: row.property_timezone,
+    propertyAddressLine: row.property_address_line,
+    propertyPostalCode: row.property_postal_code,
     slug: row.slug,
     name: row.name,
     description: row.description,
@@ -286,18 +822,16 @@ function mapHouseSummary(row: HouseRow): HouseSummary {
   };
 }
 
-function mapHouseDetail(row: HouseRow, photos: Photo[]): HouseDetail {
+function mapHouseDetail(row: HouseRow, photos: Photo[], amenities: HouseAmenity[]): HouseDetail {
   return {
     ...mapHouseSummary(row),
     latitude: row.latitude === null ? null : Number.parseFloat(row.latitude),
     longitude: row.longitude === null ? null : Number.parseFloat(row.longitude),
     photos,
-    propertyName: row.property_name,
+    amenities,
     propertyPhone: row.property_phone,
     propertyEmail: row.property_email,
     propertyLatitude: Number.parseFloat(row.property_latitude),
     propertyLongitude: Number.parseFloat(row.property_longitude),
-    propertyAddressLine: row.property_address_line,
-    propertyCity: row.property_city,
   };
 }

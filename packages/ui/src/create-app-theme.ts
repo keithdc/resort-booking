@@ -24,7 +24,16 @@ export function createAppTheme(surface: AppSurface): Theme {
         main: '#1b3a4b',
       },
       secondary: {
-        main: '#c4845a',
+        main: '#9a5b3c',
+      },
+      success: {
+        main: '#2f6f4e',
+      },
+      info: {
+        main: '#3d6b8a',
+      },
+      warning: {
+        main: '#b8862a',
       },
       background: {
         default: isGuest ? '#f7f3ee' : '#f4f4f2',
@@ -37,9 +46,9 @@ export function createAppTheme(surface: AppSurface): Theme {
     },
     typography: {
       fontFamily: '"Source Sans 3", "Helvetica Neue", Arial, sans-serif',
-      h1: { fontWeight: 600 },
-      h2: { fontWeight: 600 },
-      h3: { fontWeight: 600 },
+      h1: { fontWeight: 600, letterSpacing: '-0.03em' },
+      h2: { fontWeight: 600, letterSpacing: '-0.02em' },
+      h3: { fontWeight: 600, letterSpacing: '-0.02em' },
     },
     components: {
       MuiButton: {

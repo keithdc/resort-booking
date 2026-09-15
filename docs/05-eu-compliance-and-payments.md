@@ -125,7 +125,7 @@ These are the ones that actually keep a site out of trouble. They belong mainly 
 | HTTPS everywhere | TLS on web, admin, API. No mixed content. |
 | GDPR | Privacy policy; lawful processing; guest data export/delete; **do not collect or store ID / passport images**. |
 | Processors | Document Stripe, email, hosting, analytics as processors. Contracts/SCCs are the client’s job with those vendors. |
-| Cookies / ePrivacy | **Consent banner before** Google Ads, Meta Pixel, or the Google Maps JS SDK. Strictly necessary cookies (session, hold, checkout) can load without ads consent. Default map embed is Leaflet + OSM (no Google cookie). |
+| Cookies / ePrivacy | **Consent banner before** Google Ads, Meta Pixel, or the Google Maps JS SDK. Strictly necessary cookies (session, hold, checkout) can load without ads consent. Default map embed is MapLibre + OpenFreeMap (OSM data, no Google cookie). |
 | Company identity | Footer: legal name, address, contact (and VAT number if they have one). Required culture in several EU states. |
 | Terms + cancellation | Clear house rules, **cancellation ladder**, and **rebookable / fee** before pay. State that the 14-day withdrawal right **does not apply** to dated stays. See `docs/07-cancellation-policy.md`. |
 | Payments | SCA via Stripe for cards; no card data in our DB; bank transfer uses IBAN + receipt; receipts/emails. |
