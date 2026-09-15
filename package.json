@@ -1,0 +1,23 @@
+{
+  "name": "resort-booking",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev -w @resort-booking/web",
+    "dev:admin": "npm run dev -w @resort-booking/admin",
+    "dev:api": "npm run start:dev -w @resort-booking/api",
+    "lint:web": "npm run lint -w @resort-booking/web",
+    "lint:admin": "npm run lint -w @resort-booking/admin",
+    "lint:api": "npm run lint -w @resort-booking/api",
+    "format": "prettier --write .",
+    "test": "npm run test --workspaces --if-present",
+    "db:up": "docker compose up -d postgres redis",
+    "db:migrate": "npm run migrate -w @resort-booking/api"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

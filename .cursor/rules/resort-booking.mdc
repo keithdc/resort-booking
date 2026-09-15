@@ -1,0 +1,16 @@
+---
+description: Resort booking core standards (not CRM). Read docs/ before scaffolding.
+alwaysApply: true
+---
+
+# Resort booking
+
+- Product: Airbnb-replacement direct booking. One organization, many properties, many houses. Guest `apps/web`, admin `apps/admin`, API `apps/api`. Not a CRM or marketplace.
+- Stack: Next.js + MUI (both UIs), NestJS + PostgreSQL + Redis. No Express. No Rails in this repo.
+- Strict TypeScript: **no `any`** (including `as any` / `Record<string, any>`). Object shapes: **`interface`**. Unions: `type`. Explicit return types, `import type`. Theme tokens not hardcoded colors.
+- Feature modules with barrels. Matching API + SQL migration for every screen. Redis is not the source of truth.
+- Straight-through booking: card + Apple Pay + Google Pay (15-min, Stripe, same card fee); bank transfer 48h + receipt + staff verify. No PayPal/Klarna in v1. Extra services instant or on-request after paid. Cookie consent before ad pixels.
+- Buttons: 8px radius (`docs/06-ui-theme.md`).
+- Booking UX: name/email/phone + guest count + pay. No IDs. Warn at 5 min left; keep form if hold expires. Optional review after check-out.
+- Guest calendars disable past days; admin calendars do not.
+- Cancellation / rebook: admin config + snapshot. `docs/07-cancellation-policy.md`. Follow `docs/04-product-domain.md`, `docs/05-eu-compliance-and-payments.md`, `docs/06-ui-theme.md`, `docs/08-prototype-plan.md`, `docs/01-architecture.md`, `docs/02-coding-standards.md`, `docs/03-feature-implementation.md`.

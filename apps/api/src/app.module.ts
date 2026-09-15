@@ -1,0 +1,27 @@
+/**
+ * @file apps/api/src/app.module.ts
+ * @shared Root Nest module
+ * @dependencies Config, database, redis, feature modules
+ */
+
+import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
+import { HealthModule } from './modules/health/health.module';
+import { IdentityModule } from './modules/identity/identity.module';
+import { InventoryModule } from './modules/inventory/inventory.module';
+import { PropertyModule } from './modules/property/property.module';
+import { DatabaseModule } from './shared/database/database.module';
+import { RedisModule } from './shared/redis/redis.module';
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({ isGlobal: true, envFilePath: ['.env', '.env.example'] }),
+    DatabaseModule,
+    RedisModule,
+    HealthModule,
+    IdentityModule,
+    PropertyModule,
+    InventoryModule,
+  ],
+})
+export class AppModule {}

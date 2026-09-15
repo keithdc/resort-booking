@@ -1,0 +1,173 @@
+# Architecture
+
+This document is the source of truth for how the resort booking product is structured. Do not scaffold a second backend or mix frameworks without updating this file first.
+
+## Product surfaces
+
+The product is **not a CRM** and **not an Airbnb clone**. It is a **direct-booking** platform for one operator who is leaving Airbnb: many properties (resorts), many houses per property. Product rules: `docs/04-product-domain.md`.
+
+Two applications share one API and one database.
+
+| Surface | App | Audience | Purpose |
+| --- | --- | --- | --- |
+| Guest | `apps/web` | Public visitors and booked guests | Discover properties and houses, search dates, book, pay, manage a stay |
+| Admin | `apps/admin` | Operator staff | Add properties and houses, calendars, rates, reservations, publish listings |
+| API | `apps/api` | Both frontends | Auth, booking rules, persistence, jobs, integrations |
+
+Guest and admin **must not** share a single SPA with role-toggled screens. Auth models, SEO needs, and UX density are different. They may share a design-system package and TypeScript types.
+
+## Stack decision
+
+### Chosen stack
+
+- **Frontends:** Next.js (App Router) + React + TypeScript + MUI
+- **API:** NestJS + TypeScript
+- **Database:** PostgreSQL (source of truth)
+- **Cache / locks / queues:** Redis
+- **Monorepo:** npm workspaces (`apps/*`, `packages/*`)
+
+### Why this stack (not Rails for this product)
+
+Rails is an excellent booking backend and a good way to learn Ruby. It is **not** the best architecture for *this* repo.
+
+1. **One language for product code.** Guest UI, admin UI, API, DTOs, and tests stay in TypeScript. Types can be shared in `packages/shared-types`. That matches our strict TypeScript standard.
+2. **Two modern UIs are the product.** The look and feel you want lives in Next.js/React. An API-only Rails app would throw away most of Rails (views, helpers, Hotwire). You would learn a thinner slice of Ruby while paying a dual-runtime cost (rbenv, Bundler, Sidekiq, plus Node).
+3. **NestJS is the Express CRM standard, upgraded.** Same feature-module idea, with modules, guards, pipes, and first-class queues (BullMQ on Redis). Express is too thin for availability, payments, and concurrent booking.
+4. **Booking needs Redis regardless of language.** Holds, idempotency, rate limits, and email/webhook jobs are the same problem in Nest or Rails. PostgreSQL remains the system of record.
+
+**Learn Ruby in `ruby-training` (or a future throwaway Rails app), not as a second backend here.** Do not run NestJS and Rails in this monorepo.
+
+### Why Next.js instead of Vite SPA
+
+- Guest pages (rooms, packages, location) need SEO and fast first paint.
+- App Router route groups and layouts fit public site vs guest portal vs auth.
+- Admin can still be a dense MUI app; it just lives in `apps/admin`.
+- Vite + React remains valid for admin-only tools; we still pick Next.js so both apps share the same conventions.
+
+### Why PostgreSQL + Redis together
+
+- **PostgreSQL:** organizations, properties, houses, calendars, rates, reservations, guests, payments, audit. Use transactions and constraints. Never treat Redis as the booking ledger.
+- **Redis:** short-lived booking holds, distributed locks **per house**, cache of availability windows, BullMQ jobs (confirmation email, payment webhook retry), rate limiting.
+
+## Monorepo layout
+
+```
+apps/
+  web/                 # Guest Next.js app
+  admin/               # Staff Next.js app
+  api/                 # NestJS API
+packages/
+  shared-types/        # DTOs and domain types used by web, admin, and api
+  ui/                  # Shared MUI wrappers used by both frontends (optional)
+docs/                  # Architecture and implementation standards
+```
+
+Workspaces are npm workspaces. Do not add a second package manager.
+
+## Frontend architecture (`apps/web/src`, `apps/admin/src`)
+
+Feature-first. Same rules in both Next.js apps.
+
+```
+src/
+  app/                      # Next.js App Router only: layouts, pages, loading, error
+  features/[feature]/
+    components/
+    hooks/
+    services/
+    models/
+    mocks/                  # Mock data only; never inline in components
+    index.ts
+  shared/
+    components/
+    hooks/
+    services/
+    utils/
+```
+
+- Route files in `app/` stay thin: import a page component from `features/[feature]`.
+- Features do not import other features' internals — only `index.ts`.
+- Code used by 2+ features goes in `shared/`.
+- Guest features stay in `apps/web`. Admin features stay in `apps/admin`. Shared *types* go to `packages/shared-types`, not copied.
+
+## Backend architecture (`apps/api/src`)
+
+```
+src/
+  modules/[feature]/
+    [feature].module.ts
+    [feature].controller.ts
+    [feature].service.ts
+    [feature].repository.ts   # DB access only
+    dto/
+    entities/ or persistence models
+    index.ts                  # public exports for other modules
+  shared/
+    guards/
+    interceptors/
+    filters/
+    pipes/
+    redis/
+    database/
+  migrations/                 # sequential SQL or Prisma migrations
+```
+
+- Controllers are thin. Validation happens in DTOs/pipes. Business rules live in services. SQL lives in repositories.
+- Features must not reach into another feature's files except through that feature's public module/API.
+- Every guest or admin screen that shows data has a matching API module, tables, and migration. No hardcoded inventory or prices.
+
+## Domain modules (initial)
+
+Implement in this order unless a story requires otherwise:
+
+1. `identity` — organization, staff users, guest accounts, auth, roles
+2. `property` — properties (resorts); add-property flow; address, lat/lng, phone, email, galleries
+3. `houses` — houses per property (listings), amenities, photos, publish state, capacity
+4. `inventory` — per-house calendars, blocked dates, holds
+5. `extras` — property service catalog; instant vs on-request; reservation extra lines
+6. `rates` — per-house (and optional property defaults) seasons, taxes, extras pricing for instant services
+7. `reservations` — search, quote, hold, confirm, cancel (tier snapshot), rebook if `rebookable`
+8. `guests` — booker contact + **guest count**; check-in verifies party size on arrival
+9. `payments` — intents, captures, refunds, webhook idempotency; later charge for approved extras
+10. `content` — public copy/media per property and house for `apps/web`
+11. `reviews` — optional post-stay rating + text; staff publish/hide
+12. `reporting` — occupancy and revenue **by property and by house** (read models)
+
+Do not model “one global resort.” Launch with two properties in data, but the code path is always `organization → properties[] → houses[]`.
+
+## Booking consistency
+
+Concurrent booking is the core risk. Freeze length follows the pay method.
+
+1. Search availability in PostgreSQL (date-range overlap on the house).
+2. On checkout start: persist a `holds` row. Redis TTL **900 seconds** (card) or **172800 seconds** (bank transfer).
+3. Card: on successful Stripe payment, convert hold → confirmed reservation in one transaction. Instant extras settle in that payment.
+4. Bank: reservation is `pending_payment` until staff verify the transfer (receipt + reference). Then convert hold → confirmed. Reject/expiry releases the house.
+5. Failed card payment or expired hold: release the house. Do not capture a card charge without a valid hold.
+6. On-request extras stay `pending` after the stay is **paid**; staff approve/decline without touching the house calendar.
+7. Never decrement inventory only in Redis.
+8. Stripe webhooks are idempotent (`event_id` unique in PostgreSQL).
+
+Details: `docs/05-eu-compliance-and-payments.md`.
+
+## Auth
+
+- Guest auth and staff auth are separate (different cookies/issuers or distinct role namespaces). A guest token must never authorize admin routes.
+- API uses NestJS guards. Frontends never trust client-only role flags.
+- Admin is session- or JWT-cookie based over HTTPS. Guest checkout may be account or email-link, but reservation records always persist in PostgreSQL.
+
+## Data and migrations
+
+- PostgreSQL is required for all durable data.
+- Migrations live with the API and run in order on a fresh install.
+- Redis keys are ephemeral. Document key prefixes in the owning module.
+
+## What we will not do
+
+- No Express API in this repo.
+- No Rails/Ruby service in this repo.
+- No in-memory fake hotels, and no single hardcoded resort.
+- Complex booking flows (request-to-book, host approval, multi-house carts). Straight-through only.
+- No single frontend for both guest and admin.
+- No `any` in TypeScript (`as any`, `Record<string, any>`, `any[]` included). Object shapes use `interface`.
+- No feature UI without a matching API + migration.
