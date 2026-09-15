@@ -34,4 +34,22 @@ describe('inventory.rules', () => {
   it('multiplies nights by the house rate', (): void => {
     expect(quoteTotalCents(3, 18000)).toBe(54000);
   });
+
+  it('rejects invalid night counts and negative rates', (): void => {
+    expect(quoteTotalCents(0, 18000)).toBe(0);
+    expect(quoteTotalCents(-2, 18000)).toBe(0);
+    expect(quoteTotalCents(1.5, 18000)).toBe(0);
+    expect(quoteTotalCents(2, -100)).toBe(0);
+    expect(quoteTotalCents(2, 99.5)).toBe(0);
+  });
+
+  it('rejects malformed ISO dates and impossible calendar days', (): void => {
+    expect(nightsBetween('20-09-2026', '2026-09-22')).toBeNull();
+    expect(nightsBetween('2026-02-30', '2026-03-02')).toBeNull();
+    expect(nightsBetween('', '2026-09-22')).toBeNull();
+  });
+
+  it('counts a month-end crossing', (): void => {
+    expect(nightsBetween('2026-09-30', '2026-10-02')).toBe(2);
+  });
 });

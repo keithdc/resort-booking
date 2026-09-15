@@ -15,7 +15,8 @@
     "format": "prettier --write .",
     "test": "npm run test --workspaces --if-present",
     "db:up": "docker compose up -d postgres redis",
-    "db:migrate": "npm run migrate -w @resort-booking/api"
+    "db:migrate": "npm run migrate -w @resort-booking/api",
+    "docs:proposal-pdf": "bash docs/client/generate-pdf.sh"
   },
   "engines": {
     "node": ">=20"

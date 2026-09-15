@@ -64,9 +64,15 @@ export function isoDateInTimeZone(now: Date, timeZone: string): string {
 }
 
 /**
- * Stay total in minor units. Rates stay on the API.
+ * Stay total in minor units. Invalid nights or rates never invent a price.
  */
 export function quoteTotalCents(nights: number, nightlyRateCents: number): number {
+  if (!Number.isInteger(nights) || nights < 1) {
+    return 0;
+  }
+  if (!Number.isInteger(nightlyRateCents) || nightlyRateCents < 0) {
+    return 0;
+  }
   return nights * nightlyRateCents;
 }
 

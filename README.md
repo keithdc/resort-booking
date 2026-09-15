@@ -1,20 +1,28 @@
 # Resort booking
 
-Direct-booking replacement for Airbnb: one operator, many resorts, many houses per resort.
+Direct-booking replacement for Airbnb: one operator, many destinations, many bookable stays per destination.
 
-Repo path: `~/Developer/resort-booking`. Guest site, staff admin, one NestJS API, PostgreSQL, and Redis.
+Guest site, staff admin, and one NestJS API share PostgreSQL (source of truth) and Redis (holds and cache). Booking rules live in Nest only.
 
-## Apps
+## What you get locally
 
-| Path | Port | Role |
-| --- | --- | --- |
-| `apps/web` | 3000 | Guest Next.js |
-| `apps/admin` | 3001 | Staff Next.js |
-| `apps/api` | 3002 | NestJS (quotes, holds, catalog) |
+| App | Path | URL | Role |
+| --- | --- | --- | --- |
+| Guest | `apps/web` | http://localhost:3000 | Public listings, search, hold dates |
+| Admin | `apps/admin` | http://localhost:3001 | Calendar, properties, account, reports |
+| API | `apps/api` | http://localhost:3002 | Quotes, holds, catalog, staff reports |
 
-Booking rules live in Nest only. The UIs call `/quotes` and `/holds`.
+Docker Postgres is on **5433** and Redis on **6380** so they do not collide with other local apps on 5432/6379.
 
-## Local run
+## Prerequisites
+
+- Node.js **20+**
+- npm (workspaces; do not add Yarn or pnpm)
+- Docker Desktop (for Postgres + Redis)
+
+## First-time setup
+
+From the repo root:
 
 ```bash
 cp apps/api/.env.example apps/api/.env
@@ -22,22 +30,90 @@ cp apps/web/.env.example apps/web/.env.local
 cp apps/admin/.env.example apps/admin/.env.local
 npm install
 npm run db:up
+```
+
+Wait until `docker compose ps` shows Postgres and Redis healthy.
+
+The API applies SQL migrations on boot (catalog, seed properties, staff owner). You can also run them explicitly:
+
+```bash
+npm run db:migrate
+```
+
+## Run all three apps
+
+Use **three terminals** from the repo root:
+
+```bash
 npm run dev:api
+```
+
+```bash
 npm run dev:web
+```
+
+```bash
 npm run dev:admin
 ```
 
-API applies SQL migrations on boot. Seed data is two published properties with houses.
+Optional health check: http://localhost:3002/health
 
-## Docs
+After changing Nest code, restart `dev:api` (`start:dev` compiles then runs `dist/`).
+
+## Sign in (staff)
+
+Admin is at http://localhost:3001/login
+
+Default owner (from `apps/api/.env.example`, created on API boot if no staff row exists):
+
+- Email: `owner@atlantic.example`
+- Password: `AtlanticOwner1!`
+
+Change these in `apps/api/.env` before any shared or production use.
+
+## Seed catalog
+
+Migrations publish two destinations (Alpine Lake and Pine Coast) with houses, photos, extras, and sample confirmed stays so calendar and reports have data.
+
+## Typical workflow
+
+1. Guest: pick dates on http://localhost:3000, search, open a property, hold dates (Stripe capture is not wired in this prototype).
+2. Admin: calendar (click a guest for the full stay), properties, account, reports (filter by property; click a tile or bar for the stays behind it).
+
+## Scripts
+
+| Command | What it does |
+| --- | --- |
+| `npm run db:up` | Start Postgres + Redis |
+| `npm run db:migrate` | Apply API SQL migrations |
+| `npm run dev:api` | Nest on port 3002 |
+| `npm run dev:web` | Guest Next.js on 3000 |
+| `npm run dev:admin` | Staff Next.js on 3001 |
+| `npm test` | Workspace tests |
+| `npm run lint:web` / `lint:admin` / `lint:api` | Lint one app |
+
+## Environment
+
+Do not commit filled `.env` files. Examples:
+
+- `apps/api/.env.example` — `DATABASE_URL`, `REDIS_URL`, `PORT`, `CORS_ORIGINS`, staff owner email/password, `STAFF_TOKEN`
+- `apps/web/.env.example` — `NEXT_PUBLIC_API_URL=http://localhost:3002`
+- `apps/admin/.env.example` — `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_STAFF_TOKEN`
+
+## Docs (product rules)
 
 | File | Purpose |
 | --- | --- |
 | [docs/01-architecture.md](docs/01-architecture.md) | Stack, monorepo, booking consistency |
-| [docs/02-coding-standards.md](docs/02-coding-standards.md) | Language, features, UX, API, tests |
+| [docs/02-coding-standards.md](docs/02-coding-standards.md) | TypeScript, Nest, Next.js, UX |
 | [docs/03-feature-implementation.md](docs/03-feature-implementation.md) | Checklist for every new feature |
-| [docs/04-product-domain.md](docs/04-product-domain.md) | Multi-property / houses / leaving Airbnb |
-| [docs/05-eu-compliance-and-payments.md](docs/05-eu-compliance-and-payments.md) | Holds, Stripe vs bank transfer, GDPR, domains |
+| [docs/04-product-domain.md](docs/04-product-domain.md) | Organization → properties → houses |
+| [docs/05-eu-compliance-and-payments.md](docs/05-eu-compliance-and-payments.md) | Holds, Stripe vs bank transfer, GDPR |
 | [docs/06-ui-theme.md](docs/06-ui-theme.md) | 8px buttons, hospitality look |
 | [docs/07-cancellation-policy.md](docs/07-cancellation-policy.md) | Refund ladder, rebookable + fee |
 | [docs/08-prototype-plan.md](docs/08-prototype-plan.md) | Guest then admin; logic stays in the API |
+| [docs/09-client-proposal.md](docs/09-client-proposal.md) | Printable proposal, June 2027 plan, brand checklist, draft NDA |
+
+The Operator-facing PDF (print on A4) is
+[docs/client/Atlantic-Direct-Booking-Proposal-Architecture-NDA.pdf](docs/client/Atlantic-Direct-Booking-Proposal-Architecture-NDA.pdf).
+
