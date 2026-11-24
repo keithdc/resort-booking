@@ -20,6 +20,6 @@ import { PromoRateLimiter } from './promo-rate-limiter';
   imports: [PropertyModule, RatesModule, DiscountsModule, ReservationsModule],
   controllers: [InventoryController],
   providers: [InventoryService, AvailabilityService, HoldSweeperService, InventoryRepository, PromoRateLimiter],
-  exports: [InventoryService],
+  exports: [InventoryService, AvailabilityService],
 })
 export class InventoryModule {}

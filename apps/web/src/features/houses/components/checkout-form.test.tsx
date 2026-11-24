@@ -7,10 +7,13 @@
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import type { Hold, HouseDetail, MockPaymentOutcome, MockPaymentResult, PaymentSummary, Quote, ReservationConfirmation } from '@resort-booking/shared-types';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ApiRequestError } from '@/shared/services/api-client';
+import { StayQuoteProvider } from '../context/stay-quote-context';
 import { CheckoutForm } from './checkout-form';
+import { ListingHighlights } from './listing-highlights';
 
 const inventory = vi.hoisted(() => ({
   fetchQuote: vi.fn<(houseId: string, checkIn: string, checkOut: string, guestCount: number, promoCode?: string) => Promise<Quote>>(),
@@ -23,7 +26,7 @@ const payments = vi.hoisted(() => ({
 }));
 
 vi.mock('../services/inventory-api', () => inventory);
-vi.mock('../services/payments-api', () => payments);
+vi.mock('@/shared/services/payments-api', () => payments);
 vi.mock('@/shared/hooks/use-availability', () => ({
   useHouseAvailability: (): { unavailable: never[]; loading: boolean; failed: boolean; refresh: () => void; maxCheckOutDate: null } => ({
     unavailable: [],
@@ -141,7 +144,7 @@ function renderForm(): void {
 }
 
 function holdButton(): HTMLElement {
-  return screen.getByRole('button', { name: 'Hold these dates' });
+  return screen.getByRole('button', { name: /^Pay 180,00\s€$/ });
 }
 
 function termsBox(): HTMLInputElement {
@@ -180,7 +183,7 @@ describe('CheckoutForm cancellation terms', () => {
     expect(holdButton().hasAttribute('disabled')).toBe(true);
   });
 
-  it('allows the hold once the terms are ticked, and blocks it again if they are unticked', async () => {
+  it('allows reserving once the terms are ticked, and blocks it again if they are unticked', async () => {
     renderForm();
     await screen.findByText('These dates are free.');
     fill('ada@example.com', '0612345678', false);
@@ -218,14 +221,14 @@ describe('CheckoutForm cancellation terms', () => {
     expect(inventory.createHold).toHaveBeenCalledWith(expect.objectContaining({ termsAccepted: true }));
   });
 
-  it('cannot be unticked while the dates are being held', async () => {
+  it('is no longer on screen once the dates are held, so it cannot be changed', async () => {
     renderForm();
     await screen.findByText('These dates are free.');
     fill('ada@example.com', '0612345678');
     await userEvent.click(holdButton());
     await screen.findByRole('button', { name: /^Pay / });
 
-    expect(termsBox().disabled).toBe(true);
+    expect(screen.queryByLabelText(/I have read the/)).toBeNull();
   });
 });
 
@@ -386,39 +389,411 @@ describe('CheckoutForm contact details', () => {
     });
 
     it('replaces the form with the confirmation and reference once paid', async () => {
-      payments.completeMockPayment.mockResolvedValue({ payment: { ...PAYMENT, status: 'succeeded' }, confirmation: CONFIRMATION });
+      payments.completeMockPayment.mockResolvedValue({ payment: { ...PAYMENT, status: 'succeeded' }, confirmation: CONFIRMATION, rebookedBooking: null });
       await holdTheDates();
 
       await userEvent.click(await screen.findByRole('button', { name: /^Pay / }));
 
       expect(await screen.findByText('BK-ABC123')).toBeTruthy();
       expect(screen.getByText('Your booking is confirmed.')).toBeTruthy();
-      expect(screen.queryByRole('button', { name: 'Hold these dates' })).toBeNull();
+      expect(screen.queryByRole('button', { name: /^Pay / })).toBeNull();
     });
 
-    it('after a declined card, drops the hold and lets the guest hold the dates again with the form still filled', async () => {
-      payments.completeMockPayment.mockResolvedValue({ payment: { ...PAYMENT, status: 'failed' }, confirmation: null });
+    it('after a declined card, drops the hold and lets the guest try again with the form still filled', async () => {
+      payments.completeMockPayment.mockResolvedValue({ payment: { ...PAYMENT, status: 'failed' }, confirmation: null, rebookedBooking: null });
       await holdTheDates();
 
       await userEvent.click(await screen.findByRole('button', { name: 'Simulate a declined card' }));
-      await userEvent.click(await screen.findByRole('button', { name: 'Hold the dates again' }));
+      await userEvent.click(await screen.findByRole('button', { name: 'Try again' }));
 
-      expect(screen.queryByRole('button', { name: /^Pay / })).toBeNull();
+      expect(screen.queryByRole('timer')).toBeNull();
       expect((screen.getByLabelText(/^Name/) as HTMLInputElement).value).toBe('Ada Lovelace');
       expect(holdButton().hasAttribute('disabled')).toBe(false);
     });
 
     it('explains a bank-transfer hold instead of showing the card payment', async () => {
-      inventory.createHold.mockResolvedValue({ ...HOLD, paymentMethod: 'bank_transfer' });
+      inventory.createHold.mockResolvedValue({ ...HOLD, paymentMethod: 'bank_transfer', holdTtlSeconds: 172800 });
       renderForm();
       await screen.findByText('These dates are free.');
       fill('ada@example.com', '0612345678');
       await userEvent.click(screen.getByLabelText(/bank transfer/i));
-      await userEvent.click(holdButton());
+      await userEvent.click(screen.getByRole('button', { name: 'Reserve and pay by bank transfer' }));
 
-      expect(await screen.findByText(/held for 48 hours/)).toBeTruthy();
+      expect(await screen.findByText(/holding these dates for you for 48 hours/)).toBeTruthy();
+      expect(screen.getByText(/operator confirms your booking once your payment arrives/)).toBeTruthy();
       expect(screen.queryByRole('button', { name: /^Pay / })).toBeNull();
       expect(payments.startPayment).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('CheckoutForm single Pay button and hold timer', () => {
+  const NOW = '2027-05-01T12:00:00.000Z';
+
+  beforeEach(() => {
+    inventory.fetchQuote.mockReset();
+    inventory.fetchQuote.mockResolvedValue(QUOTE);
+    inventory.createHold.mockReset();
+    inventory.createHold.mockResolvedValue(HOLD);
+    payments.startPayment.mockReset();
+    payments.startPayment.mockResolvedValue(PAYMENT);
+    payments.completeMockPayment.mockReset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    cleanup();
+  });
+
+  it('labels the one primary button with the total to pay, never Reserve', async () => {
+    renderForm();
+    await screen.findByText('These dates are free.');
+
+    expect(screen.getByRole('button', { name: /^Pay 180,00\s€$/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Reserve$|Hold these dates/ })).toBeNull();
+  });
+
+  it('keeps the Pay button off until the terms are ticked', async () => {
+    renderForm();
+    await screen.findByText('These dates are free.');
+    fill('ada@example.com', '0612345678', false);
+
+    expect(holdButton().hasAttribute('disabled')).toBe(true);
+    fireEvent.click(termsBox());
+    expect(holdButton().hasAttribute('disabled')).toBe(false);
+  });
+
+  it('keeps an explicit label for the bank-transfer flow', async () => {
+    renderForm();
+    await screen.findByText('These dates are free.');
+    await userEvent.click(screen.getByLabelText(/bank transfer/i));
+
+    expect(screen.getByRole('button', { name: 'Reserve and pay by bank transfer' })).toBeTruthy();
+    expect(screen.getByText('We hold your dates while your transfer arrives. Nothing is charged until you pay.')).toBeTruthy();
+  });
+
+  it('swaps the form for the payment step once the dates are held: one way forward', async () => {
+    renderForm();
+    await screen.findByText('These dates are free.');
+    fill('ada@example.com', '0612345678');
+
+    await userEvent.click(holdButton());
+
+    expect(await screen.findByRole('heading', { name: 'Complete your payment' })).toBeTruthy();
+    expect(screen.getByRole('timer')).toBeTruthy();
+    expect(screen.queryByLabelText(/I have read the/)).toBeNull();
+    expect(screen.queryByLabelText(/^Name/)).toBeNull();
+    expect(screen.queryByLabelText(/^Nights/)).toBeNull();
+    expect(await screen.findAllByRole('button', { name: /^Pay / })).toHaveLength(1);
+  });
+
+  it('says calmly that the dates were just taken on a 409 and refreshes the quote', async () => {
+    inventory.createHold.mockRejectedValue(new ApiRequestError('Those dates are no longer available', 409, 'DATES_UNAVAILABLE'));
+    renderForm();
+    await screen.findByText('These dates are free.');
+    fill('ada@example.com', '0612345678');
+    const quoteCalls = inventory.fetchQuote.mock.calls.length;
+
+    await userEvent.click(holdButton());
+
+    expect((await screen.findByRole('alert')).textContent).toBe('Sorry, those dates were just taken. Pick other dates.');
+    expect(screen.queryByRole('timer')).toBeNull();
+    expect(screen.getByLabelText(/^Name/)).toBeTruthy();
+    await waitFor(() => expect(inventory.fetchQuote.mock.calls.length).toBeGreaterThan(quoteCalls));
+  });
+
+  it('shows the API message for any other hold failure', async () => {
+    inventory.createHold.mockRejectedValue(new ApiRequestError('Too many guests', 400, 'CAPACITY_EXCEEDED'));
+    renderForm();
+    await screen.findByText('These dates are free.');
+    fill('ada@example.com', '0612345678');
+
+    await userEvent.click(holdButton());
+
+    expect(await screen.findByText('Too many guests')).toBeTruthy();
+    expect(screen.queryByText(/just taken/)).toBeNull();
+  });
+
+  it('says before paying that the dates are held and that nothing is charged yet, with no minutes promised', async () => {
+    renderForm();
+    await screen.findByText('These dates are free.');
+
+    expect(screen.getByText('We hold your dates while you pay. Nothing is charged until you pay.')).toBeTruthy();
+    expect(screen.queryByText(/minutes/)).toBeNull();
+  });
+
+  it('does not offer the hold length in the payment choices either', async () => {
+    renderForm();
+    await screen.findByText('These dates are free.');
+
+    expect(screen.getByLabelText(/Apple Pay \/ Google Pay \/ card/).closest('label')?.textContent).not.toMatch(/\d/);
+    expect(screen.getByLabelText(/Bank transfer/).closest('label')?.textContent).not.toMatch(/\d/);
+  });
+
+  it('shows NO countdown before the guest pays', async () => {
+    renderForm();
+    await screen.findByText('These dates are free.');
+    fill('ada@example.com', '0612345678');
+
+    expect(screen.queryByLabelText('Hold countdown')).toBeNull();
+    expect(screen.queryByRole('timer')).toBeNull();
+    expect(screen.queryByRole('progressbar')).toBeNull();
+  });
+
+  it('does not even start a clock before the guest pays', async () => {
+    const setIntervalSpy = vi.spyOn(window, 'setInterval');
+    renderForm();
+    await screen.findByText('These dates are free.');
+    fill('ada@example.com', '0612345678');
+
+    const ticks = (): number => setIntervalSpy.mock.calls.filter((call) => call[1] === 1000).length;
+    expect(ticks()).toBe(0);
+
+    await userEvent.click(holdButton());
+    await screen.findByRole('timer');
+
+    expect(ticks()).toBe(1);
+  });
+
+  it('starts the countdown only after Pay, saying how long the API is holding the dates', async () => {
+    renderForm();
+    await screen.findByText('These dates are free.');
+    fill('ada@example.com', '0612345678');
+
+    await userEvent.click(holdButton());
+
+    expect(await screen.findByText('We are holding these dates for you for 15 minutes.')).toBeTruthy();
+    expect(screen.getByRole('timer').textContent).toMatch(/^1[45]:\d\d$/);
+    expect(screen.queryByText(/We hold your dates while you pay/)).toBeNull();
+  });
+
+  it('shows "Holding your dates…" while the hold is being made', async () => {
+    let finish: (hold: Hold) => void = () => undefined;
+    inventory.createHold.mockImplementation(() => new Promise<Hold>((resolve) => { finish = resolve; }));
+    renderForm();
+    await screen.findByText('These dates are free.');
+    fill('ada@example.com', '0612345678');
+
+    await userEvent.click(holdButton());
+
+    expect(screen.getByRole('button', { name: 'Holding your dates…' }).hasAttribute('disabled')).toBe(true);
+    finish(HOLD);
+    await screen.findByRole('timer');
+  });
+
+  it('counts down each second from the hold the API returned', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'], now: new Date(NOW) });
+    inventory.createHold.mockResolvedValue({
+      ...HOLD,
+      expiresAt: '2027-05-01T12:15:00.000Z',
+      warningAt: '2027-05-01T12:10:00.000Z',
+    });
+    renderForm();
+    await screen.findByText('These dates are free.');
+    fill('ada@example.com', '0612345678');
+    await userEvent.click(holdButton());
+    expect((await screen.findByRole('timer')).textContent).toBe('15:00');
+
+    await act(async () => {
+      vi.advanceTimersByTime(3000);
+    });
+
+    expect(screen.getByRole('timer').textContent).toBe('14:57');
+    expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('100');
+  });
+
+  it('warns calmly when the API\'s warning time passes, and not before', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'], now: new Date(NOW) });
+    inventory.createHold.mockResolvedValue({
+      ...HOLD,
+      expiresAt: '2027-05-01T12:15:00.000Z',
+      warningAt: '2027-05-01T12:10:00.000Z',
+    });
+    renderForm();
+    await screen.findByText('These dates are free.');
+    fill('ada@example.com', '0612345678');
+    await userEvent.click(holdButton());
+    await screen.findByRole('timer');
+    expect(screen.queryByText(/Less than/)).toBeNull();
+
+    await act(async () => {
+      vi.advanceTimersByTime(10 * 60_000);
+    });
+
+    expect(screen.getByRole('status').textContent).toBe('Less than 5 minutes left. Finish paying to keep your dates.');
+    expect(screen.getByRole('status').getAttribute('aria-live')).toBe('polite');
+  });
+
+  it('says time ran out, keeps the form filled and lets the guest hold the dates again', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'], now: new Date(NOW) });
+    inventory.createHold
+      .mockResolvedValueOnce({ ...HOLD, expiresAt: '2027-05-01T12:00:05.000Z', warningAt: '2027-05-01T11:55:05.000Z' })
+      .mockResolvedValueOnce({ ...HOLD, id: 'hold-2', expiresAt: '2027-05-01T12:20:00.000Z', warningAt: '2027-05-01T12:15:00.000Z' });
+    renderForm();
+    await screen.findByText('These dates are free.');
+    fill('ada@example.com', '0612345678');
+    await userEvent.click(holdButton());
+    await screen.findByRole('timer');
+
+    await act(async () => {
+      vi.advanceTimersByTime(6000);
+    });
+
+    expect(screen.getByText('Time ran out — your details are still here.')).toBeTruthy();
+    expect((screen.getByLabelText(/^Name/) as HTMLInputElement).value).toBe('Ada Lovelace');
+    expect((screen.getByLabelText(/^Email/) as HTMLInputElement).value).toBe('ada@example.com');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Hold the dates again' }));
+
+    expect(inventory.createHold).toHaveBeenCalledTimes(2);
+    // Six fake seconds have passed since the clock started, so 20:00 minus 6s.
+    expect((await screen.findByRole('timer')).textContent).toBe('19:54');
+    expect(screen.queryByText('Time ran out — your details are still here.')).toBeNull();
+  });
+
+  it('counts a bank-transfer hold in hours, from the API\'s length', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'], now: new Date(NOW) });
+    inventory.createHold.mockResolvedValue({
+      ...HOLD,
+      paymentMethod: 'bank_transfer',
+      holdTtlSeconds: 172800,
+      expiresAt: '2027-05-03T12:00:00.000Z',
+      warningAt: '2027-05-03T11:55:00.000Z',
+    });
+    renderForm();
+    await screen.findByText('These dates are free.');
+    fill('ada@example.com', '0612345678');
+    await userEvent.click(screen.getByLabelText(/Bank transfer/));
+    await userEvent.click(screen.getByRole('button', { name: 'Reserve and pay by bank transfer' }));
+
+    expect(await screen.findByText('We are holding these dates for you for 48 hours.')).toBeTruthy();
+    expect(screen.getByRole('timer').textContent).toBe('48:00:00');
+  });
+
+  it('removes the countdown when a declined card releases the dates', async () => {
+    payments.completeMockPayment.mockResolvedValue({ payment: { ...PAYMENT, status: 'failed' }, confirmation: null, rebookedBooking: null });
+    renderForm();
+    await screen.findByText('These dates are free.');
+    fill('ada@example.com', '0612345678');
+    await userEvent.click(holdButton());
+    await screen.findByRole('timer');
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Simulate a declined card' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Try again' }));
+
+    expect(screen.queryByRole('timer')).toBeNull();
+    expect(screen.getByText('We hold your dates while you pay. Nothing is charged until you pay.')).toBeTruthy();
+  });
+});
+
+describe('Stay header follows the dates in the checkout', () => {
+  const LINE = (label: string, nights: number, nightlyRateCents: number): Quote['lines'][number] => ({
+    label,
+    nights,
+    nightlyRateCents,
+    subtotalCents: nights * nightlyRateCents,
+  });
+
+  function quoteFor(checkOut: string, lines: Quote['lines'], extra: Partial<Quote> = {}): Quote {
+    return { ...QUOTE, checkOut, lines, ...extra };
+  }
+
+  function header(): string {
+    return (screen.getByText(/Stay in/).textContent ?? '').replace(/\s/g, ' ');
+  }
+
+  function renderPage(): void {
+    render(
+      <LocalizationProvider dateAdapter={AdapterDayjs}>
+        <StayQuoteProvider>
+          <ListingHighlights city="Annecy" sleeps={8} standardRateCents={HOUSE.nightlyRateCents} currencyCode="EUR" />
+          <CheckoutForm
+            house={HOUSE}
+            initialStay={{ checkIn: '2027-07-10', checkOut: '2027-07-11', nights: '1', guestCount: '2', propertySlug: 'pine-coast' }}
+            requestOptions={[]}
+            extras={[]}
+            customRequestsEnabled={false}
+          />
+        </StayQuoteProvider>
+      </LocalizationProvider>,
+    );
+  }
+
+  beforeEach(() => {
+    inventory.fetchQuote.mockReset();
+    inventory.fetchQuote.mockImplementation((_house, _checkIn, checkOut, _guests, promo = '') => {
+      if (checkOut === '2027-07-13') {
+        return Promise.resolve(quoteFor(checkOut, [LINE('Peak summer 2027', 3, 30000)]));
+      }
+      if (checkOut === '2027-07-15') {
+        return Promise.resolve(quoteFor(checkOut, [LINE('Standard rate', 2, 18000), LINE('Peak summer 2027', 3, 30000)]));
+      }
+      if (checkOut === '2027-07-17') {
+        return Promise.resolve(
+          quoteFor(checkOut, [LINE('Peak summer 2027', 7, 30000)], {
+            discounts: promo === '' ? [] : [{ discountId: 'd', label: 'Welcome code', amountCents: 5000 }],
+            discountCents: promo === '' ? 0 : 5000,
+          }),
+        );
+      }
+      return Promise.resolve(quoteFor(checkOut, [LINE('Standard rate', 1, 18000)]));
+    });
+  });
+
+  afterEach(cleanup);
+
+  it('starts on the standard rate', async () => {
+    renderPage();
+    await screen.findByText('These dates are free.');
+
+    expect(header()).toContain('Standard rate 180,00 € / night');
+  });
+
+  it('switches to the seasonal rate and its name when the dates move into the season', async () => {
+    renderPage();
+    await screen.findByText('These dates are free.');
+
+    fireEvent.change(screen.getByLabelText(/^Nights/), { target: { value: '3' } });
+
+    await waitFor(() => expect(header()).toContain('300,00 € / night · Peak summer 2027'));
+    expect(header()).not.toContain('Standard rate');
+  });
+
+  it('shows a range when the dates cross seasons, then returns to one rate again', async () => {
+    renderPage();
+    await screen.findByText('These dates are free.');
+
+    fireEvent.change(screen.getByLabelText(/^Nights/), { target: { value: '5' } });
+    await waitFor(() => expect(header()).toContain('180,00 € – 300,00 € / night'));
+
+    fireEvent.change(screen.getByLabelText(/^Nights/), { target: { value: '3' } });
+    await waitFor(() => expect(header()).toContain('300,00 € / night · Peak summer 2027'));
+    expect(header()).not.toContain('–');
+  });
+
+  it('keeps the nightly rate when a promo code takes money off the total', async () => {
+    renderPage();
+    await screen.findByText('These dates are free.');
+    fireEvent.change(screen.getByLabelText(/^Nights/), { target: { value: '7' } });
+    await waitFor(() => expect(header()).toContain('300,00 € / night · Peak summer 2027'));
+
+    await userEvent.type(screen.getByLabelText(/Promo code/), 'WELCOME15');
+    await userEvent.click(screen.getByRole('button', { name: 'Apply' }));
+
+    expect(await screen.findByText('Welcome code')).toBeTruthy();
+    expect(header()).toContain('300,00 € / night · Peak summer 2027');
+  });
+
+  it('goes back to the standard rate when the dates cannot be priced', async () => {
+    renderPage();
+    await screen.findByText('These dates are free.');
+    fireEvent.change(screen.getByLabelText(/^Nights/), { target: { value: '3' } });
+    await waitFor(() => expect(header()).toContain('Peak summer 2027'));
+
+    inventory.fetchQuote.mockRejectedValue(new Error('offline'));
+    fireEvent.change(screen.getByLabelText(/^Nights/), { target: { value: '4' } });
+
+    await waitFor(() => expect(header()).toContain('Standard rate 180,00 € / night'));
   });
 });

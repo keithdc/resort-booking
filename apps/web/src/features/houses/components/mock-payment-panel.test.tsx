@@ -15,7 +15,7 @@ const api = vi.hoisted(() => ({
   completeMockPayment: vi.fn<(paymentId: string, outcome: MockPaymentOutcome) => Promise<MockPaymentResult>>(),
 }));
 
-vi.mock('../services/payments-api', () => api);
+vi.mock('@/shared/services/payments-api', () => api);
 
 const PAYMENT: PaymentSummary = {
   id: 'p1',
@@ -88,7 +88,7 @@ describe('MockPaymentPanel', () => {
   });
 
   it('reports the confirmed stay when paid', async () => {
-    api.completeMockPayment.mockResolvedValue({ payment: { ...PAYMENT, status: 'succeeded' }, confirmation: CONFIRMATION });
+    api.completeMockPayment.mockResolvedValue({ payment: { ...PAYMENT, status: 'succeeded' }, confirmation: CONFIRMATION, rebookedBooking: null });
     const { onConfirmed } = renderPanel();
 
     await userEvent.click(await screen.findByRole('button', { name: /^Pay / }));
@@ -97,14 +97,14 @@ describe('MockPaymentPanel', () => {
     expect(api.completeMockPayment).toHaveBeenCalledWith('p1', 'success');
   });
 
-  it('shows the declined message and lets the guest hold the dates again', async () => {
-    api.completeMockPayment.mockResolvedValue({ payment: { ...PAYMENT, status: 'failed' }, confirmation: null });
+  it('shows the declined message and lets the guest try again', async () => {
+    api.completeMockPayment.mockResolvedValue({ payment: { ...PAYMENT, status: 'failed' }, confirmation: null, rebookedBooking: null });
     const { onDeclined, onConfirmed } = renderPanel();
 
     await userEvent.click(await screen.findByRole('button', { name: 'Simulate a declined card' }));
 
     expect(await screen.findByText(/card was declined and no money was taken/)).toBeTruthy();
-    await userEvent.click(screen.getByRole('button', { name: 'Hold the dates again' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(onDeclined).toHaveBeenCalledTimes(1);
     expect(onConfirmed).not.toHaveBeenCalled();
   });

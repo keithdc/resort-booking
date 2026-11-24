@@ -4,7 +4,14 @@
  * @feature bookings
  */
 
-import type { GuestBooking, GuestBookingLookupRequest } from '@resort-booking/shared-types';
+import type {
+  GuestBooking,
+  GuestBookingLookupRequest,
+  HouseAvailability,
+  RebookQuote,
+  RebookRequest,
+  RebookResult,
+} from '@resort-booking/shared-types';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -14,6 +21,9 @@ import { ManageBookingPage } from './manage-booking-page';
 const api = vi.hoisted(() => ({
   lookupBooking: vi.fn<(request: GuestBookingLookupRequest) => Promise<GuestBooking>>(),
   cancelBooking: vi.fn<(request: GuestBookingLookupRequest) => Promise<GuestBooking>>(),
+  fetchRebookAvailability: vi.fn<(request: GuestBookingLookupRequest) => Promise<HouseAvailability>>(),
+  quoteRebook: vi.fn<(request: RebookRequest) => Promise<RebookQuote>>(),
+  rebookBooking: vi.fn<(request: RebookRequest) => Promise<RebookResult>>(),
 }));
 
 vi.mock('../services/bookings-api', () => api);
@@ -36,6 +46,9 @@ function booking(overrides: Partial<GuestBooking> = {}): GuestBooking {
     refundQuote: { paidCents: 96000, refundPercent: 75, refundCents: 72000, currencyCode: 'EUR', daysBeforeCheckIn: 4 },
     refund: null,
     rebookable: false,
+    canChangeDates: false,
+    changeDatesBlockedReason: 'The dates of this booking cannot be changed. To change them, cancel and book again.',
+    replacedByReference: null,
     ...overrides,
   };
 }
@@ -58,6 +71,10 @@ describe('ManageBookingPage', () => {
   beforeEach(() => {
     api.lookupBooking.mockReset();
     api.cancelBooking.mockReset();
+    api.fetchRebookAvailability.mockReset();
+    api.fetchRebookAvailability.mockResolvedValue({ houseId: 'h', from: 'a', to: 'b', unavailable: [], maxCheckOutDate: null });
+    api.quoteRebook.mockReset();
+    api.rebookBooking.mockReset();
   });
 
   afterEach(cleanup);
@@ -242,5 +259,126 @@ describe('ManageBookingPage', () => {
 
     expect((screen.getByLabelText(/^Booking reference/) as HTMLInputElement).value).toBe('');
     expect((screen.getByLabelText(/^Email/) as HTMLInputElement).value).toBe('');
+  });
+
+  describe('changing dates', () => {
+    it('offers Change dates only when the API says the dates can be changed', async () => {
+      api.lookupBooking.mockResolvedValue(booking({ canChangeDates: true, changeDatesBlockedReason: null, rebookable: true }));
+      render(<ManageBookingPage />);
+
+      await findBooking();
+
+      expect(await screen.findByRole('button', { name: 'Change dates' })).toBeTruthy();
+    });
+
+    it('explains why instead when the dates cannot be changed online', async () => {
+      api.lookupBooking.mockResolvedValue(booking());
+      render(<ManageBookingPage />);
+
+      await findBooking();
+
+      expect(await screen.findByText('The dates of this booking cannot be changed. To change them, cancel and book again.')).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Change dates' })).toBeNull();
+    });
+
+    it('shows the panel when Change dates is pressed, and hides it again on "Keep my current dates"', async () => {
+      api.lookupBooking.mockResolvedValue(booking({ canChangeDates: true, changeDatesBlockedReason: null }));
+      render(<ManageBookingPage />);
+      await findBooking();
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Change dates' }));
+      expect(screen.getByLabelText('Change your dates')).toBeTruthy();
+
+      await userEvent.click(screen.getByRole('button', { name: 'Keep my current dates' }));
+      expect(screen.queryByLabelText('Change your dates')).toBeNull();
+      expect(screen.getByRole('button', { name: 'Change dates' })).toBeTruthy();
+    });
+
+    it('switches to the new booking with its new reference once the dates are changed', async () => {
+      api.lookupBooking.mockResolvedValue(booking({ canChangeDates: true, changeDatesBlockedReason: null }));
+      api.quoteRebook.mockResolvedValue({
+        reference: 'BK-ABC1234567',
+        newCheckIn: '2027-07-10',
+        newCheckOut: '2027-07-13',
+        nights: 3,
+        currencyCode: 'EUR',
+        lines: [],
+        subtotalCents: 96000,
+        discounts: [],
+        discountCents: 0,
+        newTotalCents: 96000,
+        feeCents: 0,
+        paidCents: 96000,
+        balanceCents: 0,
+        payCents: 0,
+        refundCents: 0,
+        available: true,
+        problem: null,
+        promoCode: null,
+      });
+      api.rebookBooking.mockResolvedValue({
+        outcome: 'changed',
+        booking: booking({ reference: 'BK-NEW0000000', checkIn: '2027-07-10', checkOut: '2027-07-13', canChangeDates: true, changeDatesBlockedReason: null }),
+        payment: null,
+        refund: null,
+      });
+      render(<ManageBookingPage />);
+      await findBooking();
+      await userEvent.click(await screen.findByRole('button', { name: 'Change dates' }));
+      fireEvent.change(screen.getByLabelText(/^Nights/), { target: { value: '3' } });
+      await userEvent.click(screen.getByRole('button', { name: 'See the price' }));
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Change my dates' }));
+
+      const notice = await screen.findByText(/Your dates are changed/);
+      expect(plain(notice.textContent)).toContain('Your new booking reference is BK-NEW0000000');
+      expect(plain(notice.textContent)).toContain('BK-ABC1234567 is replaced');
+      expect(plain(screen.getByLabelText('Your booking').textContent)).toContain('BK-NEW0000000');
+    });
+
+    it('mentions a refund of the difference after a cheaper change', async () => {
+      api.lookupBooking.mockResolvedValue(booking({ canChangeDates: true, changeDatesBlockedReason: null }));
+      api.quoteRebook.mockResolvedValue({
+        reference: 'BK-ABC1234567', newCheckIn: '2027-07-10', newCheckOut: '2027-07-11', nights: 1, currencyCode: 'EUR', lines: [], subtotalCents: 48000,
+        discounts: [], discountCents: 0, newTotalCents: 48000, feeCents: 0, paidCents: 96000, balanceCents: -48000, payCents: 0, refundCents: 48000,
+        available: true, problem: null, promoCode: null,
+      });
+      api.rebookBooking.mockResolvedValue({
+        outcome: 'changed',
+        booking: booking({ reference: 'BK-NEW0000000', checkOut: '2027-07-11' }),
+        payment: null,
+        refund: { amountCents: 48000, percent: 100, currencyCode: 'EUR', status: 'succeeded', simulated: true },
+      });
+      render(<ManageBookingPage />);
+      await findBooking();
+      await userEvent.click(await screen.findByRole('button', { name: 'Change dates' }));
+      fireEvent.change(screen.getByLabelText(/^Nights/), { target: { value: '1' } });
+      await userEvent.click(screen.getByRole('button', { name: 'See the price' }));
+
+      await userEvent.click(await screen.findByRole('button', { name: /^Change my dates and get/ }));
+
+      expect(plain((await screen.findByText(/Your dates are changed/)).textContent)).toContain('480,00 € is being refunded to you');
+    });
+
+    it('points an old, replaced booking to the new one and opens it on request', async () => {
+      const replaced = booking({
+        status: 'cancelled',
+        canCancel: false,
+        refundQuote: null,
+        canChangeDates: false,
+        changeDatesBlockedReason: null,
+        replacedByReference: 'BK-NEW0000000',
+        refund: { amountCents: 0, percent: 0, currencyCode: 'EUR', status: 'succeeded', simulated: true },
+      });
+      api.lookupBooking.mockResolvedValueOnce(replaced).mockResolvedValueOnce(booking({ reference: 'BK-NEW0000000' }));
+      render(<ManageBookingPage />);
+      await findBooking();
+
+      expect(await screen.findByText(/It was replaced by BK-NEW0000000/)).toBeTruthy();
+      await userEvent.click(screen.getByRole('button', { name: 'Open the new booking' }));
+
+      await waitFor(() => expect(api.lookupBooking).toHaveBeenLastCalledWith({ reference: 'BK-NEW0000000', email: 'ada@example.com' }));
+      expect(plain((await screen.findByLabelText('Your booking')).textContent)).toContain('BK-NEW0000000');
+    });
   });
 });

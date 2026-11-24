@@ -116,6 +116,20 @@ export class DiscountsRepository {
   }
 
   /**
+   * Moves discount use from one booking to the one that replaces it: the old booking's rows go, the new
+   * booking records the discounts it actually got. The use count of a discount stays right.
+   */
+  public async replaceRedemptions(
+    client: PoolClient,
+    fromBookingId: string,
+    toBookingId: string,
+    lines: readonly QuoteDiscountLine[],
+  ): Promise<void> {
+    await client.query('DELETE FROM discount_redemptions WHERE inventory_block_id = $1', [fromBookingId]);
+    await this.recordRedemptions(client, toBookingId, lines);
+  }
+
+  /**
    * Records which discounts a confirmed stay used, in one statement. Safe to repeat.
    */
   public async recordRedemptions(

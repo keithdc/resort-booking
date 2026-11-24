@@ -120,4 +120,8 @@ export interface HealthStatus {
     ok: boolean;
     postgres: boolean;
     redis: boolean;
+    /** False when the running build is older than the database schema (restart with the latest code). */
+    schema: boolean;
+    /** Applied migrations this build does not know. */
+    schemaAheadOf: string[];
 }

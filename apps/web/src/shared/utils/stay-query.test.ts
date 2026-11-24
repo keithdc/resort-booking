@@ -73,7 +73,7 @@ describe('stay-query', (): void => {
   });
 
   it('returns a bare house path when stay dates are missing', (): void => {
-    expect(houseHref('pine-coast', 'dune-house', null)).toBe('/properties/pine-coast/houses/dune-house');
+    expect(houseHref('pine-coast', 'dune-house', null)).toBe('/properties/pine-coast/stays/dune-house');
     expect(
       houseHref('pine-coast', 'dune-house', {
         checkIn: '',
@@ -82,7 +82,7 @@ describe('stay-query', (): void => {
         guestCount: '2',
         propertySlug: 'pine-coast',
       }),
-    ).toBe('/properties/pine-coast/houses/dune-house');
+    ).toBe('/properties/pine-coast/stays/dune-house');
   });
 
   it('defaults missing query fields', (): void => {

@@ -139,7 +139,8 @@ export class InventoryRepository {
   }
 
   /**
-   * Occupied night ranges for many houses in one query (no per-house loop).
+   * Occupied night ranges for many houses in one query (no per-house loop). `excludeBlockId` leaves one
+   * booking out, so a guest changing their dates sees their own current nights as free.
    * Counts confirmed stays, staff blocks, and holds that have not timed out. Read-only:
    * overdue holds are filtered by clock here instead of being expired on a GET.
    */
@@ -147,6 +148,7 @@ export class InventoryRepository {
     houseIds: readonly string[],
     from: string,
     to: string,
+    excludeBlockId: string | null = null,
   ): Promise<OccupiedRangeRow[]> {
     if (houseIds.length === 0) {
       return [];
@@ -159,9 +161,10 @@ export class InventoryRepository {
         AND status IN ('active', 'confirmed')
         AND NOT (kind = 'hold' AND expires_at IS NOT NULL AND expires_at < now())
         AND daterange(check_in, check_out, '[)') && daterange($2::date, $3::date, '[)')
+        AND ($4::uuid IS NULL OR id <> $4)
       ORDER BY house_id, check_in
       `,
-      [houseIds, from, to],
+      [houseIds, from, to, excludeBlockId],
     );
     return result.rows;
   }

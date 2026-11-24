@@ -11,6 +11,6 @@ import { MigrationRunner } from './migration-runner';
 @Global()
 @Module({
   providers: [DatabaseService, MigrationRunner],
-  exports: [DatabaseService],
+  exports: [DatabaseService, MigrationRunner],
 })
 export class DatabaseModule {}

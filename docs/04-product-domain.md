@@ -44,7 +44,7 @@ People read **Property** and **Stay**. The code keeps its original names, so the
 | Word in text and UI | What it is | Code name | Database table | Web address |
 | --- | --- | --- | --- | --- |
 | **Property** | The whole site, e.g. Alpine Lake | `property` | `properties` | `/properties/:slug` |
-| **Stay** | One bookable unit inside a property, e.g. Lake Chalet | `house` | `houses` | `/properties/:slug/houses/:houseSlug` |
+| **Stay** | One bookable unit inside a property, e.g. Lake Chalet | `house` | `houses` | `/properties/:slug/stays/:staySlug` (API paths keep `houses`) |
 
 Rules for writing:
 
@@ -57,14 +57,14 @@ Every durable row that is property-scoped stores `organization_id` and `property
 ## What guests see (`apps/web`)
 
 - Browse **all published properties**, or land on one property by URL (`/properties/[slug]`).
-- Property page: **photo gallery**, short description, **map + address**, **phone** (`tel:`) and email, list of stays.
+- Property page: header with one **availability search that works in place** ("Check availability at {property}"; dates go in the page URL: `checkIn`, `checkOut`, `nights`, `guestCount`), **photo gallery**, the list of stays, a compact cancellation section, then **map + address**, **phone** (`tel:`) and email. With dates, the page asks the search API for this property and lists **every** stay: the free ones first with the API's price for those dates, the rest muted and labelled "Not available for these dates and guests" (still links, so the guest can pick other dates). A polite live-region summary reads "2 of 3 stays available for 10 Jul to 12 Jul · 2 guests" with a "Clear dates" link; bad or past dates, or a failed search, fall back to the undated list with a short message. Availability is only ever the API's answer.
 - Inside a property, list **stays** with photos, capacity, amenities, and price for selected dates (the **booking total**, which can differ by season; "from €X / night" only when no dates are picked).
 - Stay page: gallery, amenities, map (same pin as the property unless the stay has its own coordinates), contact, book CTA.
 - Search: check-in, check-out, guest count — across one property or all properties. **Past days and already-booked dates are disabled** on guest calendars (booked dates come from the availability API, see **Availability: booked dates in the API response**).
 - **Search map (built):** the results page shows a map beside the list (behind a "Show map" toggle on phones). **Every stay is on the map with its own price**: stays that share a place (usually every stay of one property) appear as a small stack of chips ("Lake Chalet 960,00 €"), cheapest first, one chip per stay, pointing at the place. A chip opens its stay with the guest's dates kept. Hovering a chip lights up its card and hovering a card lights up its chip. More than four stays at one place collapse into "+N more", which opens the full list. Each stay summary carries `mapLatitude`/`mapLongitude` (its own coordinates if it has a complete pair, otherwise its property's, never half and half). Stays without usable coordinates stay in the list but not on the map. The map loads on demand (MapLibre + OpenStreetMap tiles, no Google SDK).
 - **Properties page (built):** `/properties` lists every published property as cards (photo, name, address, link to its stays). The header and footer "Properties" links go there, and the home page shows the same cards.
-- **Manage a booking (built):** `/manage` lets a guest with no account look up a booking by reference and email, see what cancelling would refund, and cancel after a confirmation that states the exact amount. Backend and rules: `docs/07-cancellation-policy.md`.
-- Stay page is the SEO/ads landing URL (`/properties/[slug]/houses/[slug]`).
+- **Manage a booking (built):** `/manage` lets a guest with no account look up a booking by reference and email, see what cancelling would refund, and cancel after a confirmation that states the exact amount. When the policy saved with the booking allows it, the same page has **Change dates**: pick a new check-in and number of nights (the calendar disables taken dates, but not the booking's own), see the exact price difference (new total, change fee, what was already paid, and one sentence: pay more, get money back, or nothing), then confirm. A balance is paid first (test mode today); a refund or nothing changes the dates straight away. A changed booking gets a **new reference**, and the old one shows "replaced by" it. Backend and rules: `docs/07-cancellation-policy.md`.
+- Stay page is the SEO/ads landing URL (`/properties/[slug]/stays/[slug]` (old `/houses/` URLs redirect permanently)).
 - Book: **short checkout** — booker name, email, phone, **number of guests**, pay. No ID, no guest name list.
 - Instant extras: optional checkboxes on the same page — not required to finish.
 - On-request extras: guest can ask; the **booking is still confirmed**. Staff approve or decline after.
@@ -179,7 +179,7 @@ Built and tested. Discounts are built too (see **Implemented (discounts)** below
 - **Staff API** (`StaffGuard`): `GET|POST /staff/houses/:houseId/rate-periods`, `PATCH|DELETE /staff/rate-periods/:periodId`, `POST /staff/properties/:propertyId/rate-periods/bulk/preview`, `POST /staff/properties/:propertyId/rate-periods/bulk` (needs `confirmed: true`, else `400 CONFIRMATION_REQUIRED`).
 - **Errors:** `409 RATE_PERIOD_OVERLAP` (names the clashing period), `400 INVALID_RATE_PERIOD`, `400 UNKNOWN_HOUSE`, `404 RATE_PERIOD_NOT_FOUND`.
 - **Admin:** Stays tab, "Seasonal rates" per stay: list, add, edit, delete (with confirmation), and "Apply to all stays at this property" with the preview and warning dialog. Stays with a clash are skipped, never overwritten.
-- **Guest UI:** the checkout shows the per-rate breakdown from the API. Cards and the stay header say "Standard rate", because individual nights can cost more.
+- **Guest UI:** the checkout shows the per-rate breakdown from the API. Cards say "Standard rate", because individual nights can cost more. The stay page header follows the dates in the checkout: it shows "Standard rate 320,00 € / night" until dates are priced, then the seasonal rate and its name ("416,00 € / night · Peak summer 2027"), or a range ("320,00 € – 416,00 € / night") when the stay crosses seasons. It only formats the API's quote lines; discounts never change the nightly rate shown.
 - **Known gap:** the staff calendar falls back to `nights x standard rate` for a booking that has no stored `total_cents` (seeded demo bookings have one; every new hold and paid reservation does). `GET /holds/:id` now shows the price saved with the hold; only holds made before snapshots existed fall back to a live quote.
 
 ### Apply to all stays (warning required)
@@ -294,6 +294,7 @@ Communication: phone and email on the listing only. **Do not** build an in-app m
 - One property has **many stays**. A freeze or booking on Stay A does **not** block Stay B on the same property. Search still shows other stays for those dates.
 - Do not invent hotel-style “5 identical deluxe rooms” unless a later story asks for it. Each stay has its own calendar (usually quantity = 1).
 - Card hold: `HOLD_TTL_SECONDS = 900`. Warn at **5 minutes left** (`HOLD_WARN_REMAINING_SECONDS = 300`). Bank hold: `BANK_TRANSFER_HOLD_TTL_SECONDS = 172800`. See `docs/05-eu-compliance-and-payments.md`.
+- **Single Pay button and hold timer (guest UI):** the checkout has ONE primary button, **Pay {total}** (the quote total; "Holding your dates…" while working; the bank-transfer flow keeps the explicit label "Reserve and pay by bank transfer"). Under it the page says only "We hold your dates while you pay. Nothing is charged until you pay." with **no countdown and no minutes**: the hold length exists only in the API's hold, and the timer never runs on page load. Pressing the button creates the hold (same terms payload), then the form is replaced by a **Complete your payment** step: a countdown ("We are holding these dates for you for N minutes (or hours)", a live clock `mm:ss`, or `h:mm:ss` for the bank-transfer hold, and a progress bar) and the payment panel, so there is exactly one way forward. N, the expiry and the warning moment all come from the API's hold (`holdTtlSeconds`, `expiresAt`, `warningAt`), so the web app hardcodes none of 15, 48 or 5. When the warning moment passes the bar and clock turn to the warning color and a polite live message says "Less than N minutes left. Finish paying to keep your dates." When time runs out the form returns with everything the guest typed and offers **Hold the dates again**. If the API answers `409 DATES_UNAVAILABLE` (someone else took the dates between quote and hold) the guest sees "Sorry, those dates were just taken. Pick other dates." and the availability and quote are refreshed. A declined card shows **Try again**, which releases the hold screen back to the form.
 
 ## Simple checkout (do not add hassle)
 
@@ -352,3 +353,9 @@ Those can be added later. Channel managers (re-sync to Airbnb) are a **conscious
 - Google/Meta tags belong only on `apps/web` **after cookie consent**.
 - Domain TLD is a branding choice. Details in `docs/05-eu-compliance-and-payments.md`.
 - UI: `docs/06-ui-theme.md` (8px professional buttons).
+
+## Staff screens (cancellations, refunds, date changes)
+
+- **Booking dialog** (calendar → click a booking): shows the reference, amount paid, terms accepted, and the cancellation, refund and history records. **Cancel booking** and **Change dates** open from here. Both default focus to the safe button, put the exact euro amount on the confirm button, and need a written note (3–500 characters) kept with the staff name.
+- **Change dates** is a rebook: the old booking is cancelled and a new one (new reference) is created. Staff can waive the fee and, when money is due, record that it was settled outside the app.
+- **Refunds** (`/refunds`, nav “Refunds”): queue filtered by Needs attention / Pending / Failed / Done / All, by property, and by search. **Retry** applies to failed refunds and pending provider refunds. A hand refund (`provider: manual`) is sent outside the app, then **Mark as refunded** with a note. The home page shows a heads-up when refunds need attention.

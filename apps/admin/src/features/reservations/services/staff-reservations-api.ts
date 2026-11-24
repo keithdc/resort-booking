@@ -7,11 +7,25 @@
 import type {
   ArrivalStatus,
   PropertyBookingConfig,
+  RebookQuote,
   StaffCalendar,
+  StaffCancelPreview,
+  StaffCancelRequest,
+  StaffCancelResult,
+  StaffChangeDatesRequest,
+  StaffChangeQuoteRequest,
+  StaffChangeResult,
   StaffReport,
   StaffReservation,
 } from '@resort-booking/shared-types';
 import { getStaffApiOk, mutateStaffApiOk } from '@/shared/services/api-client';
+import { withReportDefaults, withReservationDefaults, type RawStaffReservation } from '../utils/reservation-defaults';
+
+// The same results as the shared types, but a reservation may come from an API that is older than this
+// app and lacks the newer fields. They are filled in right here (see reservation-defaults).
+type RawStaffReport = Omit<StaffReport, 'pipeline' | 'stays'> & { pipeline: RawStaffReservation[]; stays: RawStaffReservation[] };
+type RawStaffCancelResult = Omit<StaffCancelResult, 'reservation'> & { reservation: RawStaffReservation };
+type RawStaffChangeResult = Omit<StaffChangeResult, 'reservation'> & { reservation: RawStaffReservation };
 
 /**
  * Occupancy dots for the staff calendar.
@@ -39,7 +53,9 @@ export function fetchStaffReservationsOnDate(
   if (propertyId !== '') {
     params.set('propertyId', propertyId);
   }
-  return getStaffApiOk<StaffReservation[]>(`/staff/reservations?${params.toString()}`);
+  return getStaffApiOk<RawStaffReservation[]>(`/staff/reservations?${params.toString()}`).then((rows): StaffReservation[] =>
+    rows.map(withReservationDefaults),
+  );
 }
 
 /**
@@ -50,7 +66,7 @@ export function fetchStaffReport(from: string, to: string, propertyId: string): 
   if (propertyId !== '') {
     params.set('propertyId', propertyId);
   }
-  return getStaffApiOk<StaffReport>(`/staff/reports?${params.toString()}`);
+  return getStaffApiOk<RawStaffReport>(`/staff/reports?${params.toString()}`).then(withReportDefaults);
 }
 
 /**
@@ -67,7 +83,42 @@ export function patchStaffReservationArrival(
   id: string,
   arrivalStatus: ArrivalStatus,
 ): Promise<StaffReservation> {
-  return mutateStaffApiOk<StaffReservation>(`/staff/reservations/${id}/arrival`, 'PATCH', {
+  return mutateStaffApiOk<RawStaffReservation>(`/staff/reservations/${id}/arrival`, 'PATCH', {
     arrivalStatus,
-  });
+  }).then(withReservationDefaults);
+}
+
+/**
+ * What cancelling a booking for the guest would do: paid so far and what the saved policy refunds now.
+ */
+export function fetchStaffCancelPreview(reservationId: string): Promise<StaffCancelPreview> {
+  return getStaffApiOk<StaffCancelPreview>(`/staff/reservations/${reservationId}/cancel-preview`);
+}
+
+/**
+ * Cancels a booking for a guest. The reason, refund and note are kept on the record with the staff member.
+ */
+export function cancelStaffReservation(reservationId: string, body: StaffCancelRequest): Promise<StaffCancelResult> {
+  return mutateStaffApiOk<RawStaffCancelResult>(`/staff/reservations/${reservationId}/cancel`, 'POST', body).then(
+    (result): StaffCancelResult => ({ ...result, reservation: withReservationDefaults(result.reservation) }),
+  );
+}
+
+/**
+ * Prices a change of dates (fee optionally waived). Changes nothing.
+ */
+export function quoteStaffChangeDates(reservationId: string, body: StaffChangeQuoteRequest): Promise<RebookQuote> {
+  return mutateStaffApiOk<RebookQuote>(`/staff/reservations/${reservationId}/change-dates/quote`, 'POST', body);
+}
+
+/**
+ * Changes a guest's dates (works even when guests cannot do it themselves). The old booking is cancelled and replaced.
+ */
+export function changeStaffReservationDates(
+  reservationId: string,
+  body: StaffChangeDatesRequest,
+): Promise<StaffChangeResult> {
+  return mutateStaffApiOk<RawStaffChangeResult>(`/staff/reservations/${reservationId}/change-dates`, 'POST', body).then(
+    (result): StaffChangeResult => ({ ...result, reservation: withReservationDefaults(result.reservation) }),
+  );
 }

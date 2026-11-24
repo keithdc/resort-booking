@@ -6,10 +6,12 @@
 
 import type { CancellationPolicyTier } from '@resort-booking/shared-types';
 import {
+  allocateRefund,
   BOOKING_STARTED_MESSAGE,
   calculateRefund,
   checkCancellation,
   parseBookingReference,
+  parseRefundablePayments,
   referenceIdRange,
   selectRefundTier,
   wholeDaysBetween,
@@ -174,5 +176,61 @@ describe('checkCancellation', () => {
     if (check.allowed) {
       expect(check.calculation).toMatchObject({ percent: 75, refundCents: 37500 });
     }
+  });
+});
+
+describe('allocateRefund', () => {
+  const NEW = { id: 'p2', provider: 'mock', providerRef: 'mock_pi_2', refundableCents: 2000 };
+  const OLD = { id: 'p1', provider: 'mock', providerRef: 'mock_pi_1', refundableCents: 96000 };
+
+  it('refunds from the newest payment first and moves on when it runs out', () => {
+    expect(allocateRefund([NEW, OLD], 50000)).toEqual({
+      chunks: [
+        { paymentId: 'p2', providerRef: 'mock_pi_2', provider: 'mock', amountCents: 2000 },
+        { paymentId: 'p1', providerRef: 'mock_pi_1', provider: 'mock', amountCents: 48000 },
+      ],
+      uncoveredCents: 0,
+    });
+  });
+
+  it('uses one payment when it can cover the refund', () => {
+    expect(allocateRefund([OLD], 96000).chunks).toEqual([{ paymentId: 'p1', providerRef: 'mock_pi_1', provider: 'mock', amountCents: 96000 }]);
+  });
+
+  it('reports what no payment could cover', () => {
+    expect(allocateRefund([NEW], 5000)).toEqual({
+      chunks: [{ paymentId: 'p2', providerRef: 'mock_pi_2', provider: 'mock', amountCents: 2000 }],
+      uncoveredCents: 3000,
+    });
+  });
+
+  it('covers nothing when there are no payments', () => {
+    expect(allocateRefund([], 5000)).toEqual({ chunks: [], uncoveredCents: 5000 });
+  });
+
+  it('skips a payment that has nothing left to give back', () => {
+    expect(allocateRefund([{ ...NEW, refundableCents: 0 }, OLD], 1000).chunks.map((chunk) => chunk.paymentId)).toEqual(['p1']);
+  });
+
+  it('asks the provider for nothing when the refund is zero', () => {
+    expect(allocateRefund([OLD], 0)).toEqual({ chunks: [], uncoveredCents: 0 });
+  });
+
+  it('never takes a negative amount from a payment', () => {
+    expect(allocateRefund([{ ...NEW, refundableCents: -500 }, OLD], 1000).chunks.map((chunk) => chunk.paymentId)).toEqual(['p1']);
+  });
+});
+
+describe('parseRefundablePayments', () => {
+  it('reads the aggregated payments', () => {
+    expect(parseRefundablePayments([{ id: 'p1', provider: 'mock', providerRef: 'x', refundableCents: 100 }])).toEqual([
+      { id: 'p1', provider: 'mock', providerRef: 'x', refundableCents: 100 },
+    ]);
+  });
+
+  it('drops malformed entries and treats anything else as no payments', () => {
+    expect(parseRefundablePayments([null, 'x', { id: 1 }, { id: 'p', provider: 'mock', providerRef: 'x', refundableCents: 'many' }])).toEqual([]);
+    expect(parseRefundablePayments(null)).toEqual([]);
+    expect(parseRefundablePayments({})).toEqual([]);
   });
 });

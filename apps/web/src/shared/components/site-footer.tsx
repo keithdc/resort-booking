@@ -46,7 +46,7 @@ export async function SiteFooter(): Promise<React.JSX.Element> {
         >
           <Box>
             <Typography variant="h5" sx={{ fontWeight: 600, letterSpacing: 0.4 }}>
-              Atlantic
+              Humphreys
             </Typography>
             <Typography variant="body2" sx={{ mt: 1, maxWidth: 280, opacity: 0.9 }}>
               Direct booking with the operator. One booking, one payment — card, Apple Pay, Google Pay, or bank
@@ -136,7 +136,7 @@ export async function SiteFooter(): Promise<React.JSX.Element> {
         </Box>
         <Divider sx={{ borderColor: 'currentColor', opacity: 0.24 }} />
         <Typography variant="caption" sx={{ display: 'block', mt: 3, opacity: 0.75 }}>
-          © {new Date().getFullYear()} Atlantic Hospitality. Booked with us — not a marketplace.
+          © {new Date().getFullYear()} Humphreys Hospitality. Booked with us — not a marketplace.
         </Typography>
       </Container>
     </Box>

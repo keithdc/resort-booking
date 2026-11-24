@@ -65,7 +65,7 @@ export async function PropertyHomePage(): Promise<React.JSX.Element> {
               <AuroraText variant="inherit">Pay once. Arrive.</AuroraText>
             </Typography>
             <Typography color="text.secondary" sx={{ mb: 4, maxWidth: 560, fontSize: { md: '1.15rem' } }}>
-              Pick dates and guests. See which stays are free. Hold the dates and pay — card, Apple Pay,
+              Pick dates and guests. See which stays are free. Reserve and pay — card, Apple Pay,
               Google Pay, or bank transfer.
             </Typography>
           </BlurFade>

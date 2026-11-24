@@ -9,14 +9,22 @@
 import { Box, Stack, TextField, Typography } from '@mui/material';
 import { BorderBeam, ShimmerButton } from '@resort-booking/ui';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { StayDateField } from '@/shared/components/stay-date-field';
 import { usePropertyUnavailable } from '@/shared/hooks/use-availability';
 import { addDaysIsoDate, clampStayNights, todayIsoDate } from '@/shared/utils/today-iso';
+import { propertyAvailabilityHref } from '../utils/property-stay-search';
 import { searchHref, withDefaultStay, type StayQuery } from '@/shared/utils/stay-query';
 
 interface StaySearchBarProps {
   initial: StayQuery;
+  /**
+   * "search" (default) sends the guest to the search page. "property" checks availability in
+   * place: it names the property and reloads the same property page with the dates in the URL.
+   */
+  variant?: 'search' | 'property';
+  /** Shown in the heading of the "property" variant. */
+  propertyName?: string;
 }
 
 const FIELD_SX = {
@@ -26,8 +34,13 @@ const FIELD_SX = {
 /**
  * Check-in + nights + guests. Checkout is derived so guests do not pick two dates.
  */
-export function StaySearchBar({ initial }: StaySearchBarProps): React.JSX.Element {
+export function StaySearchBar({
+  initial,
+  variant = 'search',
+  propertyName = '',
+}: StaySearchBarProps): React.JSX.Element {
   const router = useRouter();
+  const headingId = useId();
   const todayIso = todayIsoDate();
   const [query, setQuery] = useState<StayQuery>(() => withDefaultStay(initial));
   // One resort: disable nights when every house is taken. All resorts: nothing to disable.
@@ -37,14 +50,23 @@ export function StaySearchBar({ initial }: StaySearchBarProps): React.JSX.Elemen
     if (query.checkIn === '' || query.checkOut === '') {
       return;
     }
-    router.push(searchHref(query));
+    const inPlace = variant === 'property' && query.propertySlug !== '';
+    router.push(inPlace ? propertyAvailabilityHref(query.propertySlug, query) : searchHref(query));
   };
+  const contextual = variant === 'property';
+
 
   return (
     <BorderBeam>
       <Box sx={{ p: { xs: 2, md: 2.5 } }}>
+        {contextual ? (
+          <Typography id={headingId} variant="h6" component="h2" sx={{ mb: 1.5 }}>
+            {`Check availability at ${propertyName}`}
+          </Typography>
+        ) : null}
         <Stack
           component="form"
+          aria-labelledby={contextual ? headingId : undefined}
           direction={{ xs: 'column', md: 'row' }}
           spacing={1.5}
           alignItems={{ xs: 'stretch', md: 'center' }}
@@ -112,7 +134,7 @@ export function StaySearchBar({ initial }: StaySearchBarProps): React.JSX.Elemen
               flexShrink: 0,
             }}
           >
-            Search
+            {contextual ? 'Check availability' : 'Search'}
           </ShimmerButton>
         </Stack>
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>

@@ -11,8 +11,9 @@ import { Alert, Box, Button, Chip, Container, Snackbar, Stack, TextField, Typogr
 import { EmailField, isValidEmail } from '@resort-booking/ui/contact';
 import { useState } from 'react';
 import { formatCents } from '@/shared/utils/money';
-import { useManageBooking } from '../hooks/use-manage-booking';
+import { useManageBooking, type BookingCredentials } from '../hooks/use-manage-booking';
 import { CancelBookingDialog } from './cancel-booking-dialog';
+import { ChangeDatesPanel } from './change-dates-panel';
 
 interface ManageBookingPageProps {
   /** Prefills the reference (for example from the confirmation page). The email is never prefilled. */
@@ -28,6 +29,8 @@ export function ManageBookingPage({ initialReference = '' }: ManageBookingPagePr
   const [reference, setReference] = useState(initialReference);
   const [email, setEmail] = useState('');
   const [confirming, setConfirming] = useState(false);
+  // Set after a date change: the old reference, and any refund of the difference.
+  const [changeNotice, setChangeNotice] = useState<{ previousReference: string; refund: RefundSummary | null } | null>(null);
   const { booking } = state;
   const canSubmit = reference.trim() !== '' && isValidEmail(email) && !state.finding;
 
@@ -66,10 +69,21 @@ export function ManageBookingPage({ initialReference = '' }: ManageBookingPagePr
       ) : (
         <BookingView
           booking={booking}
+          credentials={state.credentials}
+          changeNotice={changeNotice}
           error={state.error}
           cancelling={state.cancelling}
+          onChanged={(changed, refund): void => {
+            setChangeNotice({ previousReference: booking.reference, refund });
+            state.adopt(changed);
+          }}
+          onOpenReference={(reference): void => {
+            setChangeNotice(null);
+            void state.find(reference, email);
+          }}
           onAskCancel={(): void => setConfirming(true)}
           onAnother={(): void => {
+            setChangeNotice(null);
             state.reset();
             setEmail('');
             setReference('');
@@ -95,17 +109,33 @@ export function ManageBookingPage({ initialReference = '' }: ManageBookingPagePr
 
 interface BookingViewProps {
   booking: GuestBooking;
+  credentials: BookingCredentials | null;
+  changeNotice: { previousReference: string; refund: RefundSummary | null } | null;
   error: string | null;
   cancelling: boolean;
   onAskCancel: () => void;
   onAnother: () => void;
+  onChanged: (booking: GuestBooking, refund: RefundSummary | null) => void;
+  onOpenReference: (reference: string) => void;
 }
 
-function BookingView({ booking, error, cancelling, onAskCancel, onAnother }: BookingViewProps): React.JSX.Element {
+function BookingView({
+  booking,
+  credentials,
+  changeNotice,
+  error,
+  cancelling,
+  onAskCancel,
+  onAnother,
+  onChanged,
+  onOpenReference,
+}: BookingViewProps): React.JSX.Element {
   const cancelled = booking.status === 'cancelled';
+  const [changing, setChanging] = useState(false);
   return (
     <Stack spacing={2} aria-label="Your booking">
       {error !== null ? <Alert severity="error">{error}</Alert> : null}
+      {changeNotice !== null ? <ChangedNotice notice={changeNotice} newReference={booking.reference} /> : null}
       <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap" useFlexGap>
         <Typography variant="h5" component="h2">
           {booking.reference}
@@ -135,9 +165,37 @@ function BookingView({ booking, error, cancelling, onAskCancel, onAnother }: Boo
       {!cancelled && !booking.canCancel ? (
         <Alert severity="warning">{booking.cancelBlockedReason ?? 'This booking can no longer be cancelled online. Please contact the property.'}</Alert>
       ) : null}
-      {!cancelled ? (
+      {cancelled && booking.replacedByReference !== null ? (
+        <Alert
+          severity="info"
+          action={
+            <Button color="inherit" size="small" onClick={(): void => onOpenReference(booking.replacedByReference ?? '')}>
+              Open the new booking
+            </Button>
+          }
+        >
+          The dates of this booking were changed. It was replaced by {booking.replacedByReference}.
+        </Alert>
+      ) : null}
+      {!cancelled && booking.canChangeDates && !changing ? (
+        <Button variant="outlined" onClick={(): void => setChanging(true)}>
+          Change dates
+        </Button>
+      ) : null}
+      {!cancelled && booking.canChangeDates && changing ? (
+        <ChangeDatesPanel
+          booking={booking}
+          credentials={credentials}
+          onChanged={(changed, refund): void => {
+            setChanging(false);
+            onChanged(changed, refund);
+          }}
+          onClose={(): void => setChanging(false)}
+        />
+      ) : null}
+      {!cancelled && !booking.canChangeDates && booking.changeDatesBlockedReason !== null ? (
         <Typography variant="body2" color="text.secondary">
-          Need different dates? Contact the property, or cancel and book again.
+          {booking.changeDatesBlockedReason}
         </Typography>
       ) : null}
       <Button onClick={onAnother}>Look up another booking</Button>
@@ -176,6 +234,19 @@ function RefundNotice({ refund, reference }: { refund: RefundSummary; reference:
       Your booking is cancelled. {refund.status === 'pending' ? 'Your refund of' : 'Refunded:'} {amount} ({String(refund.percent)}%)
       {refund.status === 'pending' ? ' is being processed' : ''}.
       {refund.simulated ? ' Test mode: no real money moved.' : ''}
+    </Alert>
+  );
+}
+
+function ChangedNotice({ notice, newReference }: { notice: { previousReference: string; refund: RefundSummary | null }; newReference: string }): React.JSX.Element {
+  const refund = notice.refund;
+  return (
+    <Alert severity="success">
+      Your dates are changed. Your new booking reference is {newReference} (the old reference {notice.previousReference} is
+      replaced).
+      {refund !== null && refund.amountCents > 0
+        ? ` ${formatCents(refund.amountCents, refund.currencyCode)} is being refunded to you.`
+        : ''}
     </Alert>
   );
 }

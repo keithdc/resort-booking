@@ -32,3 +32,15 @@ export function centsFromEuroInput(value: string): number {
   }
   return Math.round(parsed * 100);
 }
+
+/**
+ * Strict euro field -> cents: "12", "12.5", "12,50" are fine; blank, negative, text or more than
+ * two decimals give null so a form can say what is wrong instead of silently using 0.
+ */
+export function parseEurosToCents(value: string): number | null {
+  const text = value.trim().replace(',', '.');
+  if (!/^\d+(\.\d{1,2})?$/.test(text)) {
+    return null;
+  }
+  return Math.round(Number.parseFloat(text) * 100);
+}

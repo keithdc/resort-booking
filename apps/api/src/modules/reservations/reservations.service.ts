@@ -70,6 +70,17 @@ export class ReservationsService {
   }
 
   /**
+   * One booking as staff see it, with its refunds and change history. 404 when there is none.
+   */
+  public async getReservation(id: string): Promise<StaffReservation> {
+    const reservation = await this.reservations.getById(id);
+    if (reservation === null) {
+      throw new NotFoundException({ message: 'Booking not found', code: 'BOOKING_NOT_FOUND' });
+    }
+    return reservation;
+  }
+
+  /**
    * Occupied nights, revenue, occupancy, and daily series. UI only renders this.
    */
   public async getReport(query: StaffRangeQueryDto): Promise<StaffReport> {

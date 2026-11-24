@@ -1,11 +1,11 @@
 /**
- * @file apps/web/src/features/houses/services/payments-api.ts
- * @feature houses
+ * @file apps/web/src/shared/services/payments-api.ts
+ * @shared Payment requests used by checkout and by changing booking dates
  * @dependencies api-client
  */
 
 import type { MockPaymentOutcome, MockPaymentResult, PaymentSummary } from '@resort-booking/shared-types';
-import { getApiOk } from '@/shared/services/api-client';
+import { getApiOk } from './api-client';
 
 /**
  * Starts (or reopens) the payment for a card hold. The amount is the price the guest was quoted.

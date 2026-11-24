@@ -104,7 +104,8 @@ export class InventoryService {
     }
 
     if (rejectPastCheckIn) {
-      const today = isoDateInTimeZone(new Date(), 'Europe/Paris');
+      // "Today" is the property's today (a stay in another timezone must not be judged by Paris time).
+      const today = isoDateInTimeZone(new Date(), house.propertyTimezone);
       if (isCheckInBeforeToday(query.checkIn, today)) {
         throw new BadRequestException({
           message: 'Check-in cannot be in the past',

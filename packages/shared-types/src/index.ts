@@ -381,6 +381,10 @@ export interface HealthStatus {
   ok: boolean;
   postgres: boolean;
   redis: boolean;
+  /** False when the running build is older than the database schema (restart with the latest code). */
+  schema: boolean;
+  /** Applied migrations this build does not know. */
+  schemaAheadOf: string[];
 }
 
 export type RebookFeeType = 'none' | 'fixed' | 'percent';
@@ -407,6 +411,22 @@ export interface StaffReservation {
   totalCents: number;
   currencyCode: string;
   requestNames: string[];
+  /** The short code the guest quotes, e.g. BK-1A2B3C4D5E. */
+  reference: string;
+  /** What has been paid for this booking so far. */
+  paidCents: number;
+  /** When the guest ticked the cancellation terms at checkout. Null for older or staff-made bookings. */
+  termsAcceptedAt: string | null;
+  /** Set once the booking is cancelled (by the guest, by staff, or because the dates were changed). */
+  cancellation: StaffCancellation | null;
+  /** When the dates were changed, the old booking points to the booking that replaced it. */
+  replacedByReference: string | null;
+  /** When this booking replaced an earlier one after a date change, that earlier booking's reference. */
+  rebookOfReference: string | null;
+  /** Every refund recorded for this booking (cancellation refund, date-change difference). */
+  refunds: StaffRefund[];
+  /** Every date change involving this booking, oldest first. */
+  changes: StaffBookingChange[];
 }
 
 export interface CalendarDayOccupancy {
@@ -678,8 +698,10 @@ export interface ReservationConfirmation {
 
 export interface MockPaymentResult {
   payment: PaymentSummary;
-  /** Set when the payment succeeded and the stay is confirmed. */
+  /** Set when the payment succeeded and a stay is confirmed. */
   confirmation: ReservationConfirmation | null;
+  /** Set when the payment was the balance of a date change and the change has now been applied. */
+  rebookedBooking: GuestBooking | null;
 }
 
 // --- Guest-facing cancellation policy ---
@@ -749,10 +771,181 @@ export interface GuestBooking {
   /** Set once cancelled. */
   refund: RefundSummary | null;
   rebookable: boolean;
+  /** The guest may change the dates online: the policy allows it, the booking is confirmed and has not started. */
+  canChangeDates: boolean;
+  /** Why the dates cannot be changed online (policy says no, already started, cancelled), else null. */
+  changeDatesBlockedReason: string | null;
+  /** When these dates were changed, the old booking is cancelled and points to the new booking here. */
+  replacedByReference: string | null;
 }
 
 /** The reference and email the guest booked with. Both must match. */
 export interface GuestBookingLookupRequest {
   reference: string;
   email: string;
+}
+
+// --- Changing the dates of a booking ---
+
+/** The booking (reference + email) and the dates the guest wants instead. Same stay only. */
+export interface RebookRequest extends GuestBookingLookupRequest {
+  newCheckIn: string;
+  newCheckOut: string;
+}
+
+/** What changing to the new dates would cost, shown before anything changes. */
+export interface RebookQuote {
+  reference: string;
+  newCheckIn: string;
+  newCheckOut: string;
+  nights: number;
+  currencyCode: string;
+  /** The new nights priced with today's rates (and discounts that still apply). */
+  lines: QuoteLine[];
+  subtotalCents: number;
+  discounts: QuoteDiscountLine[];
+  discountCents: number;
+  /** The new stay total after discounts. */
+  newTotalCents: number;
+  /** The change fee from the policy saved with the booking (none, fixed, or a percent of what was paid). */
+  feeCents: number;
+  /** What the guest has paid for this booking so far. */
+  paidCents: number;
+  /** newTotal + fee - paid. Positive: the guest pays more. Negative: the guest gets money back. */
+  balanceCents: number;
+  payCents: number;
+  refundCents: number;
+  /** The new dates are free for this stay (the booking's own current dates count as free). */
+  available: boolean;
+  /** Why the change is not possible, else null. */
+  problem: string | null;
+  /** The promo code the original booking used, if it still applies to the new dates. */
+  promoCode: PromoCodeResult | null;
+}
+
+/** `changed`: the dates are changed now. `payment_required`: the guest must pay `payment` first. */
+export type RebookOutcome = 'changed' | 'payment_required';
+
+export interface RebookResult {
+  outcome: RebookOutcome;
+  /** `changed`: the NEW booking (new reference). `payment_required`: the current booking, unchanged. */
+  booking: GuestBooking;
+  /** Set when `payment_required`. Settled through the payment provider. */
+  payment: PaymentSummary | null;
+  /** Set when `changed` and the new total was lower, so part of the payment came back. */
+  refund: RefundSummary | null;
+}
+
+// --- Staff: guest cancellations, refunds and date changes ---
+
+export type RefundKind = 'cancellation' | 'rebook_difference';
+export type ActionInitiator = 'guest' | 'staff';
+
+/** A refund as staff see it, with enough about the booking to act on it. */
+export interface StaffRefund {
+  id: string;
+  reservationId: string;
+  reference: string;
+  propertyName: string;
+  stayName: string;
+  bookerName: string;
+  bookerEmail: string;
+  kind: RefundKind;
+  amountCents: number;
+  percent: number;
+  currencyCode: string;
+  status: RefundStatus;
+  /** "mock" now, a real provider later, or "manual" when staff send the money by hand. */
+  provider: string;
+  failureReason: string | null;
+  /** Why it was refunded, e.g. guest_request, property_cancelled, goodwill, dates_changed. */
+  reason: string;
+  initiatedBy: ActionInitiator;
+  /** What staff wrote when they resolved it by hand. */
+  resolutionNote: string | null;
+  resolvedByName: string | null;
+  createdAt: string;
+}
+
+/** Who cancelled a booking, why, and when. */
+export interface StaffCancellation {
+  initiatedBy: ActionInitiator;
+  /** guest_request, property_cancelled, goodwill, or dates_changed. */
+  reason: string;
+  note: string | null;
+  staffName: string | null;
+  cancelledAt: string;
+}
+
+/** One change of dates, linking the old booking to the new one. */
+export interface StaffBookingChange {
+  id: string;
+  fromReference: string;
+  toReference: string;
+  oldCheckIn: string;
+  oldCheckOut: string;
+  newCheckIn: string;
+  newCheckOut: string;
+  oldTotalCents: number;
+  newTotalCents: number;
+  feeCents: number;
+  payCents: number;
+  refundCents: number;
+  initiatedBy: ActionInitiator;
+  staffName: string | null;
+  note: string | null;
+  createdAt: string;
+}
+
+export type StaffCancelReason = 'guest_request' | 'property_cancelled' | 'goodwill';
+
+/** What cancelling a booking for a guest would do, before staff commit. */
+export interface StaffCancelPreview {
+  reservationId: string;
+  reference: string;
+  paidCents: number;
+  currencyCode: string;
+  canCancel: boolean;
+  blockedReason: string | null;
+  /** What the policy saved with the booking would refund right now, or null when it has no ladder. */
+  policyRefund: RefundQuote | null;
+}
+
+export interface StaffCancelRequest {
+  /** guest_request refunds per the saved policy, property_cancelled refunds everything paid, goodwill uses `refundCents`. */
+  reason: StaffCancelReason;
+  /** Only for goodwill: the exact refund, from 0 up to what was paid. Null otherwise. */
+  refundCents: number | null;
+  /** Required: who and why is kept on the record. */
+  note: string;
+}
+
+export interface StaffCancelResult {
+  reservation: StaffReservation;
+  refund: StaffRefund | null;
+}
+
+export interface StaffChangeQuoteRequest {
+  newCheckIn: string;
+  newCheckOut: string;
+  /** Do not charge the change fee. */
+  waiveFee: boolean;
+}
+
+export interface StaffChangeDatesRequest extends StaffChangeQuoteRequest {
+  /** Required: who and why is kept on the record. */
+  note: string;
+  /** When the guest owes more, staff confirm the guest paid the difference outside the system (cash or bank at the desk). */
+  balanceSettledOutside: boolean;
+}
+
+export interface StaffChangeResult {
+  /** The NEW booking (new reference). */
+  reservation: StaffReservation;
+  refund: StaffRefund | null;
+}
+
+export interface MarkRefundPaidRequest {
+  /** Required: how and when the money was sent. */
+  note: string;
 }

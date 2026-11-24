@@ -76,6 +76,18 @@ export class DiscountsService {
     return this.discounts.recordRedemptions(client, inventoryBlockId, lines);
   }
 
+  /**
+   * When a booking's dates change, discount use moves to the new booking (with the discounts it got).
+   */
+  public moveRedemptions(
+    client: PoolClient,
+    fromBookingId: string,
+    toBookingId: string,
+    lines: readonly QuoteDiscountLine[],
+  ): Promise<void> {
+    return this.discounts.replaceRedemptions(client, fromBookingId, toBookingId, lines);
+  }
+
   // --- Staff ---
 
   /**

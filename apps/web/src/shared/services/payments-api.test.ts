@@ -1,6 +1,6 @@
 /**
- * @file apps/web/src/features/houses/services/payments-api.test.ts
- * @feature houses
+ * @file apps/web/src/shared/services/payments-api.test.ts
+ * @shared Payment requests
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';

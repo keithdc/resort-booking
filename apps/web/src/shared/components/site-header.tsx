@@ -42,7 +42,7 @@ export function SiteHeader(): React.JSX.Element {
             sx={{ display: 'flex', flexDirection: 'column' }}
           >
             <SparklesText variant="h6" component="span">
-              Atlantic
+              Humphreys
             </SparklesText>
             <Typography variant="caption" color="text.secondary" sx={{ letterSpacing: 0.4 }}>
               Direct booking

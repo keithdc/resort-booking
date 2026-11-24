@@ -4,20 +4,72 @@
  * @dependencies pg, node:fs
  */
 
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { existsSync } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { DatabaseService } from './database.service';
+import { compareMigrations, describeStaleBuild, type MigrationStatus } from './migration-status';
+
+const STALE_CHECK_INTERVAL_MS = 60_000;
 
 @Injectable()
-export class MigrationRunner implements OnModuleInit {
+export class MigrationRunner implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(MigrationRunner.name);
+  private timer: NodeJS.Timeout | null = null;
+  private lastUnknown = '';
 
   public constructor(private readonly database: DatabaseService) {}
 
+  /**
+   * Applies pending migrations, refuses to start when this build is older than the database,
+   * and keeps watching: another process may migrate the database while this one keeps running old code.
+   */
   public async onModuleInit(): Promise<void> {
     await this.runPending();
+    const status = await this.status();
+    if (status.unknown.length > 0) {
+      throw new Error(describeStaleBuild(status.unknown));
+    }
+    this.timer = setInterval((): void => {
+      void this.warnIfStale();
+    }, STALE_CHECK_INTERVAL_MS);
+    this.timer.unref();
+  }
+
+  public onModuleDestroy(): void {
+    if (this.timer !== null) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+  }
+
+  /**
+   * Compares the migration files in this build with what the database has applied.
+   */
+  public async status(): Promise<MigrationStatus> {
+    const files = (await readdir(resolveMigrationsDir()))
+      .filter((name: string): boolean => name.endsWith('.sql'));
+    const applied = await this.database.query<{ id: string }>('SELECT id FROM schema_migrations');
+    return compareMigrations(
+      files,
+      applied.rows.map((row: { id: string }): string => row.id),
+    );
+  }
+
+  private async warnIfStale(): Promise<void> {
+    try {
+      const { unknown } = await this.status();
+      const key = unknown.join(',');
+      if (key !== this.lastUnknown) {
+        this.lastUnknown = key;
+        if (unknown.length > 0) {
+          this.logger.error(describeStaleBuild(unknown));
+        }
+      }
+    } catch (error: unknown) {
+      this.logger.warn(`Schema check failed: ${error instanceof Error ? error.message : 'unknown error'}`);
+    }
   }
 
   /**

@@ -143,7 +143,7 @@ describe('SearchResultsView', () => {
     render(<SearchResultsView results={RESULTS} stay={STAY} />);
 
     expect(chip(/chip Lake Chalet/).getAttribute('href')).toBe(
-      '/properties/alpine-lake/houses/lake?checkIn=2027-07-10&checkOut=2027-07-12&nights=2&guestCount=2',
+      '/properties/alpine-lake/stays/lake?checkIn=2027-07-10&checkOut=2027-07-12&nights=2&guestCount=2',
     );
   });
 

@@ -35,6 +35,9 @@ function booking(overrides: Partial<GuestBooking> = {}): GuestBooking {
     refundQuote: { paidCents: 96000, refundPercent: 75, refundCents: 72000, currencyCode: 'EUR', daysBeforeCheckIn: 4 },
     refund: null,
     rebookable: false,
+    canChangeDates: false,
+    changeDatesBlockedReason: 'The dates of this booking cannot be changed. To change them, cancel and book again.',
+    replacedByReference: null,
     ...overrides,
   };
 }
@@ -185,5 +188,85 @@ describe('useManageBooking', () => {
 
     expect(result.current.booking).toBeNull();
     expect(api.cancelBooking).not.toHaveBeenCalled();
+  });
+
+  describe('credentials and adopting a replacement booking', () => {
+    it('knows who is signed in once a booking is found, and nobody before', async () => {
+      api.lookupBooking.mockResolvedValue(booking());
+      const { result } = renderHook(() => useManageBooking());
+      expect(result.current.credentials).toBeNull();
+
+      await act(async () => {
+        await result.current.find('BK-ABC1234567', 'ada@example.com');
+      });
+
+      expect(result.current.credentials).toEqual({ reference: 'BK-ABC1234567', email: 'ada@example.com' });
+    });
+
+    it('switches to the new booking after a date change and keeps the same email', async () => {
+      api.lookupBooking.mockResolvedValue(booking());
+      const { result } = renderHook(() => useManageBooking());
+      await act(async () => {
+        await result.current.find('BK-ABC1234567', 'ada@example.com');
+      });
+
+      act(() => result.current.adopt(booking({ reference: 'BK-NEW0000000', checkIn: '2027-07-20', checkOut: '2027-07-22' })));
+
+      expect(result.current.booking?.reference).toBe('BK-NEW0000000');
+      expect(result.current.credentials).toEqual({ reference: 'BK-NEW0000000', email: 'ada@example.com' });
+    });
+
+    it('cancels the NEW booking, not the old one, after adopting it', async () => {
+      api.lookupBooking.mockResolvedValue(booking());
+      api.cancelBooking.mockResolvedValue(CANCELLED);
+      const { result } = renderHook(() => useManageBooking());
+      await act(async () => {
+        await result.current.find('BK-ABC1234567', 'ada@example.com');
+      });
+      act(() => result.current.adopt(booking({ reference: 'BK-NEW0000000' })));
+
+      await act(async () => {
+        await result.current.cancel();
+      });
+
+      expect(api.cancelBooking).toHaveBeenCalledWith({ reference: 'BK-NEW0000000', email: 'ada@example.com' });
+    });
+
+    it('clears an earlier error when it adopts the new booking', async () => {
+      api.lookupBooking.mockResolvedValue(booking());
+      api.cancelBooking.mockRejectedValue(new ApiRequestError('Nope', 409, 'CANCELLATION_NOT_ALLOWED'));
+      const { result } = renderHook(() => useManageBooking());
+      await act(async () => {
+        await result.current.find('BK-ABC1234567', 'ada@example.com');
+      });
+      await act(async () => {
+        await result.current.cancel();
+      });
+      expect(result.current.error).toBe('Nope');
+
+      act(() => result.current.adopt(booking({ reference: 'BK-NEW0000000' })));
+
+      expect(result.current.error).toBeNull();
+    });
+
+    it('does nothing when asked to adopt before anyone is signed in', () => {
+      const { result } = renderHook(() => useManageBooking());
+
+      act(() => result.current.adopt(booking({ reference: 'BK-NEW0000000' })));
+
+      expect(result.current.booking).toBeNull();
+    });
+
+    it('forgets the credentials on reset', async () => {
+      api.lookupBooking.mockResolvedValue(booking());
+      const { result } = renderHook(() => useManageBooking());
+      await act(async () => {
+        await result.current.find('BK-ABC1234567', 'ada@example.com');
+      });
+
+      act(() => result.current.reset());
+
+      expect(result.current.credentials).toBeNull();
+    });
   });
 });

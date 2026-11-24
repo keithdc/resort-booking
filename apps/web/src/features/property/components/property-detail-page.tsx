@@ -6,35 +6,64 @@
 
 import { Box, Container, Link as MuiLink, Stack, Typography } from '@mui/material';
 import { BlurFade, Highlighter } from '@resort-booking/ui';
-import { HouseListingCard } from '@/features/houses/components/house-listing-card';
+import type { HouseSearchResult } from '@resort-booking/shared-types';
+import { fetchStaySearch } from '@/features/houses/services/inventory-api';
 import { CancellationPolicySection } from '@/shared/components/cancellation-policy';
 import { PhotoGallery } from '@/shared/components/photo-gallery';
 import { PropertyMap } from '@/shared/components/property-map';
 import { formatAddress } from '@/shared/utils/format-address';
+import { todayIsoDate } from '@/shared/utils/today-iso';
 import { withDefaultStay, type StayQuery } from '@/shared/utils/stay-query';
 import { fetchCancellationPolicyOrNull, fetchHouses, fetchProperty } from '../services/property-api';
+import { parsePropertyStaySearch, type PropertyStaySearch, type RawSearchParams } from '../utils/property-stay-search';
+import { PropertyStayList } from './property-stay-list';
 import { StaySearchBar } from './stay-search-bar';
 
 interface PropertyDetailPageProps {
   slug: string;
+  /** The page's query string: checkIn, checkOut, nights, guestCount. */
+  searchParams?: RawSearchParams;
 }
 
 /**
- * Property listing: short header, photos, houses to book, map.
+ * Asks the API which stays are free. A failed search gives null so the page still renders.
  */
-export async function PropertyDetailPage({ slug }: PropertyDetailPageProps): Promise<React.JSX.Element> {
-  const [property, houses, policy] = await Promise.all([
+async function loadAvailability(slug: string, search: PropertyStaySearch): Promise<HouseSearchResult[] | null> {
+  if (search.kind !== 'search') {
+    return null;
+  }
+  try {
+    return await fetchStaySearch(search.stay.checkIn, search.stay.checkOut, search.guests, slug);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Property listing: header with the availability search, photos, stays (with availability for the
+ * searched dates), cancellation terms, location and map.
+ */
+export async function PropertyDetailPage({
+  slug,
+  searchParams = {},
+}: PropertyDetailPageProps): Promise<React.JSX.Element> {
+  const search = parsePropertyStaySearch(searchParams, slug, todayIsoDate());
+  const [property, houses, policy, results] = await Promise.all([
     fetchProperty(slug),
     fetchHouses(slug),
     fetchCancellationPolicyOrNull(slug),
+    loadAvailability(slug, search),
   ]);
-  const stay: StayQuery = withDefaultStay({
-    checkIn: '',
-    checkOut: '',
-    nights: '1',
-    guestCount: '2',
-    propertySlug: property.slug,
-  });
+  const stay: StayQuery =
+    search.kind === 'search'
+      ? search.stay
+      : withDefaultStay({
+          checkIn: '',
+          checkOut: '',
+          nights: '1',
+          guestCount: '2',
+          propertySlug: property.slug,
+        });
   return (
     <Box>
       <Container sx={{ pt: { xs: 3, md: 5 }, pb: 2 }} maxWidth="lg">
@@ -52,37 +81,24 @@ export async function PropertyDetailPage({ slug }: PropertyDetailPageProps): Pro
             {property.description}
           </Typography>
         </BlurFade>
-        <StaySearchBar initial={stay} />
+        <StaySearchBar initial={stay} variant="property" propertyName={property.name} />
       </Container>
       <Container maxWidth="lg" sx={{ py: 3 }}>
         <PhotoGallery photos={property.photos} altFallback={property.name} />
       </Container>
       <Container maxWidth="lg" sx={{ pb: 8 }}>
-        <Typography variant="h4" component="h2" gutterBottom sx={{ mt: 2 }}>
-          Choose a stay
-        </Typography>
-        <Typography color="text.secondary" sx={{ mb: 3 }}>
-          Open a stay to hold the dates and pay. The map below is this destination.
-        </Typography>
-        {houses.length === 0 ? (
-          <Typography>No published stays here yet.</Typography>
-        ) : (
-          <Box
-            sx={{
-              display: 'grid',
-              gap: 3,
-              gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
-              mb: 6,
-            }}
-          >
-            {houses.map((house, index) => (
-              <BlurFade key={house.id} delay={index * 0.06}>
-                <HouseListingCard house={house} quote={null} stay={stay} />
-              </BlurFade>
-            ))}
-          </Box>
-        )}
-        <CancellationPolicySection policy={policy} currencyCode={houses[0]?.currencyCode ?? 'EUR'} />
+        <PropertyStayList
+          propertySlug={property.slug}
+          houses={houses}
+          search={search}
+          results={results}
+          stay={stay}
+        />
+        <CancellationPolicySection
+          policy={policy}
+          currencyCode={houses[0]?.currencyCode ?? 'EUR'}
+          checkIn={search.kind === 'search' ? search.stay.checkIn : undefined}
+        />
         <Typography variant="h5" component="h2" gutterBottom>
           Where you will stay
         </Typography>

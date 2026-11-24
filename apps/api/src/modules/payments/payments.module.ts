@@ -8,6 +8,7 @@ import { Module } from '@nestjs/common';
 import { DiscountsModule } from '../discounts/discounts.module';
 import { InventoryModule } from '../inventory/inventory.module';
 import { createPaymentProvider } from './payment-provider.factory';
+import { PaymentSettlementRegistry } from './payment-settlement';
 import { PAYMENT_PROVIDER } from './payment-provider';
 import { PaymentsController } from './payments.controller';
 import { PaymentsRepository } from './payments.repository';
@@ -16,10 +17,11 @@ import { PaymentsService } from './payments.service';
 @Module({
   imports: [InventoryModule, DiscountsModule],
   controllers: [PaymentsController],
-  exports: [PaymentsService],
+  exports: [PaymentsService, PaymentSettlementRegistry],
   providers: [
     PaymentsService,
     PaymentsRepository,
+    PaymentSettlementRegistry,
     // Chosen once at startup from PAYMENT_PROVIDER. Swap in Stripe here when it is configured.
     { provide: PAYMENT_PROVIDER, useFactory: () => createPaymentProvider(process.env) },
   ],

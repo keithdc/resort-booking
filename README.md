@@ -115,5 +115,5 @@ Do not commit filled `.env` files. Examples:
 | [docs/09-client-proposal.md](docs/09-client-proposal.md) | Printable proposal, June 2027 plan, brand checklist, draft NDA |
 
 The Operator-facing PDF (print on A4) is
-[docs/client/Atlantic-Direct-Booking-Proposal-Architecture-NDA.pdf](docs/client/Atlantic-Direct-Booking-Proposal-Architecture-NDA.pdf).
+[docs/client/Humphreys-Direct-Booking-Proposal-Architecture-NDA.pdf](docs/client/Humphreys-Direct-Booking-Proposal-Architecture-NDA.pdf).
 

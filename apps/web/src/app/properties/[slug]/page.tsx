@@ -5,17 +5,19 @@
  */
 
 import { PropertyDetailPage } from '@/features/property';
+import type { RawSearchParams } from '@/features/property/utils/property-stay-search';
 
 export const dynamic = 'force-dynamic';
 
 interface PropertyPageProps {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<RawSearchParams>;
 }
 
 /**
- * Property route.
+ * Property route. The query string (checkIn, checkOut, nights, guestCount) searches this property in place.
  */
-export default async function PropertyRoute({ params }: PropertyPageProps): Promise<React.JSX.Element> {
+export default async function PropertyRoute({ params, searchParams }: PropertyPageProps): Promise<React.JSX.Element> {
   const { slug } = await params;
-  return <PropertyDetailPage slug={slug} />;
+  return <PropertyDetailPage slug={slug} searchParams={await searchParams} />;
 }

@@ -307,6 +307,11 @@ export function OccupancyCalendar({ properties }: OccupancyCalendarProps): React
                     rows.map((row): StaffReservation => (row.id === updated.id ? updated : row)),
                   );
                 }}
+                onChanged={(): void => {
+                  // A cancellation or date change moves counts and rows: reload both.
+                  void loadCalendar();
+                  void loadDay(selectedDate);
+                }}
               />
               </>
             )}

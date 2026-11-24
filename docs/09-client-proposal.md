@@ -2,7 +2,7 @@
 
 Printable PDF for the Operator:
 
-**[Atlantic-Direct-Booking-Proposal-Architecture-NDA.pdf](client/Atlantic-Direct-Booking-Proposal-Architecture-NDA.pdf)**
+**[Humphreys-Direct-Booking-Proposal-Architecture-NDA.pdf](client/Humphreys-Direct-Booking-Proposal-Architecture-NDA.pdf)**
 
 Version **1.1** (16 September 2026). The pack covers:
 
@@ -16,7 +16,7 @@ Version **1.1** (16 September 2026). The pack covers:
 - **Watch period of 3 months (optional to 6)** after go-live, modest monthly retainer (indicative €180–€320 ex-VAT)
 - **Draft mutual NDA** (not legal advice — counsel must review before signing)
 
-HTML source (A4 print): [client/atlantic-direct-booking-proposal.html](client/atlantic-direct-booking-proposal.html)
+HTML source (A4 print): [client/humphreys-direct-booking-proposal.html](client/humphreys-direct-booking-proposal.html)
 
 Regenerate the PDF on macOS with Chrome:
 

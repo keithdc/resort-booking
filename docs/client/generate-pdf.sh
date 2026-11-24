@@ -2,8 +2,8 @@
 # Regenerates the printable client PDF from the HTML source.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-HTML="$ROOT/docs/client/atlantic-direct-booking-proposal.html"
-PDF="$ROOT/docs/client/Atlantic-Direct-Booking-Proposal-Architecture-NDA.pdf"
+HTML="$ROOT/docs/client/humphreys-direct-booking-proposal.html"
+PDF="$ROOT/docs/client/Humphreys-Direct-Booking-Proposal-Architecture-NDA.pdf"
 CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 
 if [[ ! -x "$CHROME" ]]; then

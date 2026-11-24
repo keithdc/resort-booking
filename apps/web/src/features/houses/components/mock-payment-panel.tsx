@@ -50,7 +50,7 @@ export function MockPaymentPanel({ holdId, onConfirmed, onDeclined }: MockPaymen
         severity="error"
         action={
           <Button color="inherit" size="small" onClick={onDeclined}>
-            Hold the dates again
+            Try again
           </Button>
         }
       >

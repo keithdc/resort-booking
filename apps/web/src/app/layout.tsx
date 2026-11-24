@@ -12,7 +12,7 @@ import { SiteFooter } from '@/shared/components/site-footer';
 import { SiteHeader } from '@/shared/components/site-header';
 
 export const metadata: Metadata = {
-  title: 'Atlantic — properties, booked directly',
+  title: 'Humphreys — properties, booked directly',
   description: 'Direct booking for properties across our destinations',
 };
 

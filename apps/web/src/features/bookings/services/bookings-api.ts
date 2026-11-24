@@ -4,7 +4,14 @@
  * @dependencies api-client
  */
 
-import type { GuestBooking, GuestBookingLookupRequest } from '@resort-booking/shared-types';
+import type {
+  GuestBooking,
+  GuestBookingLookupRequest,
+  HouseAvailability,
+  RebookQuote,
+  RebookRequest,
+  RebookResult,
+} from '@resort-booking/shared-types';
 import { getApiOk } from '@/shared/services/api-client';
 
 /**
@@ -21,4 +28,26 @@ export function lookupBooking(request: GuestBookingLookupRequest): Promise<Guest
  */
 export function cancelBooking(request: GuestBookingLookupRequest): Promise<GuestBooking> {
   return getApiOk<GuestBooking>('/bookings/cancel', { method: 'POST', body: JSON.stringify(request) });
+}
+
+/**
+ * The dates that are taken for this booking's stay, not counting the booking itself, so moving a
+ * booking by a day is allowed. Same reference-and-email proof as a lookup.
+ */
+export function fetchRebookAvailability(request: GuestBookingLookupRequest): Promise<HouseAvailability> {
+  return getApiOk<HouseAvailability>('/bookings/rebook/availability', { method: 'POST', body: JSON.stringify(request) });
+}
+
+/**
+ * What changing to the new dates would cost, or why it cannot be done. Changes nothing.
+ */
+export function quoteRebook(request: RebookRequest): Promise<RebookQuote> {
+  return getApiOk<RebookQuote>('/bookings/rebook/quote', { method: 'POST', body: JSON.stringify(request) });
+}
+
+/**
+ * Changes the dates now when nothing more is owed, or opens the payment for the balance first.
+ */
+export function rebookBooking(request: RebookRequest): Promise<RebookResult> {
+  return getApiOk<RebookResult>('/bookings/rebook', { method: 'POST', body: JSON.stringify(request) });
 }

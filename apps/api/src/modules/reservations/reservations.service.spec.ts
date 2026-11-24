@@ -6,7 +6,7 @@
 
 import { NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import type { PropertyBookingConfig, PropertyDetail } from '@resort-booking/shared-types';
+import type { PropertyBookingConfig, PropertyDetail, StaffReservation } from '@resort-booking/shared-types';
 import type { PolicySnapshot } from './reservations.rules';
 import { PropertyService } from '../property/property.service';
 import { ReservationsRepository } from './reservations.repository';
@@ -158,5 +158,102 @@ describe('ReservationsService.getPolicySnapshot', () => {
     getPolicySnapshot.mockResolvedValue(null);
 
     await expect(service.getPolicySnapshot('missing')).rejects.toMatchObject({ response: { code: 'PROPERTY_NOT_FOUND' } });
+  });
+});
+
+describe('ReservationsService.getReport after a guest changed the dates of a booking', () => {
+  const listConfirmedOverlapping = jest.fn<Promise<StaffReservation[]>, [string, string, string | null]>();
+  const listPipelineOverlapping = jest.fn<Promise<StaffReservation[]>, [string, string, string | null]>();
+  const countHouses = jest.fn<Promise<number>, [string | null]>();
+  let service: ReservationsService;
+
+  function stay(overrides: Partial<StaffReservation>): StaffReservation {
+    return {
+      id: 'x',
+      organizationId: 'org',
+      propertyId: PROPERTY,
+      propertyName: 'Alpine Lake',
+      houseId: 'house',
+      houseName: 'Lake Chalet',
+      checkIn: '2027-07-10',
+      checkOut: '2027-07-13',
+      guestCount: 2,
+      bookerName: 'Ada',
+      bookerEmail: 'ada@example.com',
+      bookerPhone: '+33612345678',
+      guestNote: '',
+      paymentMethod: 'card',
+      status: 'confirmed',
+      kind: 'reservation',
+      arrivalStatus: 'expected',
+      rebookOfId: null,
+      totalCents: 96000,
+      currencyCode: 'EUR',
+      requestNames: [],
+      reference: 'BK-0000000000',
+      paidCents: 0,
+      termsAcceptedAt: null,
+      cancellation: null,
+      replacedByReference: null,
+      rebookOfReference: null,
+      refunds: [],
+      changes: [],
+      ...overrides,
+    };
+  }
+
+  // The old booking is cancelled (replaced), the new one is confirmed and points back at it.
+  const OLD = stay({ id: 'old', status: 'cancelled', totalCents: 96000 });
+  const NEW = stay({ id: 'new', checkIn: '2027-07-20', checkOut: '2027-07-22', totalCents: 60000, rebookOfId: 'old' });
+
+  beforeEach(async () => {
+    jest.resetAllMocks();
+    listConfirmedOverlapping.mockResolvedValue([NEW]);
+    listPipelineOverlapping.mockResolvedValue([OLD, NEW]);
+    countHouses.mockResolvedValue(1);
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        ReservationsService,
+        { provide: ReservationsRepository, useValue: { listConfirmedOverlapping, listPipelineOverlapping, countHouses } },
+        { provide: PropertyService, useValue: { getPublishedProperty: jest.fn() } },
+      ],
+    }).compile();
+    service = moduleRef.get(ReservationsService);
+  });
+
+  it('counts revenue from the confirmed NEW booking, never from the cancelled old one', async () => {
+    const report = await service.getReport({ from: '2027-07-01', to: '2027-08-01', propertyId: PROPERTY });
+
+    expect(report.revenueCents).toBe(60000);
+    expect(report.reservationCount).toBe(1);
+    expect(report.occupiedNights).toBe(2);
+  });
+
+  it('shows the replaced booking as cancelled and the new one as a rebook', async () => {
+    const report = await service.getReport({ from: '2027-07-01', to: '2027-08-01', propertyId: PROPERTY });
+
+    expect(report.cancelledCount).toBe(1);
+    expect(report.rebookCount).toBe(1);
+  });
+
+  it('keeps the old booking out of occupied nights, so a changed booking is not counted twice', async () => {
+    const report = await service.getReport({ from: '2027-07-01', to: '2027-08-01', propertyId: PROPERTY });
+
+    const oldNight = report.daily.find((day) => day.date === '2027-07-11');
+    const newNight = report.daily.find((day) => day.date === '2027-07-20');
+    expect(oldNight?.occupiedNights).toBe(0);
+    expect(oldNight?.cancelledCount).toBe(1);
+    expect(newNight?.occupiedNights).toBe(1);
+  });
+
+  it('shows the calendar lanes: the new booking as a rebook, the old one as cancelled', async () => {
+    listPipelineOverlapping.mockResolvedValue([OLD, NEW]);
+
+    const calendar = await service.getCalendar({ from: '2027-07-10', to: '2027-07-22', propertyId: PROPERTY });
+
+    const oldDay = calendar.days.find((day) => day.date === '2027-07-11');
+    const newDay = calendar.days.find((day) => day.date === '2027-07-20');
+    expect(oldDay).toMatchObject({ cancelledCount: 1, rebookCount: 0, bookingCount: 0 });
+    expect(newDay).toMatchObject({ rebookCount: 1, cancelledCount: 0 });
   });
 });

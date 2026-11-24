@@ -9,7 +9,7 @@
 import type { PaymentSummary, ReservationConfirmation } from '@resort-booking/shared-types';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiRequestError } from '@/shared/services/api-client';
-import { completeMockPayment, startPayment } from '../services/payments-api';
+import { completeMockPayment, startPayment } from '@/shared/services/payments-api';
 
 export type PaymentPhase = 'starting' | 'ready' | 'paying' | 'confirmed' | 'declined' | 'error';
 

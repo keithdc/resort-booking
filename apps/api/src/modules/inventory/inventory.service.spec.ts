@@ -205,6 +205,17 @@ describe('InventoryService pricing', () => {
       expect(listForHouses).toHaveBeenCalledWith([HOUSE_A], '2027-06-29', '2027-07-02');
     });
 
+    it('judges a past check-in by the PROPERTY\'s timezone, not Paris', async () => {
+      // 22:30 UTC on 1 May 2027 is already 2 May in Tokyo, so a 2 May check-in is the property's today.
+      jest.setSystemTime(new Date('2027-05-01T22:30:00Z'));
+      getHouseById.mockImplementation((id) => Promise.resolve({ ...detail(id, 4, 18000), propertyTimezone: 'Asia/Tokyo' }));
+
+      await expect(service.getQuote({ ...query, checkIn: '2027-05-02', checkOut: '2027-05-04' }, true)).resolves.toMatchObject({ available: true });
+      await expect(service.getQuote({ ...query, checkIn: '2027-05-01', checkOut: '2027-05-04' }, true)).rejects.toMatchObject({
+        response: { code: 'PAST_CHECK_IN' },
+      });
+    });
+
     it('still reports a taken house as unavailable, with its price', async () => {
       hasOverlap.mockResolvedValue(true);
 

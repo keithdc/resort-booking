@@ -111,6 +111,7 @@ describe('DiscountsService', () => {
   const update = jest.fn<Promise<Discount | null>, [string, DiscountWrite]>();
   const remove = jest.fn<Promise<boolean>, [string]>();
   const recordRedemptions = jest.fn<Promise<void>, [PoolClient, string, readonly QuoteDiscountLine[]]>();
+  const replaceRedemptions = jest.fn<Promise<void>, [PoolClient, string, string, readonly QuoteDiscountLine[]]>();
   const getPropertyById = jest.fn<Promise<PropertyDetail | null>, [string]>();
   const listHousesByPropertyId = jest.fn<Promise<HouseSummary[]>, [string]>();
   let service: DiscountsService;
@@ -126,7 +127,7 @@ describe('DiscountsService', () => {
         DiscountsService,
         {
           provide: DiscountsRepository,
-          useValue: { listForProperties, getById, insert, update, delete: remove, recordRedemptions },
+          useValue: { listForProperties, getById, insert, update, delete: remove, recordRedemptions, replaceRedemptions },
         },
         { provide: PropertyRepository, useValue: { getPropertyById, listHousesByPropertyId } },
       ],
@@ -303,6 +304,24 @@ describe('DiscountsService', () => {
 
       expect(recordRedemptions).toHaveBeenCalledTimes(1);
       expect(recordRedemptions).toHaveBeenCalledWith(client, 'block-1', lines);
+    });
+  });
+
+  describe('moveRedemptions', () => {
+    it('moves discount use from the old booking to the one that replaces it, with what the new one got', async () => {
+      const lines: QuoteDiscountLine[] = [{ discountId: 'd1', label: 'Long stay', amountCents: 6000 }];
+      const client = fakeClient();
+
+      await service.moveRedemptions(client, 'old-booking', 'new-booking', lines);
+
+      expect(replaceRedemptions).toHaveBeenCalledTimes(1);
+      expect(replaceRedemptions).toHaveBeenCalledWith(client, 'old-booking', 'new-booking', lines);
+    });
+
+    it('can move to a booking with no discounts at all (the old rows still go)', async () => {
+      await service.moveRedemptions(fakeClient(), 'old-booking', 'new-booking', []);
+
+      expect(replaceRedemptions).toHaveBeenCalledWith(expect.anything(), 'old-booking', 'new-booking', []);
     });
   });
 });

@@ -18,7 +18,6 @@ import type {
 import {
   Alert,
   Box,
-  Button,
   Checkbox,
   FormControl,
   FormControlLabel,
@@ -27,7 +26,6 @@ import {
   Link as MuiLink,
   Radio,
   RadioGroup,
-  Snackbar,
   Stack,
   TextField,
   Typography,
@@ -42,8 +40,11 @@ import { maxNightsFor } from '@/shared/utils/disabled-dates';
 import { formatCents } from '@/shared/utils/money';
 import { addDaysIsoDate, clampStayNights, todayIsoDate } from '@/shared/utils/today-iso';
 import { withDefaultStay, type StayQuery } from '@/shared/utils/stay-query';
+import { usePublishStayQuote } from '../context/stay-quote-context';
 import { createHold, fetchQuote } from '../services/inventory-api';
+import { isWarningReached, remainingSecondsUntil, secondsBetween } from '../utils/hold-countdown';
 import { BookingConfirmed } from './booking-confirmed';
+import { HoldCountdown } from './hold-countdown';
 import { MockPaymentPanel } from './mock-payment-panel';
 import { PromoCodeField } from './promo-code-field';
 import { QuoteBreakdown } from './quote-breakdown';
@@ -100,9 +101,10 @@ export function CheckoutForm({
   const [hold, setHold] = useState<Hold | null>(null);
   const [confirmation, setConfirmation] = useState<ReservationConfirmation | null>(null);
   const [holdError, setHoldError] = useState<string | null>(null);
+  // Set when the API says the dates went to someone else between the quote and the hold.
+  const [datesTaken, setDatesTaken] = useState(false);
   const [pending, setPending] = useState(false);
   const [nowMs, setNowMs] = useState(Date.now());
-  const [warnOpen, setWarnOpen] = useState(false);
 
   const guestCount = Number.parseInt(fields.guestCount, 10);
   const nights = clampStayNights(Number.parseInt(fields.nights, 10));
@@ -111,27 +113,29 @@ export function CheckoutForm({
   const maxNights = maxNightsFor(fields.checkIn, availability.maxCheckOutDate);
   const overMaxNights = maxNights !== null && nights > maxNights;
 
+  // The clock only runs once the guest has reserved. Nothing counts down on page load, and it
+  // starts from the real time the moment the hold exists, not from a stale reading.
+  const holding = hold !== null;
   useEffect((): (() => void) => {
+    if (!holding) {
+      return (): void => undefined;
+    }
+    setNowMs(Date.now());
     const timer = window.setInterval((): void => {
       setNowMs(Date.now());
     }, 1000);
     return (): void => {
       window.clearInterval(timer);
     };
-  }, []);
+  }, [holding]);
 
-  const remainingMs = hold !== null && hold.status === 'active' ? Date.parse(hold.expiresAt) - nowMs : 0;
-  const remainingSeconds = Math.max(0, Math.floor(remainingMs / 1000));
+  const remainingSeconds = hold !== null && hold.status === 'active' ? remainingSecondsUntil(hold.expiresAt, nowMs) : 0;
   const expired = hold !== null && (hold.status === 'expired' || remainingSeconds === 0);
-
-  useEffect((): void => {
-    if (hold === null || hold.status !== 'active') {
-      return;
-    }
-    if (remainingSeconds > 0 && remainingSeconds <= 300) {
-      setWarnOpen(true);
-    }
-  }, [hold, remainingSeconds]);
+  // The warning moment and the hold's length both come from the API; nothing is hardcoded here.
+  const warning = hold !== null && !expired && isWarningReached(hold.warningAt, nowMs);
+  const warningSeconds = hold === null ? 0 : secondsBetween(hold.warningAt, hold.expiresAt);
+  // Once the dates are held the form gives way to the payment step: one way forward.
+  const paying = hold !== null && !expired;
 
   const loadQuote = useCallback(async (): Promise<void> => {
     if (fields.checkIn === '' || checkOut === '' || !Number.isInteger(guestCount) || guestCount < 1) {
@@ -152,6 +156,9 @@ export function CheckoutForm({
     void loadQuote();
   }, [loadQuote]);
 
+  // The page header shows the nightly rate for these dates, so it needs the same quote.
+  usePublishStayQuote(quote);
+
   const checkoutDisabled = useMemo((): boolean => {
     return (
       pending ||
@@ -168,6 +175,7 @@ export function CheckoutForm({
   const onHold = async (): Promise<void> => {
     setPending(true);
     setHoldError(null);
+    setDatesTaken(false);
     try {
       const next = await createHold({
         houseId: house.id,
@@ -185,7 +193,14 @@ export function CheckoutForm({
       });
       setHold(next);
     } catch (error: unknown) {
-      setHoldError(error instanceof ApiRequestError ? error.message : 'Could not hold these dates');
+      if (error instanceof ApiRequestError && error.status === 409 && error.code === 'DATES_UNAVAILABLE') {
+        // Someone else got there first. Re-read the calendar and the quote so the guest can choose again.
+        setDatesTaken(true);
+        availability.refresh();
+        void loadQuote();
+      } else {
+        setHoldError(error instanceof ApiRequestError ? error.message : 'Could not hold these dates');
+      }
     } finally {
       setPending(false);
     }
@@ -198,6 +213,51 @@ export function CheckoutForm({
       </BorderBeam>
     );
   }
+
+  if (paying && hold !== null) {
+    return (
+      <BorderBeam>
+        <Box sx={{ p: 2 }}>
+          <Stack spacing={2}>
+            <Typography variant="h5" component="h2">
+              Complete your payment
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              {house.name} · {fields.checkIn} to {checkOut} · {guestCount} guest{guestCount === 1 ? '' : 's'}
+            </Typography>
+            <HoldCountdown
+              totalSeconds={hold.holdTtlSeconds}
+              remainingSeconds={remainingSeconds}
+              warningSeconds={warningSeconds}
+              warning={warning}
+              expired={false}
+              reserving={pending}
+              onHoldAgain={(): void => void onHold()}
+            />
+            {hold.status === 'active' && hold.paymentMethod === 'card' ? (
+              <MockPaymentPanel
+                holdId={hold.id}
+                onConfirmed={setConfirmation}
+                onDeclined={(): void => setHold(null)}
+              />
+            ) : null}
+            {hold.paymentMethod === 'bank_transfer' ? (
+              <Typography variant="body2" color="text.secondary">
+                Bank transfer: the operator confirms your booking once your payment arrives.
+              </Typography>
+            ) : null}
+          </Stack>
+        </Box>
+      </BorderBeam>
+    );
+  }
+
+  const payLabel =
+    fields.paymentMethod === 'bank_transfer'
+      ? 'Reserve and pay by bank transfer'
+      : quote === null
+        ? 'Pay'
+        : `Pay ${formatCents(quote.totalCents, quote.currencyCode)}`;
 
   return (
     <BorderBeam>
@@ -337,7 +397,7 @@ export function CheckoutForm({
           label="Ask us anything for this booking"
           multiline
           minRows={3}
-          helperText="We read this after you hold the dates. We will tell you if we can provide it."
+          helperText="We read this after you pay. We will tell you if we can provide it."
           value={fields.guestNote}
           onChange={(event): void => {
             setFields((current): CheckoutFields => ({ ...current, guestNote: event.target.value }));
@@ -375,22 +435,19 @@ export function CheckoutForm({
               }));
             }}
           >
-            <FormControlLabel value="card" control={<Radio />} label="Apple Pay / Google Pay / card (15-minute hold)" />
+            <FormControlLabel value="card" control={<Radio />} label="Apple Pay / Google Pay / card" />
             <FormControlLabel
               value="bank_transfer"
               control={<Radio />}
-              label="Bank transfer (48-hour hold, staff verify)"
+              label="Bank transfer (we confirm once your payment arrives)"
             />
           </RadioGroup>
         </FormControl>
         {quoteError !== null ? <Alert severity="error">{quoteError}</Alert> : null}
         {holdError !== null ? <Alert severity="error">{holdError}</Alert> : null}
-        {expired ? (
-          <Alert severity="warning">
-            Time ran out — your details are still here.{' '}
-            <Button size="small" onClick={(): void => void onHold()}>
-              Hold these dates again
-            </Button>
+        {datesTaken ? (
+          <Alert severity="warning" role="alert">
+            Sorry, those dates were just taken. Pick other dates.
           </Alert>
         ) : null}
         <PromoCodeField
@@ -403,7 +460,6 @@ export function CheckoutForm({
             setPromoInput('');
             setAppliedPromo('');
           }}
-          disabled={hold !== null && !expired}
         />
         {quote === null ? (
           <Typography color="text.secondary">Choose dates to see the price.</Typography>
@@ -415,14 +471,10 @@ export function CheckoutForm({
             </Typography>
           </>
         )}
-        {hold !== null && hold.status === 'active' && !expired ? (
-          <Typography>Dates held for {formatCountdown(remainingSeconds)}.</Typography>
-        ) : null}
         <FormControlLabel
           control={
             <Checkbox
               checked={termsAccepted}
-              disabled={hold !== null && !expired}
               onChange={(event): void => setTermsAccepted(event.target.checked)}
             />
           }
@@ -434,34 +486,28 @@ export function CheckoutForm({
             </Typography>
           }
         />
-        <ShimmerButton disabled={checkoutDisabled || (hold !== null && !expired)} onClick={(): void => void onHold()}>
-          {pending ? 'Holding dates…' : 'Hold these dates'}
+        <ShimmerButton disabled={checkoutDisabled} onClick={(): void => void onHold()}>
+          {pending ? 'Holding your dates…' : payLabel}
         </ShimmerButton>
-        {hold !== null && hold.status === 'active' && !expired && hold.paymentMethod === 'card' ? (
-          <MockPaymentPanel
-            holdId={hold.id}
-            onConfirmed={setConfirmation}
-            onDeclined={(): void => setHold(null)}
+        {hold !== null ? (
+          <HoldCountdown
+            totalSeconds={hold.holdTtlSeconds}
+            remainingSeconds={remainingSeconds}
+            warningSeconds={warningSeconds}
+            warning={warning}
+            expired={expired}
+            reserving={pending}
+            onHoldAgain={(): void => void onHold()}
           />
-        ) : null}
-        {hold !== null && !expired && hold.paymentMethod === 'bank_transfer' ? (
+        ) : (
           <Typography variant="body2" color="text.secondary">
-            Bank transfer: the dates are held for 48 hours. The operator confirms your booking once the payment arrives.
+            {fields.paymentMethod === 'bank_transfer'
+              ? 'We hold your dates while your transfer arrives. Nothing is charged until you pay.'
+              : 'We hold your dates while you pay. Nothing is charged until you pay.'}
           </Typography>
-        ) : null}
+        )}
       </Stack>
-      <Snackbar open={warnOpen} onClose={(): void => setWarnOpen(false)}>
-        <Alert severity="warning" onClose={(): void => setWarnOpen(false)}>
-          Five minutes left — finish name, contact, and pay. Stay on this page.
-        </Alert>
-      </Snackbar>
     </Box>
     </BorderBeam>
   );
-}
-
-function formatCountdown(totalSeconds: number): string {
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${String(seconds).padStart(2, '0')}`;
 }

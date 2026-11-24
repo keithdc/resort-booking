@@ -71,7 +71,7 @@ export function houseHref(
   houseSlug: string,
   query: StayQuery | null,
 ): string {
-  const path = `/properties/${propertySlug}/houses/${houseSlug}`;
+  const path = `/properties/${propertySlug}/stays/${houseSlug}`;
   if (query === null || query.checkIn === '' || query.checkOut === '') {
     return path;
   }

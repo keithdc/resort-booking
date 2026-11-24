@@ -107,6 +107,28 @@ export class AvailabilityService {
     };
   }
 
+  /**
+   * The unavailable ranges of ONE stay for a guest who is changing the dates of a booking on it:
+   * the booking's own row is left out, so shifting the dates by a day is possible. Same window and
+   * merge rules as the public endpoint. Dates only; no guest data.
+   */
+  public async getStayAvailabilityExcluding(
+    houseId: string,
+    timeZone: string,
+    excludeBlockId: string,
+    query: PropertyAvailabilityQueryDto = {},
+  ): Promise<HouseAvailability> {
+    const window = this.resolveWindow(query, timeZone);
+    const rows = await this.inventory.listOccupiedRanges([houseId], window.from, window.to, excludeBlockId);
+    return {
+      houseId,
+      from: window.from,
+      to: window.to,
+      unavailable: mergeRanges(rows.map(toRange), window),
+      maxCheckOutDate: null,
+    };
+  }
+
   private resolveWindow(
     query: PropertyAvailabilityQueryDto,
     timeZone: string,

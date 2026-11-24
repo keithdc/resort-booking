@@ -15,16 +15,32 @@ interface HouseListingCardProps {
   house: HouseSummary;
   quote: Quote | null;
   stay: StayQuery | null;
+  /**
+   * The API's answer for searched dates. "unavailable" mutes the card and says so, but it stays a
+   * link so the guest can open the stay and pick other dates. Default "unknown" = no search.
+   */
+  availability?: 'unknown' | 'available' | 'unavailable';
 }
 
 /**
  * House card: photo, address, capacity, API price. Whole card is the hit target.
  */
-export function HouseListingCard({ house, quote, stay }: HouseListingCardProps): React.JSX.Element {
+export function HouseListingCard({
+  house,
+  quote,
+  stay,
+  availability = 'unknown',
+}: HouseListingCardProps): React.JSX.Element {
+  const unavailable = availability === 'unavailable';
   return (
     <MagicCard>
-      <CardActionArea component={NextLink} href={houseHref(house.propertySlug, house.slug, stay)}>
-        <Box sx={{ position: 'relative' }}>
+      <CardActionArea
+        component={NextLink}
+        href={houseHref(house.propertySlug, house.slug, stay)}
+        aria-disabled={unavailable ? true : undefined}
+        data-availability={availability}
+      >
+        <Box sx={{ position: 'relative', opacity: unavailable ? 0.5 : 1, filter: unavailable ? 'grayscale(0.8)' : 'none' }}>
           {house.coverPhotoUrl !== null ? (
             <CardMedia
               component="img"
@@ -58,17 +74,22 @@ export function HouseListingCard({ house, quote, stay }: HouseListingCardProps):
               Sleeps {house.capacity}
             </Highlighter>
           </Typography>
-          {quote !== null ? (
+          {unavailable ? (
+            <Typography sx={{ mt: 1, color: 'text.secondary', fontWeight: 600 }}>
+              Not available for these dates and guests
+            </Typography>
+          ) : null}
+          {quote !== null && !unavailable ? (
             <Typography sx={{ mt: 1, color: 'secondary.main', fontWeight: 600 }}>
               {formatCents(quote.totalCents, quote.currencyCode)} for {quote.nights} night
               {quote.nights === 1 ? '' : 's'}
             </Typography>
           ) : (
-            <Typography sx={{ mt: 1, fontWeight: 600 }}>
+            <Typography sx={{ mt: 1, fontWeight: 600, color: unavailable ? 'text.secondary' : 'text.primary' }}>
               Standard rate {formatCents(house.nightlyRateCents, house.currencyCode)} / night
             </Typography>
           )}
-          <Box sx={{ mt: 1.5, color: 'primary.main', fontWeight: 600 }}>Book this stay →</Box>
+          <Box sx={{ mt: 1.5, color: 'primary.main', fontWeight: 600 }}>{unavailable ? 'View this stay →' : 'Book this stay →'}</Box>
         </CardContent>
       </CardActionArea>
     </MagicCard>

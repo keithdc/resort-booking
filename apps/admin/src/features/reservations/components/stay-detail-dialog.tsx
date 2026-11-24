@@ -16,7 +16,6 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  Divider,
   Link as MuiLink,
   Snackbar,
   Stack,
@@ -24,26 +23,41 @@ import {
 } from '@mui/material';
 import { useEffect, useState } from 'react';
 import { ApiRequestError } from '@/shared/services/api-client';
+import { formatDateTime } from '@/shared/utils/booking-labels';
 import { formatCents } from '@/shared/utils/money';
 import { patchStaffReservationArrival } from '../services/staff-reservations-api';
+import { todayLocalIso } from '../utils/dates';
+import { canCancelStay, canChangeStayDates, cancelNotice, changeNotice } from '../utils/stay-actions';
+import { CancellationBlock, HistoryBlock, RefundsBlock } from './booking-records';
+import { StaffCancelDialog } from './staff-cancel-dialog';
+import { StaffChangeDatesDialog } from './staff-change-dates-dialog';
+import { StayBlock, StayFact } from './stay-block';
 
 interface StayDetailDialogProps {
   stay: StaffReservation | null;
   onClose: () => void;
   onUpdated: (stay: StaffReservation) => void;
+  /** A cancellation or date change happened: lists and counts elsewhere should reload. */
+  onChanged: () => void;
 }
 
 /**
- * Full stay card: guest, house, money, and check-in / check-out.
+/**
+ * Full booking card: guest, stay, money, what was cancelled or refunded, date changes, and the
+ * actions staff can take (check in or out, cancel for the guest, change dates).
  */
-export function StayDetailDialog({ stay, onClose, onUpdated }: StayDetailDialogProps): React.JSX.Element {
+export function StayDetailDialog({ stay, onClose, onUpdated, onChanged }: StayDetailDialogProps): React.JSX.Element {
   const [pending, setPending] = useState<ArrivalStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [changeOpen, setChangeOpen] = useState(false);
 
   useEffect((): void => {
     setError(null);
     setPending(null);
+    setCancelOpen(false);
+    setChangeOpen(false);
   }, [stay?.id]);
 
   const setArrival = async (arrivalStatus: ArrivalStatus): Promise<void> => {
@@ -55,7 +69,7 @@ export function StayDetailDialog({ stay, onClose, onUpdated }: StayDetailDialogP
     try {
       const updated = await patchStaffReservationArrival(stay.id, arrivalStatus);
       onUpdated(updated);
-      setSaved(true);
+      setNotice('Arrival updated');
     } catch (err: unknown) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not update arrival');
     } finally {
@@ -65,6 +79,8 @@ export function StayDetailDialog({ stay, onClose, onUpdated }: StayDetailDialogP
 
   const canCheckIn =
     stay !== null && stay.kind === 'reservation' && stay.status === 'confirmed' && stay.arrivalStatus === 'expected';
+  const canCancel = stay !== null && canCancelStay(stay);
+  const canChange = stay !== null && canChangeStayDates(stay, todayLocalIso());
   const canCheckOut =
     stay !== null &&
     stay.kind === 'reservation' &&
@@ -82,6 +98,7 @@ export function StayDetailDialog({ stay, onClose, onUpdated }: StayDetailDialogP
                   {stay.bookerName}
                 </Typography>
                 <Chip size="small" color={statusColor(stay)} label={statusLabel(stay)} />
+                <Chip size="small" variant="outlined" label={stay.reference} />
               </Stack>
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
                 {stay.houseName} at {stay.propertyName}
@@ -107,7 +124,15 @@ export function StayDetailDialog({ stay, onClose, onUpdated }: StayDetailDialogP
                   <StayFact label="Arrival" value={arrivalLabel(stay.arrivalStatus)} />
                   <StayFact label="Guests on the booking" value={String(stay.guestCount)} />
                   <StayFact label="Stay" value={stay.houseName} />
-                  <StayFact label="Destination" value={stay.propertyName} />
+                  <StayFact label="Property" value={stay.propertyName} />
+                  <StayFact
+                    label="Cancellation terms"
+                    value={
+                      stay.termsAcceptedAt === null
+                        ? 'Not recorded'
+                        : `Accepted the cancellation terms on ${formatDateTime(stay.termsAcceptedAt)}`
+                    }
+                  />
                 </StayBlock>
                 <StayBlock title="Guest">
                   <StayFact label="Name" value={stay.bookerName} />
@@ -127,6 +152,7 @@ export function StayDetailDialog({ stay, onClose, onUpdated }: StayDetailDialogP
                 <StayBlock title="Payment">
                   <StayFact label="Method" value={paymentLabel(stay)} />
                   <StayFact label="Total" value={formatCents(stay.totalCents, stay.currencyCode)} />
+                  <StayFact label="Paid so far" value={formatCents(stay.paidCents, stay.currencyCode)} />
                   <StayFact label="Record" value={stay.kind === 'hold' ? 'Hold (not yet a booking)' : 'Reservation'} />
                 </StayBlock>
                 <StayBlock title="Requests and note">
@@ -153,9 +179,22 @@ export function StayDetailDialog({ stay, onClose, onUpdated }: StayDetailDialogP
                     </Typography>
                   </Box>
                 </StayBlock>
+                {stay.cancellation !== null ? <CancellationBlock cancellation={stay.cancellation} /> : null}
+                {stay.kind === 'reservation' ? <RefundsBlock refunds={stay.refunds} /> : null}
+                {stay.kind === 'reservation' ? <HistoryBlock stay={stay} /> : null}
               </Box>
             </DialogContent>
             <DialogActions>
+              {canCancel ? (
+                <Button color="error" disabled={pending !== null} onClick={(): void => setCancelOpen(true)}>
+                  Cancel booking
+                </Button>
+              ) : null}
+              {canChange ? (
+                <Button disabled={pending !== null} onClick={(): void => setChangeOpen(true)}>
+                  Change dates
+                </Button>
+              ) : null}
               {canCheckIn ? (
                 <Button
                   variant="contained"
@@ -183,45 +222,39 @@ export function StayDetailDialog({ stay, onClose, onUpdated }: StayDetailDialogP
           </>
         ) : null}
       </Dialog>
-      <Snackbar open={saved} autoHideDuration={3000} onClose={(): void => setSaved(false)}>
-        <Alert severity="success" onClose={(): void => setSaved(false)}>
-          Arrival updated
+      {stay !== null ? (
+        <>
+          <StaffCancelDialog
+            open={cancelOpen}
+            reservationId={stay.id}
+            reference={stay.reference}
+            onClose={(): void => setCancelOpen(false)}
+            onCancelled={(result): void => {
+              setCancelOpen(false);
+              onUpdated(result.reservation);
+              setNotice(cancelNotice(result));
+              onChanged();
+            }}
+          />
+          <StaffChangeDatesDialog
+            open={changeOpen}
+            stay={stay}
+            onClose={(): void => setChangeOpen(false)}
+            onChanged={(result): void => {
+              setChangeOpen(false);
+              setNotice(changeNotice(result));
+              onChanged();
+              onClose();
+            }}
+          />
+        </>
+      ) : null}
+      <Snackbar open={notice !== null} autoHideDuration={6000} onClose={(): void => setNotice(null)}>
+        <Alert severity="success" onClose={(): void => setNotice(null)}>
+          {notice}
         </Alert>
       </Snackbar>
     </>
-  );
-}
-
-interface StayBlockProps {
-  title: string;
-  children: React.ReactNode;
-}
-
-function StayBlock({ title, children }: StayBlockProps): React.JSX.Element {
-  return (
-    <Box sx={{ p: 2, border: 1, borderColor: 'divider', borderRadius: 1, bgcolor: 'background.paper' }}>
-      <Typography variant="subtitle2" sx={{ mb: 1.5 }}>
-        {title}
-      </Typography>
-      <Divider sx={{ mb: 1.5 }} />
-      <Stack spacing={1.25}>{children}</Stack>
-    </Box>
-  );
-}
-
-interface StayFactProps {
-  label: string;
-  value: string;
-}
-
-function StayFact({ label, value }: StayFactProps): React.JSX.Element {
-  return (
-    <Box>
-      <Typography variant="caption" color="text.secondary" display="block">
-        {label}
-      </Typography>
-      <Typography>{value}</Typography>
-    </Box>
   );
 }
 

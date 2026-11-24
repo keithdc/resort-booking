@@ -246,6 +246,14 @@ function stubStay(propertyId: string): StaffReservation {
     totalCents: 100,
     currencyCode: 'EUR',
     requestNames: [],
+    reference: 'BK-0000000000',
+    paidCents: 0,
+    termsAcceptedAt: null,
+    cancellation: null,
+    replacedByReference: null,
+    rebookOfReference: null,
+    refunds: [],
+    changes: [],
   };
 }
 

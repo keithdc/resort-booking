@@ -13,10 +13,23 @@ import type {
   PaymentMethod,
   PropertyBookingConfig,
   RebookFeeType,
+  StaffBookingChange,
+  StaffRefund,
   StaffReservation,
 } from '@resort-booking/shared-types';
 import { DatabaseService } from '../../shared/database/database.service';
+import { referenceFor } from '../inventory/inventory.rules';
 import type { PolicySnapshot } from './reservations.rules';
+import {
+  deriveCancellation,
+  groupBy,
+  mapStaffChange,
+  mapStaffRefund,
+  STAFF_CHANGES_SELECT,
+  STAFF_REFUND_SELECT,
+  type StaffChangeRow,
+  type StaffRefundRow,
+} from './staff-history';
 
 interface ReservationRow {
   id: string;
@@ -41,7 +54,46 @@ interface ReservationRow {
   kind: InventoryKind;
   arrival_status: ArrivalStatus;
   rebook_of_id: string | null;
+  paid_cents: number | null;
+  terms_accepted_at: Date | null;
+  cancelled_at: Date | null;
+  created_at: Date;
+  cancelled_by_staff_id: string | null;
+  cancelled_by_name: string | null;
+  cancel_reason: string | null;
+  cancel_note: string | null;
+  /** The booking that replaced this one after a date change, else null. */
+  replaced_by_id: string | null;
 }
+
+// One definition of the booking columns and joins, shared by every staff read. The replacing booking
+// and the staff name arrive in the same statement: no query per booking.
+const RESERVATION_SELECT = `
+  SELECT ib.id, ib.organization_id, ib.property_id, p.name AS property_name,
+    ib.house_id, h.name AS house_name,
+    to_char(ib.check_in, 'YYYY-MM-DD') AS check_in,
+    to_char(ib.check_out, 'YYYY-MM-DD') AS check_out, ib.guest_count,
+    ib.booker_name, ib.booker_email, ib.booker_phone, COALESCE(ib.guest_note, '') AS guest_note, ib.payment_method, ib.status,
+    ib.total_cents, ib.currency_code, h.nightly_rate_cents,
+    ib.kind, ib.rebook_of_id, ib.arrival_status,
+    ib.paid_cents, ib.terms_accepted_at, ib.cancelled_at, ib.created_at,
+    ib.cancelled_by_staff_id, su.full_name AS cancelled_by_name, ib.cancel_reason, ib.cancel_note,
+    (
+      SELECT nb.id FROM inventory_blocks nb
+      WHERE nb.rebook_of_id = ib.id AND nb.kind = 'reservation'
+      ORDER BY nb.created_at DESC LIMIT 1
+    ) AS replaced_by_id,
+    COALESCE((
+      SELECT array_agg(pro.name ORDER BY pro.name)
+      FROM inventory_block_requests ibr
+      INNER JOIN property_request_options pro ON pro.id = ibr.request_option_id
+      WHERE ibr.inventory_block_id = ib.id
+    ), ARRAY[]::text[]) AS request_names
+  FROM inventory_blocks ib
+  INNER JOIN properties p ON p.id = ib.property_id
+  INNER JOIN houses h ON h.id = ib.house_id
+  LEFT JOIN staff_users su ON su.id = ib.cancelled_by_staff_id
+`;
 
 interface ConfigRow {
   property_id: string;
@@ -63,7 +115,8 @@ export class ReservationsRepository {
   public constructor(private readonly database: DatabaseService) {}
 
   /**
-   * Confirmed stays overlapping [from, to).
+   * Confirmed stays overlapping [from, to). Used only to add up nights and revenue, so refunds and
+   * change history are NOT loaded here (they come back empty).
    */
   public async listConfirmedOverlapping(
     from: string,
@@ -72,22 +125,7 @@ export class ReservationsRepository {
   ): Promise<StaffReservation[]> {
     const result = await this.database.query<ReservationRow>(
       `
-      SELECT ib.id, ib.organization_id, ib.property_id, p.name AS property_name,
-        ib.house_id, h.name AS house_name,
-        to_char(ib.check_in, 'YYYY-MM-DD') AS check_in,
-        to_char(ib.check_out, 'YYYY-MM-DD') AS check_out, ib.guest_count,
-        ib.booker_name, ib.booker_email, ib.booker_phone, COALESCE(ib.guest_note, '') AS guest_note, ib.payment_method, ib.status,
-        ib.total_cents, ib.currency_code, h.nightly_rate_cents,
-        ib.kind, ib.rebook_of_id, ib.arrival_status,
-        COALESCE((
-          SELECT array_agg(pro.name ORDER BY pro.name)
-          FROM inventory_block_requests ibr
-          INNER JOIN property_request_options pro ON pro.id = ibr.request_option_id
-          WHERE ibr.inventory_block_id = ib.id
-        ), ARRAY[]::text[]) AS request_names
-      FROM inventory_blocks ib
-      INNER JOIN properties p ON p.id = ib.property_id
-      INNER JOIN houses h ON h.id = ib.house_id
+      ${RESERVATION_SELECT}
       WHERE ib.kind = 'reservation'
         AND ib.status = 'confirmed'
         AND daterange(ib.check_in, ib.check_out, '[)') && daterange($1::date, $2::date, '[)')
@@ -96,11 +134,11 @@ export class ReservationsRepository {
       `,
       [from, to, propertyId],
     );
-    return result.rows.map(mapReservation);
+    return result.rows.map((row): StaffReservation => mapReservation(row, [], []));
   }
 
   /**
-   * Confirmed stays occupying a single night.
+   * Confirmed stays occupying a single night, with refunds and change history.
    */
   public async listConfirmedOnDate(
     onDate: string,
@@ -108,22 +146,7 @@ export class ReservationsRepository {
   ): Promise<StaffReservation[]> {
     const result = await this.database.query<ReservationRow>(
       `
-      SELECT ib.id, ib.organization_id, ib.property_id, p.name AS property_name,
-        ib.house_id, h.name AS house_name,
-        to_char(ib.check_in, 'YYYY-MM-DD') AS check_in,
-        to_char(ib.check_out, 'YYYY-MM-DD') AS check_out, ib.guest_count,
-        ib.booker_name, ib.booker_email, ib.booker_phone, COALESCE(ib.guest_note, '') AS guest_note, ib.payment_method, ib.status,
-        ib.total_cents, ib.currency_code, h.nightly_rate_cents,
-        ib.kind, ib.rebook_of_id, ib.arrival_status,
-        COALESCE((
-          SELECT array_agg(pro.name ORDER BY pro.name)
-          FROM inventory_block_requests ibr
-          INNER JOIN property_request_options pro ON pro.id = ibr.request_option_id
-          WHERE ibr.inventory_block_id = ib.id
-        ), ARRAY[]::text[]) AS request_names
-      FROM inventory_blocks ib
-      INNER JOIN properties p ON p.id = ib.property_id
-      INNER JOIN houses h ON h.id = ib.house_id
+      ${RESERVATION_SELECT}
       WHERE ib.kind = 'reservation'
         AND ib.status = 'confirmed'
         AND ib.check_in <= $1::date
@@ -133,11 +156,12 @@ export class ReservationsRepository {
       `,
       [onDate, propertyId],
     );
-    return result.rows.map(mapReservation);
+    return this.withHistory(result.rows);
   }
 
   /**
-   * Booked, pending, cancelled, and rebooked stays occupying a single night.
+   * Booked, pending, cancelled, and rebooked stays occupying a single night, with refunds and change
+   * history for every one of them (two extra queries in total, however many bookings).
    */
   public async listPipelineOnDate(
     onDate: string,
@@ -145,22 +169,7 @@ export class ReservationsRepository {
   ): Promise<StaffReservation[]> {
     const result = await this.database.query<ReservationRow>(
       `
-      SELECT ib.id, ib.organization_id, ib.property_id, p.name AS property_name,
-        ib.house_id, h.name AS house_name,
-        to_char(ib.check_in, 'YYYY-MM-DD') AS check_in,
-        to_char(ib.check_out, 'YYYY-MM-DD') AS check_out, ib.guest_count,
-        ib.booker_name, ib.booker_email, ib.booker_phone, COALESCE(ib.guest_note, '') AS guest_note, ib.payment_method, ib.status,
-        ib.total_cents, ib.currency_code, h.nightly_rate_cents,
-        ib.kind, ib.rebook_of_id, ib.arrival_status,
-        COALESCE((
-          SELECT array_agg(pro.name ORDER BY pro.name)
-          FROM inventory_block_requests ibr
-          INNER JOIN property_request_options pro ON pro.id = ibr.request_option_id
-          WHERE ibr.inventory_block_id = ib.id
-        ), ARRAY[]::text[]) AS request_names
-      FROM inventory_blocks ib
-      INNER JOIN properties p ON p.id = ib.property_id
-      INNER JOIN houses h ON h.id = ib.house_id
+      ${RESERVATION_SELECT}
       WHERE ib.kind IN ('hold', 'reservation')
         AND ib.status IN ('confirmed', 'cancelled', 'active', 'released')
         AND ib.check_in <= $1::date
@@ -170,11 +179,12 @@ export class ReservationsRepository {
       `,
       [onDate, propertyId],
     );
-    return result.rows.map(mapReservation);
+    return this.withHistory(result.rows);
   }
 
   /**
-   * Holds and reservations in the window, including unpaid, released, and cancelled.
+   * Holds and reservations in the window, including unpaid, released, and cancelled. Used only to
+   * count them per day, so refunds and change history are NOT loaded here (they come back empty).
    */
   public async listPipelineOverlapping(
     from: string,
@@ -183,22 +193,7 @@ export class ReservationsRepository {
   ): Promise<StaffReservation[]> {
     const result = await this.database.query<ReservationRow>(
       `
-      SELECT ib.id, ib.organization_id, ib.property_id, p.name AS property_name,
-        ib.house_id, h.name AS house_name,
-        to_char(ib.check_in, 'YYYY-MM-DD') AS check_in,
-        to_char(ib.check_out, 'YYYY-MM-DD') AS check_out, ib.guest_count,
-        ib.booker_name, ib.booker_email, ib.booker_phone, COALESCE(ib.guest_note, '') AS guest_note, ib.payment_method, ib.status,
-        ib.total_cents, ib.currency_code, h.nightly_rate_cents,
-        ib.kind, ib.rebook_of_id, ib.arrival_status,
-        COALESCE((
-          SELECT array_agg(pro.name ORDER BY pro.name)
-          FROM inventory_block_requests ibr
-          INNER JOIN property_request_options pro ON pro.id = ibr.request_option_id
-          WHERE ibr.inventory_block_id = ib.id
-        ), ARRAY[]::text[]) AS request_names
-      FROM inventory_blocks ib
-      INNER JOIN properties p ON p.id = ib.property_id
-      INNER JOIN houses h ON h.id = ib.house_id
+      ${RESERVATION_SELECT}
       WHERE ib.kind IN ('hold', 'reservation')
         AND daterange(ib.check_in, ib.check_out, '[)') && daterange($1::date, $2::date, '[)')
         AND ($3::uuid IS NULL OR ib.property_id = $3)
@@ -206,7 +201,29 @@ export class ReservationsRepository {
       `,
       [from, to, propertyId],
     );
-    return result.rows.map(mapReservation);
+    return result.rows.map((row): StaffReservation => mapReservation(row, [], []));
+  }
+
+  /**
+   * Refunds and date changes for ALL the given bookings in two statements (one each), then handed
+   * to the booking they belong to. Skips both queries for an empty list.
+   */
+  private async withHistory(rows: readonly ReservationRow[]): Promise<StaffReservation[]> {
+    if (rows.length === 0) {
+      return [];
+    }
+    const ids = rows.map((row): string => row.id);
+    const refundRows = await this.database.query<StaffRefundRow>(
+      `${STAFF_REFUND_SELECT} WHERE r.inventory_block_id = ANY($1::uuid[]) ORDER BY r.created_at ASC`,
+      [ids],
+    );
+    const changeRows = await this.database.query<StaffChangeRow>(STAFF_CHANGES_SELECT, [ids]);
+    const refunds = groupBy(refundRows.rows.map(mapStaffRefund), (refund): string[] => [refund.reservationId]);
+    const changes = groupBy(changeRows.rows, (change): string[] => [change.old_booking_id, change.new_booking_id]);
+    return rows.map(
+      (row): StaffReservation =>
+        mapReservation(row, refunds.get(row.id) ?? [], (changes.get(row.id) ?? []).map(mapStaffChange)),
+    );
   }
 
   /**
@@ -369,33 +386,12 @@ export class ReservationsRepository {
   }
 
   /**
-   * One stay for staff arrival actions.
+   * One booking for staff, with its refunds and change history.
    */
   public async getById(id: string): Promise<StaffReservation | null> {
-    const result = await this.database.query<ReservationRow>(
-      `
-      SELECT ib.id, ib.organization_id, ib.property_id, p.name AS property_name,
-        ib.house_id, h.name AS house_name,
-        to_char(ib.check_in, 'YYYY-MM-DD') AS check_in,
-        to_char(ib.check_out, 'YYYY-MM-DD') AS check_out, ib.guest_count,
-        ib.booker_name, ib.booker_email, ib.booker_phone, COALESCE(ib.guest_note, '') AS guest_note, ib.payment_method, ib.status,
-        ib.total_cents, ib.currency_code, h.nightly_rate_cents,
-        ib.kind, ib.rebook_of_id, ib.arrival_status,
-        COALESCE((
-          SELECT array_agg(pro.name ORDER BY pro.name)
-          FROM inventory_block_requests ibr
-          INNER JOIN property_request_options pro ON pro.id = ibr.request_option_id
-          WHERE ibr.inventory_block_id = ib.id
-        ), ARRAY[]::text[]) AS request_names
-      FROM inventory_blocks ib
-      INNER JOIN properties p ON p.id = ib.property_id
-      INNER JOIN houses h ON h.id = ib.house_id
-      WHERE ib.id = $1
-      `,
-      [id],
-    );
-    const row = result.rows[0];
-    return row === undefined ? null : mapReservation(row);
+    const result = await this.database.query<ReservationRow>(`${RESERVATION_SELECT} WHERE ib.id = $1`, [id]);
+    const [row] = await this.withHistory(result.rows);
+    return row ?? null;
   }
 
   /**
@@ -416,7 +412,11 @@ export class ReservationsRepository {
   }
 }
 
-function mapReservation(row: ReservationRow): StaffReservation {
+function mapReservation(
+  row: ReservationRow,
+  refunds: StaffRefund[],
+  changes: StaffBookingChange[],
+): StaffReservation {
   const nights =
     Date.parse(`${row.check_out}T00:00:00Z`) - Date.parse(`${row.check_in}T00:00:00Z`);
   const nightCount = Math.round(nights / 86_400_000);
@@ -443,5 +443,13 @@ function mapReservation(row: ReservationRow): StaffReservation {
     kind: row.kind,
     arrivalStatus: row.arrival_status,
     rebookOfId: row.rebook_of_id,
+    reference: referenceFor(row.id),
+    paidCents: row.paid_cents ?? 0,
+    termsAcceptedAt: row.terms_accepted_at === null ? null : row.terms_accepted_at.toISOString(),
+    cancellation: deriveCancellation(row),
+    replacedByReference: row.replaced_by_id === null ? null : referenceFor(row.replaced_by_id),
+    rebookOfReference: row.rebook_of_id === null ? null : referenceFor(row.rebook_of_id),
+    refunds,
+    changes,
   };
 }

@@ -10,6 +10,7 @@ import AccountCircleOutlinedIcon from '@mui/icons-material/AccountCircleOutlined
 import AssessmentOutlinedIcon from '@mui/icons-material/AssessmentOutlined';
 import CalendarMonthOutlinedIcon from '@mui/icons-material/CalendarMonthOutlined';
 import HolidayVillageOutlinedIcon from '@mui/icons-material/HolidayVillageOutlined';
+import ReplayOutlinedIcon from '@mui/icons-material/ReplayOutlined';
 import LogoutOutlinedIcon from '@mui/icons-material/LogoutOutlined';
 import {
   AppBar,
@@ -47,6 +48,7 @@ const NAV: NavItem[] = [
   { href: '/', label: 'Calendar', hint: 'Who is staying', icon: CalendarMonthOutlinedIcon },
   { href: '/properties', label: 'Properties', hint: 'Places and stays', icon: HolidayVillageOutlinedIcon },
   { href: '/configuration', label: 'Account', hint: 'Owner, emails, bank', icon: AccountCircleOutlinedIcon },
+  { href: '/refunds', label: 'Refunds', hint: 'Money to send back', icon: ReplayOutlinedIcon },
   { href: '/reports', label: 'Reports', hint: 'Nights and revenue', icon: AssessmentOutlinedIcon },
 ];
 
@@ -88,7 +90,7 @@ export function StaffShell({ children }: StaffShellProps): React.JSX.Element {
         <Toolbar sx={{ justifyContent: 'space-between', px: { xs: 2, md: 4 } }}>
           <Box>
             <Typography variant="subtitle1" component="div" sx={{ lineHeight: 1.2 }}>
-              Atlantic staff
+              Humphreys staff
             </Typography>
             <Typography variant="caption" color="text.secondary">
               Direct booking

@@ -81,8 +81,8 @@ describe('cancellation terms at checkout (CreateHoldDto)', () => {
 
 describe('organization contact details (UpdateOrganizationDto)', () => {
   const ORG = {
-    name: 'Atlantic Hospitality',
-    legalName: 'Atlantic SAS',
+    name: 'Humphreys Hospitality',
+    legalName: 'Humphreys SAS',
     legalAddress: '1 Rue',
     vatNumber: '',
     iban: '',

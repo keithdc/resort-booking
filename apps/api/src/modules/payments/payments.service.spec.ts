@@ -6,7 +6,7 @@
 
 import { ConflictException, Logger, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import type { PaymentStatus, QuoteDiscountLine, ReservationConfirmation } from '@resort-booking/shared-types';
+import type { GuestBooking, PaymentStatus, QuoteDiscountLine, ReservationConfirmation } from '@resort-booking/shared-types';
 import { Client, type PoolClient } from 'pg';
 import { DatabaseService } from '../../shared/database/database.service';
 import { RedisService } from '../../shared/redis/redis.service';
@@ -14,6 +14,7 @@ import { DiscountsService } from '../discounts/discounts.service';
 import { InventoryService, type PayableHold } from '../inventory/inventory.service';
 import { MockPaymentProvider } from './mock-payment.provider';
 import { PAYMENT_PROVIDER, type PaymentProvider } from './payment-provider';
+import { PaymentSettlementRegistry, type PaymentSettlementHandler, type SettlingPayment } from './payment-settlement';
 import { PaymentsRepository, type InsertPaymentInput, type PaymentRow } from './payments.repository';
 import { PaymentsService } from './payments.service';
 
@@ -36,7 +37,7 @@ function payable(overrides: Partial<PayableHold> = {}): PayableHold {
   };
 }
 
-function payment(status: PaymentStatus = 'requires_payment'): PaymentRow {
+function payment(status: PaymentStatus = 'requires_payment', overrides: Partial<PaymentRow> = {}): PaymentRow {
   return {
     id: PAYMENT,
     organization_id: 'org',
@@ -48,6 +49,9 @@ function payment(status: PaymentStatus = 'requires_payment'): PaymentRow {
     currency_code: 'EUR',
     status,
     failure_reason: null,
+    purpose: 'booking',
+    payload: null,
+    ...overrides,
   };
 }
 
@@ -65,6 +69,28 @@ const CONFIRMATION: ReservationConfirmation = {
   bookerEmail: 'ada@example.com',
 };
 
+const CHANGED_BOOKING: GuestBooking = {
+  reference: 'BK-NEW0000000',
+  reservationId: 'new-booking',
+  stayName: 'Lake Chalet',
+  propertyName: 'Alpine Lake',
+  checkIn: '2027-08-01',
+  checkOut: '2027-08-04',
+  guestCount: 2,
+  bookerName: 'Ada',
+  totalCents: 60000,
+  currencyCode: 'EUR',
+  status: 'confirmed',
+  canCancel: true,
+  cancelBlockedReason: null,
+  refundQuote: null,
+  refund: null,
+  rebookable: true,
+  canChangeDates: true,
+  changeDatesBlockedReason: null,
+  replacedByReference: null,
+};
+
 function expired(): ConflictException {
   return new ConflictException({ message: 'Time ran out', code: 'HOLD_EXPIRED' });
 }
@@ -78,6 +104,11 @@ describe('PaymentsService', () => {
   const getById = jest.fn<Promise<PaymentRow | null>, [string]>();
   const insert = jest.fn<Promise<PaymentRow>, [InsertPaymentInput]>();
   const markSucceeded = jest.fn<Promise<boolean>, [PoolClient, string]>();
+  const creditBooking = jest.fn<Promise<void>, [PoolClient, string]>();
+  const insertSucceededManual = jest.fn<Promise<string>, [PoolClient, unknown]>();
+  const settle = jest.fn<Promise<void>, [PoolClient, SettlingPayment]>();
+  const presentSettled = jest.fn<Promise<GuestBooking | null>, [string]>();
+  let registry: PaymentSettlementRegistry;
   const markEnded = jest.fn<Promise<PaymentRow | null>, [string, 'failed' | 'cancelled', string]>();
   const recordRedemptions = jest.fn<Promise<void>, [PoolClient, string, readonly QuoteDiscountLine[]]>();
   const deleteHoldTtl = jest.fn<Promise<void>, [string]>();
@@ -91,7 +122,7 @@ describe('PaymentsService', () => {
       providers: [
         PaymentsService,
         { provide: PAYMENT_PROVIDER, useValue: provider },
-        { provide: PaymentsRepository, useValue: { findOpenForHold, getById, insert, markSucceeded, markEnded } },
+        { provide: PaymentsRepository, useValue: { findOpenForHold, getById, insert, markSucceeded, markEnded, creditBooking, insertSucceededManual } },
         { provide: InventoryService, useValue: { getPayableHold, confirmPaidHold, getConfirmation, releaseHold } },
         { provide: DiscountsService, useValue: { recordRedemptions } },
         {
@@ -102,6 +133,7 @@ describe('PaymentsService', () => {
           },
         },
         { provide: RedisService, useValue: { deleteHoldTtl } },
+        { provide: PaymentSettlementRegistry, useValue: registry },
       ],
     }).compile();
     return moduleRef.get(PaymentsService);
@@ -116,6 +148,12 @@ describe('PaymentsService', () => {
     insert.mockImplementation((input) => Promise.resolve({ ...payment(), provider_ref: input.providerRef, amount_cents: input.amountCents }));
     confirmPaidHold.mockResolvedValue(CONFIRMATION);
     markSucceeded.mockResolvedValue(true);
+    creditBooking.mockResolvedValue(undefined);
+    settle.mockResolvedValue(undefined);
+    presentSettled.mockResolvedValue(CHANGED_BOOKING);
+    registry = new PaymentSettlementRegistry();
+    const handler: PaymentSettlementHandler = { purpose: 'rebook', settle, presentSettled };
+    registry.register(handler);
     markEnded.mockResolvedValue({ ...payment('failed') });
     recordRedemptions.mockResolvedValue(undefined);
     releaseHold.mockResolvedValue(undefined);
@@ -331,6 +369,229 @@ describe('PaymentsService', () => {
       const live = await build({ name: 'stripe', simulated: false, createIntent, refund });
 
       await expect(live.issueRefund({ providerRef: 'pi_1', amountCents: 100, currencyCode: 'EUR', reason: 'x' })).rejects.toThrow('provider down');
+    });
+  });
+
+  describe('booking payments are credited to the booking', () => {
+    it('adds what was paid to the booking in the same transaction that confirms it', async () => {
+      await service.completeMock(PAYMENT, 'success');
+
+      expect(creditBooking).toHaveBeenCalledWith(expect.anything(), PAYMENT);
+      expect(clientQuery.mock.calls.map((call) => call[0])).toEqual(['BEGIN', 'COMMIT']);
+    });
+
+    it('credits nothing when the stay could not be confirmed', async () => {
+      confirmPaidHold.mockRejectedValue(expired());
+
+      await expect(service.completeMock(PAYMENT, 'success')).rejects.toBeInstanceOf(ConflictException);
+
+      expect(creditBooking).not.toHaveBeenCalled();
+    });
+
+    it('reports no date-change result for an ordinary booking payment', async () => {
+      const result = await service.completeMock(PAYMENT, 'success');
+
+      expect(result.rebookedBooking).toBeNull();
+    });
+  });
+
+  describe('paying the balance of a date change', () => {
+    const PAYLOAD = { oldBookingId: HOLD, newCheckIn: '2027-08-01', newCheckOut: '2027-08-04', newTotalCents: 60000, feeCents: 2000 };
+    const OPEN_INPUT = {
+      bookingId: HOLD,
+      organizationId: 'org',
+      propertyId: 'prop',
+      amountCents: 24000,
+      currencyCode: 'EUR',
+      payload: PAYLOAD,
+    };
+
+    function rebookPayment(status: PaymentStatus = 'requires_payment'): PaymentRow {
+      return payment(status, { purpose: 'rebook', payload: PAYLOAD, amount_cents: 24000 });
+    }
+
+    describe('opening it', () => {
+      it('opens a balance payment for the amount owed, tagged as a date change, holding the agreed change', async () => {
+        insert.mockImplementation((input) => Promise.resolve(payment('requires_payment', { purpose: input.purpose ?? 'booking', payload: input.payload ?? null, amount_cents: input.amountCents })));
+
+        const summary = await service.openRebookPayment(OPEN_INPUT);
+
+        expect(insert).toHaveBeenCalledWith(expect.objectContaining({ holdId: HOLD, amountCents: 24000, purpose: 'rebook', payload: PAYLOAD, provider: 'mock' }));
+        expect(summary).toMatchObject({ holdId: HOLD, status: 'requires_payment', amountCents: 24000, simulated: true });
+      });
+
+      it('returns the SAME open payment when the same change is asked for again', async () => {
+        findOpenForHold.mockResolvedValue(rebookPayment());
+
+        const summary = await service.openRebookPayment(OPEN_INPUT);
+
+        expect(summary.id).toBe(PAYMENT);
+        expect(insert).not.toHaveBeenCalled();
+        expect(markEnded).not.toHaveBeenCalled();
+      });
+
+      it('cancels the earlier attempt and opens a new one when a DIFFERENT change is asked for', async () => {
+        findOpenForHold.mockResolvedValue(rebookPayment());
+
+        await service.openRebookPayment({ ...OPEN_INPUT, payload: { ...PAYLOAD, newCheckOut: '2027-08-05' } });
+
+        expect(markEnded).toHaveBeenCalledWith(PAYMENT, 'cancelled', 'superseded');
+        expect(insert).toHaveBeenCalledTimes(1);
+      });
+
+      it('replaces an open payment of the same change when the amount owed moved', async () => {
+        findOpenForHold.mockResolvedValue(rebookPayment());
+
+        await service.openRebookPayment({ ...OPEN_INPUT, amountCents: 26000 });
+
+        expect(markEnded).toHaveBeenCalledWith(PAYMENT, 'cancelled', 'superseded');
+        expect(insert).toHaveBeenCalledWith(expect.objectContaining({ amountCents: 26000 }));
+      });
+
+      it('returns the winner when two requests race and the unique index rejects one', async () => {
+        findOpenForHold.mockResolvedValueOnce(null).mockResolvedValueOnce(rebookPayment());
+        insert.mockRejectedValue(Object.assign(new Error('duplicate'), { code: '23505' }));
+
+        const summary = await service.openRebookPayment(OPEN_INPUT);
+
+        expect(summary.id).toBe(PAYMENT);
+      });
+
+      it('rethrows unexpected database errors', async () => {
+        const failure = new Error('connection lost');
+        insert.mockRejectedValue(failure);
+
+        await expect(service.openRebookPayment(OPEN_INPUT)).rejects.toBe(failure);
+      });
+    });
+
+    describe('when it succeeds', () => {
+      beforeEach(() => {
+        getById.mockResolvedValue(rebookPayment());
+      });
+
+      it('marks it paid and applies the change in ONE transaction, then returns the new booking', async () => {
+        const result = await service.completeMock(PAYMENT, 'success');
+
+        expect(clientQuery.mock.calls.map((call) => call[0])).toEqual(['BEGIN', 'COMMIT']);
+        expect(markSucceeded).toHaveBeenCalledWith(expect.anything(), PAYMENT);
+        expect(settle).toHaveBeenCalledWith(
+          expect.anything(),
+          { id: PAYMENT, bookingId: HOLD, amountCents: 24000, currencyCode: 'EUR', payload: PAYLOAD },
+        );
+        expect(result).toMatchObject({ payment: { status: 'succeeded' }, confirmation: null, rebookedBooking: CHANGED_BOOKING });
+      });
+
+      it('never confirms a hold, credits a booking, or counts discounts the way a booking payment does', async () => {
+        await service.completeMock(PAYMENT, 'success');
+
+        expect(getPayableHold).not.toHaveBeenCalled();
+        expect(confirmPaidHold).not.toHaveBeenCalled();
+        expect(creditBooking).not.toHaveBeenCalled();
+        expect(recordRedemptions).not.toHaveBeenCalled();
+      });
+
+      it('applies the change only after the payment is marked paid', async () => {
+        const order: string[] = [];
+        markSucceeded.mockImplementation(() => {
+          order.push('markSucceeded');
+          return Promise.resolve(true);
+        });
+        settle.mockImplementation(() => {
+          order.push('settle');
+          return Promise.resolve();
+        });
+
+        await service.completeMock(PAYMENT, 'success');
+
+        expect(order).toEqual(['markSucceeded', 'settle']);
+      });
+
+      it('rolls everything back and CANCELS the payment (nobody is charged) when the new dates were taken meanwhile', async () => {
+        settle.mockRejectedValue(new ConflictException({ message: 'Those dates are not available', code: 'DATES_UNAVAILABLE' }));
+
+        await expect(service.completeMock(PAYMENT, 'success')).rejects.toMatchObject({ response: { code: 'DATES_UNAVAILABLE' } });
+
+        expect(clientQuery.mock.calls.map((call) => call[0])).toEqual(['BEGIN', 'ROLLBACK']);
+        expect(markEnded).toHaveBeenCalledWith(PAYMENT, 'cancelled', 'dates_unavailable');
+        expect(presentSettled).not.toHaveBeenCalled();
+      });
+
+      it('cancels the payment for any other refusal too, naming the reason', async () => {
+        settle.mockRejectedValue(new ConflictException({ message: 'Already started', code: 'BOOKING_ALREADY_STARTED' }));
+
+        await expect(service.completeMock(PAYMENT, 'success')).rejects.toBeInstanceOf(ConflictException);
+
+        expect(markEnded).toHaveBeenCalledWith(PAYMENT, 'cancelled', 'booking_already_started');
+      });
+
+      it('leaves the payment OPEN (retry-able) when something unexpected breaks, because that is not a refusal', async () => {
+        settle.mockRejectedValue(new Error('connection lost'));
+
+        await expect(service.completeMock(PAYMENT, 'success')).rejects.toThrow('connection lost');
+
+        expect(clientQuery.mock.calls.map((call) => call[0])).toEqual(['BEGIN', 'ROLLBACK']);
+        expect(markEnded).not.toHaveBeenCalled();
+      });
+
+      it('does not cancel a payment another request already settled', async () => {
+        markSucceeded.mockResolvedValue(false);
+
+        await expect(service.completeMock(PAYMENT, 'success')).rejects.toMatchObject({ response: { code: 'PAYMENT_ALREADY_SETTLED' } });
+
+        expect(settle).not.toHaveBeenCalled();
+        expect(markEnded).not.toHaveBeenCalled();
+      });
+
+      it('fails before touching anything if nothing is registered to apply the change', async () => {
+        registry = new PaymentSettlementRegistry();
+        service = await build(new MockPaymentProvider());
+
+        await expect(service.completeMock(PAYMENT, 'success')).rejects.toThrow('No settlement handler');
+
+        expect(markSucceeded).not.toHaveBeenCalled();
+      });
+
+      it('is harmless to repeat: the same success returns the same new booking and applies nothing twice', async () => {
+        getById.mockResolvedValue(rebookPayment('succeeded'));
+
+        const result = await service.completeMock(PAYMENT, 'success');
+
+        expect(result.rebookedBooking).toEqual(CHANGED_BOOKING);
+        expect(presentSettled).toHaveBeenCalledWith(PAYMENT);
+        expect(settle).not.toHaveBeenCalled();
+        expect(markSucceeded).not.toHaveBeenCalled();
+      });
+
+      it('does not let a paid date change be "failed" afterwards', async () => {
+        getById.mockResolvedValue(rebookPayment('succeeded'));
+
+        await expect(service.completeMock(PAYMENT, 'failure')).rejects.toMatchObject({ response: { code: 'PAYMENT_ALREADY_SETTLED' } });
+      });
+    });
+
+    describe('when it fails', () => {
+      it('marks it failed, changes nothing, and does NOT give back any dates (they are the guest\'s booking)', async () => {
+        getById.mockResolvedValue(rebookPayment());
+
+        const result = await service.completeMock(PAYMENT, 'failure');
+
+        expect(markEnded).toHaveBeenCalledWith(PAYMENT, 'failed', 'card_declined');
+        expect(releaseHold).not.toHaveBeenCalled();
+        expect(settle).not.toHaveBeenCalled();
+        expect(result).toMatchObject({ payment: { status: 'failed' }, confirmation: null, rebookedBooking: null });
+      });
+    });
+  });
+
+  describe('recordManualPayment', () => {
+    it('hands the payment to the repository inside the caller\'s transaction and returns its id', async () => {
+      insertSucceededManual.mockResolvedValue('pay-m');
+      const client = Object.assign(new Client(), { release: (): void => undefined, query: clientQuery });
+      const input = { bookingId: 'b', organizationId: 'o', propertyId: 'pr', amountCents: 500, currencyCode: 'EUR' };
+
+      await expect(service.recordManualPayment(client, input)).resolves.toBe('pay-m');
+      expect(insertSucceededManual).toHaveBeenCalledWith(client, input);
     });
   });
 });

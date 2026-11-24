@@ -4,10 +4,12 @@
  * @dependencies DatabaseService
  */
 
+import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import type { PaymentStatus } from '@resort-booking/shared-types';
 import type { PoolClient } from 'pg';
 import { DatabaseService } from '../../shared/database/database.service';
+import type { PaymentPurpose } from './payment-settlement';
 
 export interface PaymentRow {
   id: string;
@@ -20,6 +22,17 @@ export interface PaymentRow {
   currency_code: string;
   status: PaymentStatus;
   failure_reason: string | null;
+  purpose: PaymentPurpose;
+  /** The change the guest agreed to pay for (balance payments), until it settles. */
+  payload: unknown;
+}
+
+export interface InsertManualPaymentInput {
+  bookingId: string;
+  organizationId: string;
+  propertyId: string;
+  amountCents: number;
+  currencyCode: string;
 }
 
 export interface InsertPaymentInput {
@@ -30,10 +43,13 @@ export interface InsertPaymentInput {
   providerRef: string;
   amountCents: number;
   currencyCode: string;
+  /** Defaults to a payment for the booking itself. */
+  purpose?: PaymentPurpose;
+  payload?: object;
 }
 
 const COLUMNS = `id, organization_id, property_id, inventory_block_id, provider, provider_ref,
-  amount_cents, currency_code, status, failure_reason`;
+  amount_cents, currency_code, status, failure_reason, purpose, payload`;
 
 @Injectable()
 export class PaymentsRepository {
@@ -67,17 +83,50 @@ export class PaymentsRepository {
       `
       INSERT INTO payments (
         organization_id, property_id, inventory_block_id, provider, provider_ref,
-        amount_cents, currency_code, status
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'requires_payment')
+        amount_cents, currency_code, status, purpose, payload
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'requires_payment', $8, $9::jsonb)
       RETURNING ${COLUMNS}
       `,
-      [input.organizationId, input.propertyId, input.holdId, input.provider, input.providerRef, input.amountCents, input.currencyCode],
+      [
+        input.organizationId,
+        input.propertyId,
+        input.holdId,
+        input.provider,
+        input.providerRef,
+        input.amountCents,
+        input.currencyCode,
+        input.purpose ?? 'booking',
+        input.payload === undefined ? null : JSON.stringify(input.payload),
+      ],
     );
     const row = result.rows[0];
     if (row === undefined) {
       throw new Error('Payment insert returned no row');
     }
     return row;
+  }
+
+  /**
+   * Records money the guest paid OUTSIDE the system (cash or bank at the desk, confirmed by staff) as an
+   * already-succeeded payment, inside the caller's transaction. Provider "manual": a refund against it can
+   * only be done by hand, never through the card provider.
+   */
+  public async insertSucceededManual(client: PoolClient, input: InsertManualPaymentInput): Promise<string> {
+    const result = await client.query<{ id: string }>(
+      `
+      INSERT INTO payments (
+        organization_id, property_id, inventory_block_id, provider, provider_ref,
+        amount_cents, currency_code, status, purpose
+      ) VALUES ($1, $2, $3, 'manual', $4, $5, $6, 'succeeded', 'rebook')
+      RETURNING id
+      `,
+      [input.organizationId, input.propertyId, input.bookingId, `manual_${randomUUID()}`, input.amountCents, input.currencyCode],
+    );
+    const id = result.rows[0]?.id;
+    if (id === undefined) {
+      throw new Error('Manual payment insert returned no row');
+    }
+    return id;
   }
 
   /**
@@ -89,6 +138,21 @@ export class PaymentsRepository {
       [paymentId],
     );
     return (result.rowCount ?? 0) > 0;
+  }
+
+  /**
+   * Adds a succeeded payment's amount to what has been paid for its booking, in the caller's transaction.
+   */
+  public async creditBooking(client: PoolClient, paymentId: string): Promise<void> {
+    await client.query(
+      `
+      UPDATE inventory_blocks ib
+      SET paid_cents = COALESCE(ib.paid_cents, 0) + p.amount_cents
+      FROM payments p
+      WHERE p.id = $1 AND ib.id = p.inventory_block_id
+      `,
+      [paymentId],
+    );
   }
 
   /**

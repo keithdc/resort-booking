@@ -7,6 +7,7 @@
 import type { Quote } from '@resort-booking/shared-types';
 import { Stack, Typography } from '@mui/material';
 import { formatCents } from '@/shared/utils/money';
+import { STANDARD_RATE_LABEL } from '../utils/nightly-rate-label';
 
 interface QuoteBreakdownProps {
   quote: Quote;
@@ -17,7 +18,7 @@ interface QuoteBreakdownProps {
  * and total the API returned, so a stay that crosses into peak season is never a surprise.
  */
 export function QuoteBreakdown({ quote }: QuoteBreakdownProps): React.JSX.Element {
-  const seasonal = quote.lines.length > 1 || quote.lines.some((line) => line.label !== 'Standard rate');
+  const seasonal = quote.lines.length > 1 || quote.lines.some((line) => line.label !== STANDARD_RATE_LABEL);
   return (
     <Stack spacing={0.5} aria-label="Price breakdown">
       {quote.lines.map((line): React.JSX.Element => (

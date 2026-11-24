@@ -13,14 +13,14 @@ import {
   fetchProperty,
   fetchRequestOptions,
 } from '@/features/property/services/property-api';
-import { CancellationPolicySection } from '@/shared/components/cancellation-policy';
 import { PhotoGallery } from '@/shared/components/photo-gallery';
 import { PropertyMap } from '@/shared/components/property-map';
 import { formatAddress } from '@/shared/utils/format-address';
-import { formatCents } from '@/shared/utils/money';
 import type { StayQuery } from '@/shared/utils/stay-query';
+import { StayQuoteProvider } from '../context/stay-quote-context';
 import { CheckoutForm } from './checkout-form';
 import { ListingHighlights } from './listing-highlights';
+import { StayCancellationPolicy } from './stay-cancellation-policy';
 
 interface HouseDetailPageProps {
   propertySlug: string;
@@ -47,6 +47,7 @@ export async function HouseDetailPage({
   const lng = house.longitude ?? house.propertyLongitude;
 
   return (
+    <StayQuoteProvider>
     <Container sx={{ py: 6 }} maxWidth="lg">
       <MuiLink component={NextLink} href={`/properties/${house.propertySlug}`}>
         {house.propertyName}
@@ -57,7 +58,8 @@ export async function HouseDetailPage({
       <ListingHighlights
         city={house.propertyCity}
         sleeps={house.capacity}
-        rateLabel={formatCents(house.nightlyRateCents, house.currencyCode)}
+        standardRateCents={house.nightlyRateCents}
+        currencyCode={house.currencyCode}
       />
       <Box sx={{ mb: 4 }}>
         <PhotoGallery photos={house.photos} altFallback={house.name} />
@@ -110,7 +112,7 @@ export async function HouseDetailPage({
               </Stack>
             </Box>
           ) : null}
-          <CancellationPolicySection policy={policy} currencyCode={house.currencyCode} />
+          <StayCancellationPolicy policy={policy} currencyCode={house.currencyCode} />
           <Typography variant="h6" component="h2" gutterBottom>
             Location and contact
           </Typography>
@@ -139,5 +141,6 @@ export async function HouseDetailPage({
         </Box>
       </Box>
     </Container>
+    </StayQuoteProvider>
   );
 }

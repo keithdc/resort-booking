@@ -1,22 +1,25 @@
 /**
  * @file apps/api/src/modules/payments/payments.service.ts
  * @feature payments
- * @dependencies PaymentProvider, PaymentsRepository, InventoryService, DiscountsService
+ * @dependencies PaymentProvider, PaymentsRepository, InventoryService, DiscountsService, PaymentSettlementRegistry
  */
 
-import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { isDeepStrictEqual } from 'node:util';
+import { ConflictException, HttpException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type {
   MockPaymentOutcome,
   MockPaymentResult,
   PaymentSummary,
   ReservationConfirmation,
 } from '@resort-booking/shared-types';
+import type { PoolClient } from 'pg';
 import { DatabaseService } from '../../shared/database/database.service';
 import { RedisService } from '../../shared/redis/redis.service';
 import { DiscountsService } from '../discounts/discounts.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { PAYMENT_PROVIDER, type PaymentProvider, type RefundRequest, type RefundResult } from './payment-provider';
-import { PaymentsRepository, type PaymentRow } from './payments.repository';
+import { PaymentSettlementRegistry, type SettlingPayment } from './payment-settlement';
+import { PaymentsRepository, type InsertManualPaymentInput, type PaymentRow } from './payments.repository';
 
 interface PgErrorLike {
   code?: string;
@@ -33,6 +36,7 @@ export class PaymentsService {
     private readonly discounts: DiscountsService,
     private readonly database: DatabaseService,
     private readonly redis: RedisService,
+    private readonly settlements: PaymentSettlementRegistry,
   ) {}
 
   /**
@@ -40,6 +44,14 @@ export class PaymentsService {
    */
   public describeProvider(): { name: string; simulated: boolean } {
     return { name: this.provider.name, simulated: this.provider.simulated };
+  }
+
+  /**
+   * Records a payment the guest made outside the system, confirmed by staff, inside the caller's
+   * transaction. It is a real payment on the booking from then on (it counts toward what was paid).
+   */
+  public recordManualPayment(client: PoolClient, input: InsertManualPaymentInput): Promise<string> {
+    return this.payments.insertSucceededManual(client, input);
   }
 
   /**
@@ -96,11 +108,56 @@ export class PaymentsService {
   }
 
   /**
+   * Opens the payment for the balance of a date change (the guest owes more for the new dates).
+   * Nothing changes on the booking until it succeeds. Asking again for the same change returns the same
+   * open payment; asking for a different change cancels the old attempt first (one open payment per booking).
+   */
+  public async openRebookPayment(input: OpenRebookPaymentInput): Promise<PaymentSummary> {
+    const open = await this.payments.findOpenForHold(input.bookingId);
+    if (open !== null) {
+      if (open.purpose === 'rebook' && open.amount_cents === input.amountCents && isDeepStrictEqual(open.payload, input.payload)) {
+        return this.summary(open);
+      }
+      await this.payments.markEnded(open.id, 'cancelled', 'superseded');
+    }
+    const intent = await this.provider.createIntent({
+      holdId: input.bookingId,
+      amountCents: input.amountCents,
+      currencyCode: input.currencyCode,
+      description: `Date change for booking ${input.bookingId}`,
+    });
+    try {
+      const row = await this.payments.insert({
+        organizationId: input.organizationId,
+        propertyId: input.propertyId,
+        holdId: input.bookingId,
+        provider: this.provider.name,
+        providerRef: intent.providerRef,
+        amountCents: input.amountCents,
+        currencyCode: input.currencyCode,
+        purpose: 'rebook',
+        payload: input.payload,
+      });
+      return this.summary(row);
+    } catch (error: unknown) {
+      // Two requests raced; the unique index let only one in. Return the winner.
+      if (isUniqueViolation(error)) {
+        const winner = await this.payments.findOpenForHold(input.bookingId);
+        if (winner !== null) {
+          return this.summary(winner);
+        }
+      }
+      throw error;
+    }
+  }
+
+  /**
    * Test-mode "pay" button: settles a payment as the provider would. Only exists with the mock
    * provider; with a real one this is a 404.
    *
-   * Success confirms the stay, records the payment, and counts discount use in ONE transaction.
-   * Failure marks the payment failed and gives the dates back. Repeating a success is harmless.
+   * Success confirms the stay (or applies the date change the payment was for), records the payment,
+   * and counts discount use in ONE transaction. Failure marks the payment failed and gives the dates
+   * back (a failed date-change payment leaves the booking exactly as it was). Repeating a success is harmless.
    */
   public async completeMock(paymentId: string, outcome: MockPaymentOutcome): Promise<MockPaymentResult> {
     if (!this.provider.simulated) {
@@ -113,7 +170,7 @@ export class PaymentsService {
 
     if (payment.status === 'succeeded') {
       if (outcome === 'success') {
-        return { payment: this.summary(payment), confirmation: await this.inventory.getConfirmation(payment.inventory_block_id) };
+        return this.alreadySucceeded(payment);
       }
       throw this.alreadySettled();
     }
@@ -123,10 +180,13 @@ export class PaymentsService {
 
     if (outcome === 'failure') {
       const failed = await this.payments.markEnded(paymentId, 'failed', 'card_declined');
-      await this.inventory.releaseHold(payment.inventory_block_id);
-      return { payment: this.summary(failed ?? { ...payment, status: 'failed' }), confirmation: null };
+      if (payment.purpose === 'booking') {
+        // Only a booking payment holds dates. A failed balance payment leaves the guest's booking alone.
+        await this.inventory.releaseHold(payment.inventory_block_id);
+      }
+      return { payment: this.summary(failed ?? { ...payment, status: 'failed' }), confirmation: null, rebookedBooking: null };
     }
-    return this.settleSuccess(payment);
+    return payment.purpose === 'rebook' ? this.settleRebook(payment) : this.settleSuccess(payment);
   }
 
   // --- Helpers ---
@@ -151,6 +211,7 @@ export class PaymentsService {
           if (!(await this.payments.markSucceeded(client, payment.id))) {
             throw this.alreadySettled();
           }
+          await this.payments.creditBooking(client, payment.id);
           await this.discounts.recordRedemptions(client, holdId, discounts);
           await client.query('COMMIT');
           return confirmed;
@@ -172,7 +233,71 @@ export class PaymentsService {
       // The Redis key only mirrors the hold timer and expires by itself; the database is the truth.
       this.logger.warn(`Could not clear the hold timer for ${holdId}`);
     }
-    return { payment: this.summary({ ...payment, status: 'succeeded' }), confirmation };
+    return { payment: this.summary({ ...payment, status: 'succeeded' }), confirmation, rebookedBooking: null };
+  }
+
+  /**
+   * A balance payment succeeded: apply the date change it was for, in ONE transaction with marking it paid.
+   * If the change is refused (the new dates were taken meanwhile, the booking was cancelled) everything
+   * rolls back and the payment is cancelled, not charged. A real provider would also need to refund here.
+   */
+  private async settleRebook(payment: PaymentRow): Promise<MockPaymentResult> {
+    const handler = this.settlements.find('rebook');
+    if (handler === null) {
+      throw new Error('No settlement handler is registered for date-change payments');
+    }
+    const settling: SettlingPayment = {
+      id: payment.id,
+      bookingId: payment.inventory_block_id,
+      amountCents: payment.amount_cents,
+      currencyCode: payment.currency_code,
+      payload: payment.payload,
+    };
+    try {
+      await this.database.withClient(async (client): Promise<void> => {
+        await client.query('BEGIN');
+        try {
+          if (!(await this.payments.markSucceeded(client, payment.id))) {
+            throw this.alreadySettled();
+          }
+          await handler.settle(client, settling);
+          await client.query('COMMIT');
+        } catch (error: unknown) {
+          await client.query('ROLLBACK');
+          throw error;
+        }
+      });
+    } catch (error: unknown) {
+      if (error instanceof HttpException && error.getStatus() < 500 && !isAlreadySettled(error)) {
+        // The change was refused for a reason that will not go away: the attempt ends, nobody is charged.
+        await this.payments.markEnded(payment.id, 'cancelled', refusalReason(error));
+      }
+      throw error;
+    }
+    return {
+      payment: this.summary({ ...payment, status: 'succeeded' }),
+      confirmation: null,
+      rebookedBooking: await handler.presentSettled(payment.id),
+    };
+  }
+
+  /**
+   * The same success reported again: nothing is applied twice, the guest just gets the same result.
+   */
+  private async alreadySucceeded(payment: PaymentRow): Promise<MockPaymentResult> {
+    if (payment.purpose === 'rebook') {
+      const handler = this.settlements.find('rebook');
+      return {
+        payment: this.summary(payment),
+        confirmation: null,
+        rebookedBooking: handler === null ? null : await handler.presentSettled(payment.id),
+      };
+    }
+    return {
+      payment: this.summary(payment),
+      confirmation: await this.inventory.getConfirmation(payment.inventory_block_id),
+      rebookedBooking: null,
+    };
   }
 
   private summary(row: Pick<PaymentRow, 'id' | 'inventory_block_id' | 'provider' | 'status' | 'amount_cents' | 'currency_code'>): PaymentSummary {
@@ -194,6 +319,32 @@ export class PaymentsService {
 
 function isUniqueViolation(error: unknown): boolean {
   return typeof error === 'object' && error !== null && (error as PgErrorLike).code === '23505';
+}
+
+/** What openRebookPayment needs to open a balance payment. */
+export interface OpenRebookPaymentInput {
+  /** The booking whose dates are changing. */
+  bookingId: string;
+  organizationId: string;
+  propertyId: string;
+  amountCents: number;
+  currencyCode: string;
+  /** The change the guest agreed to, kept with the payment until it settles. */
+  payload: object;
+}
+
+function isAlreadySettled(error: HttpException): boolean {
+  return responseCode(error) === 'PAYMENT_ALREADY_SETTLED';
+}
+
+function responseCode(error: HttpException): string | null {
+  const body = error.getResponse();
+  return typeof body === 'object' && body !== null && 'code' in body && typeof body.code === 'string' ? body.code : null;
+}
+
+/** The refusal's code, lower case, as the reason saved on the cancelled payment. */
+function refusalReason(error: HttpException): string {
+  return (responseCode(error) ?? 'change_refused').toLowerCase();
 }
 
 function isHoldExpired(error: ConflictException): boolean {

@@ -15,7 +15,7 @@ const api = vi.hoisted(() => ({
   completeMockPayment: vi.fn<(paymentId: string, outcome: MockPaymentOutcome) => Promise<MockPaymentResult>>(),
 }));
 
-vi.mock('../services/payments-api', () => api);
+vi.mock('@/shared/services/payments-api', () => api);
 
 const PAYMENT: PaymentSummary = {
   id: 'p1',
@@ -78,7 +78,7 @@ describe('useMockPayment', () => {
   });
 
   it('confirms the booking when paid', async () => {
-    api.completeMockPayment.mockResolvedValue({ payment: { ...PAYMENT, status: 'succeeded' }, confirmation: CONFIRMATION });
+    api.completeMockPayment.mockResolvedValue({ payment: { ...PAYMENT, status: 'succeeded' }, confirmation: CONFIRMATION, rebookedBooking: null });
     const { result } = renderHook(() => useMockPayment('h1'));
     await waitFor(() => expect(result.current.phase).toBe('ready'));
 
@@ -92,7 +92,7 @@ describe('useMockPayment', () => {
   });
 
   it('reports a declined card when there is no confirmation', async () => {
-    api.completeMockPayment.mockResolvedValue({ payment: { ...PAYMENT, status: 'failed' }, confirmation: null });
+    api.completeMockPayment.mockResolvedValue({ payment: { ...PAYMENT, status: 'failed' }, confirmation: null, rebookedBooking: null });
     const { result } = renderHook(() => useMockPayment('h1'));
     await waitFor(() => expect(result.current.phase).toBe('ready'));
 
@@ -138,7 +138,7 @@ describe('useMockPayment', () => {
       await result.current.pay();
     });
     await act(async () => {
-      finish({ payment: { ...PAYMENT, status: 'succeeded' }, confirmation: CONFIRMATION });
+      finish({ payment: { ...PAYMENT, status: 'succeeded' }, confirmation: CONFIRMATION, rebookedBooking: null });
       await first;
     });
 

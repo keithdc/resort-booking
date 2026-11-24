@@ -133,7 +133,7 @@ describe('toPinViews', () => {
     const [view] = toPinViews(groupByLocation([result('lake-chalet', 'Lake Chalet', 64000, 45.8, 6.1)]), STAY);
 
     expect(view?.stays[0]?.href).toBe(
-      '/properties/alpine-lake/houses/lake-chalet?checkIn=2027-07-10&checkOut=2027-07-12&nights=2&guestCount=2',
+      '/properties/alpine-lake/stays/lake-chalet?checkIn=2027-07-10&checkOut=2027-07-12&nights=2&guestCount=2',
     );
   });
 

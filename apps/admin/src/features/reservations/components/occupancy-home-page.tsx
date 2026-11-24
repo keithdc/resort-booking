@@ -5,12 +5,18 @@
  */
 
 import { fetchStaffProperties } from '@/features/property/services/staff-property-api';
+import { RefundsAlert } from '@/features/refunds';
 import { OccupancyCalendar } from './occupancy-calendar';
 
 /**
- * Staff home: calendar of confirmed stays.
+ * Staff home: a heads-up about refunds that need a person, then the calendar of confirmed stays.
  */
 export async function OccupancyHomePage(): Promise<React.JSX.Element> {
   const properties = await fetchStaffProperties();
-  return <OccupancyCalendar properties={properties} />;
+  return (
+    <>
+      <RefundsAlert />
+      <OccupancyCalendar properties={properties} />
+    </>
+  );
 }

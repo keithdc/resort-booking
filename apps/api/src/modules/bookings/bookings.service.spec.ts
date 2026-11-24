@@ -12,8 +12,10 @@ import { PaymentsService } from '../payments/payments.service';
 import type { RefundRequest, RefundResult } from '../payments/payment-provider';
 import type { PolicySnapshot } from '../reservations/reservations.rules';
 import { ReservationsService } from '../reservations/reservations.service';
+import { BookingReader } from './booking-reader';
 import { BookingsRepository, type BookingRow, type InsertRefundInput } from './bookings.repository';
 import { BookingsService } from './bookings.service';
+import { RefundIssuer } from './refund-issuer';
 import { BOOKING_STARTED_MESSAGE } from './bookings.rules';
 
 const ID = '1a2b3c4d-5e6f-4a8b-9c0d-1e2f3a4b5c6d';
@@ -37,6 +39,7 @@ function row(overrides: Partial<BookingRow> = {}): BookingRow {
     id: ID,
     organization_id: 'org',
     property_id: 'prop',
+    house_id: 'house',
     property_name: 'Alpine Lake',
     property_timezone: 'Europe/Paris',
     stay_name: 'Lake Chalet',
@@ -45,12 +48,17 @@ function row(overrides: Partial<BookingRow> = {}): BookingRow {
     check_out: '2027-07-13',
     guest_count: 2,
     booker_name: 'Ada Lovelace',
+    booker_email: EMAIL,
+    booker_phone: '+33612345678',
+    guest_note: '',
+    payment_method: 'card',
     total_cents: 96000,
     currency_code: 'EUR',
     policy_snapshot: snapshot(),
-    payment_id: 'pay-1',
-    payment_provider: 'mock',
-    payment_ref: 'mock_pi_abc',
+    price_snapshot: null,
+    rebook_of_id: null,
+    replaced_by_id: null,
+    payments: [{ id: 'pay-1', provider: 'mock', providerRef: 'mock_pi_abc', refundableCents: 96000 }],
     paid_cents: 96000,
     refund_id: null,
     refund_amount_cents: null,
@@ -138,6 +146,8 @@ describe('BookingsService', () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         BookingsService,
+        BookingReader,
+        RefundIssuer,
         { provide: BookingsRepository, useValue: { findByReference, findById, lockForCancel, markCancelled, insertRefund, completeRefund } },
         { provide: PaymentsService, useValue: { describeProvider, issueRefund } },
         { provide: ReservationsService, useValue: { getPolicySnapshot } },
@@ -181,6 +191,9 @@ describe('BookingsService', () => {
         refundQuote: { paidCents: 96000, refundPercent: 100, refundCents: 96000, currencyCode: 'EUR', daysBeforeCheckIn: 39 },
         refund: null,
         rebookable: true,
+        canChangeDates: true,
+        changeDatesBlockedReason: null,
+        replacedByReference: null,
       });
     });
 
@@ -190,6 +203,7 @@ describe('BookingsService', () => {
       expect(Object.keys(booking).sort()).toEqual([
         'bookerName', 'cancelBlockedReason', 'canCancel', 'checkIn', 'checkOut', 'currencyCode', 'guestCount', 'propertyName',
         'rebookable', 'reference', 'refund', 'refundQuote', 'reservationId', 'status', 'stayName', 'totalCents',
+        'canChangeDates', 'changeDatesBlockedReason', 'replacedByReference',
       ].sort());
     });
 
@@ -250,7 +264,7 @@ describe('BookingsService', () => {
     });
 
     it('uses the booking total when no payment is on record', async () => {
-      findByReference.mockResolvedValue([row({ paid_cents: null, payment_id: null })]);
+      findByReference.mockResolvedValue([row({ paid_cents: null, payments: [] })]);
 
       const booking = await service.lookup(REQUEST);
 
@@ -401,6 +415,128 @@ describe('BookingsService', () => {
     });
   });
 
+  describe('a booking whose dates were changed', () => {
+    const NEW_ID = '9f8e7d6c-5b4a-4392-8170-6f5e4d3c2b1a';
+    const NEW_REFERENCE = 'BK-9F8E7D6C5B';
+
+    // The new booking copied the old one's policy snapshot, holds its price plus the change fee, and carries the payments.
+    function changed(overrides: Partial<BookingRow> = {}): BookingRow {
+      return row({
+        id: NEW_ID,
+        check_in: '2027-08-01',
+        check_out: '2027-08-04',
+        total_cents: 60000,
+        paid_cents: 62000,
+        rebook_of_id: ID,
+        payments: [{ id: 'pay-1', provider: 'mock', providerRef: 'mock_pi_abc', refundableCents: 62000 }],
+        ...overrides,
+      });
+    }
+
+    it('refunds from what the NEW booking holds, under the policy it started with, not today\'s', async () => {
+      findByReference.mockResolvedValue([changed()]);
+
+      await service.cancel({ reference: NEW_REFERENCE, email: EMAIL });
+
+      expect(getPolicySnapshot).not.toHaveBeenCalled();
+      expect(insertRefund).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ bookingId: NEW_ID, amountCents: 62000, percent: 100 }),
+      );
+      expect(issueRefund).toHaveBeenCalledWith(expect.objectContaining({ providerRef: 'mock_pi_abc', amountCents: 62000 }));
+    });
+
+    it('refunds across the original payment and the balance payment when both were made', async () => {
+      findByReference.mockResolvedValue([
+        changed({
+          paid_cents: 122000,
+          total_cents: 120000,
+          payments: [
+            { id: 'pay-2', provider: 'mock', providerRef: 'mock_pi_balance', refundableCents: 26000 },
+            { id: 'pay-1', provider: 'mock', providerRef: 'mock_pi_abc', refundableCents: 96000 },
+          ],
+        }),
+      ]);
+
+      await service.cancel({ reference: NEW_REFERENCE, email: EMAIL });
+
+      expect(issueRefund.mock.calls.map((call) => [call[0].providerRef, call[0].amountCents])).toEqual([
+        ['mock_pi_balance', 26000],
+        ['mock_pi_abc', 96000],
+      ]);
+      expect(completeRefund).toHaveBeenCalledWith('refund-1', 'succeeded', 'mock_re_1,mock_re_1', null);
+    });
+
+    it('can still be changed again: it carries the same saved policy and a future check-in', async () => {
+      findByReference.mockResolvedValue([changed()]);
+
+      const booking = await service.lookup({ reference: NEW_REFERENCE, email: EMAIL });
+
+      expect(booking).toMatchObject({ reference: NEW_REFERENCE, canChangeDates: true, changeDatesBlockedReason: null, rebookable: true, replacedByReference: null });
+    });
+
+    it('shows the OLD booking as cancelled, pointing at its replacement, with no cancellation refund', async () => {
+      findByReference.mockResolvedValue([cancelled({ replaced_by_id: NEW_ID, refund_id: null, refund_amount_cents: null, refund_percent: null, refund_status: null })]);
+
+      const booking = await service.lookup(REQUEST);
+
+      expect(booking).toMatchObject({
+        status: 'cancelled',
+        canCancel: false,
+        canChangeDates: false,
+        replacedByReference: NEW_REFERENCE,
+        refund: null,
+      });
+      expect(booking.changeDatesBlockedReason).toBe(`The dates of this booking were changed. Your new booking is ${NEW_REFERENCE}.`);
+    });
+
+    it('cancelling the OLD booking again is harmless: it is already cancelled, no refund, no write', async () => {
+      findByReference.mockResolvedValue([cancelled({ replaced_by_id: NEW_ID, refund_id: null, refund_amount_cents: null, refund_percent: null, refund_status: null })]);
+
+      const booking = await service.cancel(REQUEST);
+
+      expect(booking.status).toBe('cancelled');
+      expect(insertRefund).not.toHaveBeenCalled();
+      expect(withClientCalls).toBe(0);
+    });
+  });
+
+  describe('lookup: can the dates be changed', () => {
+    it('is blocked by the policy saved with the booking, with the reason', async () => {
+      findByReference.mockResolvedValue([row({ policy_snapshot: snapshot({ rebookable: false }) })]);
+
+      const booking = await service.lookup(REQUEST);
+
+      expect(booking).toMatchObject({
+        rebookable: false,
+        canChangeDates: false,
+        changeDatesBlockedReason: 'The dates of this booking cannot be changed. To change them, cancel and book again.',
+      });
+    });
+
+    it('is blocked once the booking has started', async () => {
+      findByReference.mockResolvedValue([row({ check_in: '2027-05-30', check_out: '2027-06-03' })]);
+
+      const booking = await service.lookup(REQUEST);
+
+      expect(booking).toMatchObject({ canChangeDates: false, changeDatesBlockedReason: BOOKING_STARTED_MESSAGE });
+    });
+
+    it('is blocked on a cancelled booking, with a plain reason', async () => {
+      findByReference.mockResolvedValue([cancelled()]);
+
+      const booking = await service.lookup(REQUEST);
+
+      expect(booking).toMatchObject({ canChangeDates: false, changeDatesBlockedReason: 'This booking is cancelled.', replacedByReference: null });
+    });
+
+    it('is allowed on the check-in day itself', async () => {
+      findByReference.mockResolvedValue([row({ check_in: TODAY, check_out: '2027-06-03' })]);
+
+      expect((await service.lookup(REQUEST)).canChangeDates).toBe(true);
+    });
+  });
+
   describe('cancel: transaction and ordering', () => {
     it('does the cancel and the refund record in ONE transaction, and calls the provider only after it commits', async () => {
       await service.cancel(REQUEST);
@@ -505,7 +641,7 @@ describe('BookingsService', () => {
     });
 
     it('leaves the refund for the operator when there is no online payment on record', async () => {
-      findByReference.mockResolvedValue([row({ payment_id: null, payment_provider: null, payment_ref: null, paid_cents: null })]);
+      findByReference.mockResolvedValue([row({ payments: [], paid_cents: null })]);
 
       await service.cancel(REQUEST);
 

@@ -85,7 +85,7 @@ describe('AvailabilityService', () => {
   const getHouseBySlugs = jest.fn<Promise<HouseDetail | null>, [string, string, boolean]>();
   const getPropertyBySlug = jest.fn<Promise<PropertyDetail | null>, [string, boolean]>();
   const listHousesByPropertySlug = jest.fn<Promise<HouseSummary[]>, [string | null, boolean]>();
-  const listOccupiedRanges = jest.fn<Promise<OccupiedRangeRow[]>, [readonly string[], string, string]>();
+  const listOccupiedRanges = jest.fn<Promise<OccupiedRangeRow[]>, [readonly string[], string, string, (string | null)?]>();
   let service: AvailabilityService;
 
   beforeEach(async (): Promise<void> => {
@@ -272,6 +272,54 @@ describe('AvailabilityService', () => {
 
       await expect(service.getPropertyAvailability('nope', {})).rejects.toThrow(NotFoundException);
       expect(listOccupiedRanges).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getStayAvailabilityExcluding (a guest changing the dates of their booking)', () => {
+    it('leaves the booking\'s own row out of the taken nights, so its own dates count as free', async () => {
+      await service.getStayAvailabilityExcluding(HOUSE_A, 'Europe/Paris', 'booking-1');
+
+      expect(listOccupiedRanges).toHaveBeenCalledTimes(1);
+      expect(listOccupiedRanges).toHaveBeenCalledWith([HOUSE_A], TODAY, '2028-06-10', 'booking-1');
+    });
+
+    it('returns the other bookings merged, for this one stay only, with no check-out limit', async () => {
+      listOccupiedRanges.mockResolvedValue([
+        { house_id: HOUSE_A, check_in: '2027-06-20', check_out: '2027-06-24' },
+        { house_id: HOUSE_A, check_in: '2027-06-24', check_out: '2027-06-27' },
+      ]);
+
+      const result = await service.getStayAvailabilityExcluding(HOUSE_A, 'Europe/Paris', 'booking-1', { to: '2027-08-01' });
+
+      expect(result).toEqual({
+        houseId: HOUSE_A,
+        from: TODAY,
+        to: '2027-08-01',
+        unavailable: [{ startDate: '2027-06-20', endDate: '2027-06-27' }],
+        maxCheckOutDate: null,
+      });
+    });
+
+    it('uses the property timezone for "today"', async () => {
+      jest.setSystemTime(new Date('2027-06-10T23:30:00Z'));
+
+      const result = await service.getStayAvailabilityExcluding(HOUSE_A, 'Europe/Paris', 'booking-1');
+
+      expect(result.from).toBe('2027-06-11');
+    });
+
+    it('rejects an oversized window like the public endpoint', async () => {
+      await expect(service.getStayAvailabilityExcluding(HOUSE_A, 'Europe/Paris', 'booking-1', { to: '2030-01-01' })).rejects.toBeInstanceOf(BadRequestException);
+      expect(listOccupiedRanges).not.toHaveBeenCalled();
+    });
+
+    it('never exposes who holds the other nights: dates only', async () => {
+      listOccupiedRanges.mockResolvedValue([{ house_id: HOUSE_A, check_in: '2027-06-20', check_out: '2027-06-24' }]);
+
+      const result = await service.getStayAvailabilityExcluding(HOUSE_A, 'Europe/Paris', 'booking-1');
+
+      expect(Object.keys(result).sort()).toEqual(['from', 'houseId', 'maxCheckOutDate', 'to', 'unavailable']);
+      expect(Object.keys(result.unavailable[0] ?? {}).sort()).toEqual(['endDate', 'startDate']);
     });
   });
 });

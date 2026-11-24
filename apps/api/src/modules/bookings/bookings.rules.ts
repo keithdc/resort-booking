@@ -123,3 +123,74 @@ export function checkCancellation(
   }
   return { allowed: true, calculation: calculateRefund(paidCents, checkInIso, todayIso, tiers) };
 }
+
+// --- Paying a refund back across the payments that made up a booking ---
+
+/** A succeeded payment that can still give money back. */
+export interface RefundablePayment {
+  id: string;
+  provider: string;
+  providerRef: string;
+  /** What the payment took, less refunds already issued or pending against it. */
+  refundableCents: number;
+}
+
+/** One provider refund call. */
+export interface RefundChunk {
+  paymentId: string;
+  providerRef: string;
+  provider: string;
+  amountCents: number;
+}
+
+export interface RefundAllocation {
+  chunks: RefundChunk[];
+  /** What no payment could cover (for example money that was never paid online). */
+  uncoveredCents: number;
+}
+
+/**
+ * Spreads a refund over the booking's payments, newest first, never taking more from a payment than
+ * it can still give back. A booking paid twice (the original plus a balance payment) refunds from both.
+ */
+export function allocateRefund(payments: readonly RefundablePayment[], amountCents: number): RefundAllocation {
+  const chunks: RefundChunk[] = [];
+  let remaining = Math.max(0, Math.round(amountCents));
+  for (const payment of payments) {
+    if (remaining === 0) {
+      break;
+    }
+    const take = Math.min(remaining, Math.max(0, payment.refundableCents));
+    if (take > 0) {
+      chunks.push({ paymentId: payment.id, providerRef: payment.providerRef, provider: payment.provider, amountCents: take });
+      remaining -= take;
+    }
+  }
+  return { chunks, uncoveredCents: remaining };
+}
+
+/**
+ * Reads the payments list the booking query aggregates. Anything malformed is dropped, so a bad row
+ * can only mean "refund by hand", never a refund against the wrong payment.
+ */
+export function parseRefundablePayments(raw: unknown): RefundablePayment[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  const payments: RefundablePayment[] = [];
+  for (const item of raw as unknown[]) {
+    if (typeof item !== 'object' || item === null) {
+      continue;
+    }
+    const record = item as Record<string, unknown>;
+    if (
+      typeof record.id === 'string' &&
+      typeof record.provider === 'string' &&
+      typeof record.providerRef === 'string' &&
+      typeof record.refundableCents === 'number'
+    ) {
+      payments.push({ id: record.id, provider: record.provider, providerRef: record.providerRef, refundableCents: record.refundableCents });
+    }
+  }
+  return payments;
+}

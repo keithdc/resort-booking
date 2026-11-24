@@ -11,8 +11,16 @@ import { useCallback, useRef, useState } from 'react';
 import { ApiRequestError } from '@/shared/services/api-client';
 import { cancelBooking, lookupBooking } from '../services/bookings-api';
 
+/** The reference and email that proved who the guest is. Held in memory only. */
+export interface BookingCredentials {
+  reference: string;
+  email: string;
+}
+
 export interface ManageBookingState {
   booking: GuestBooking | null;
+  /** Who is signed in for this booking (null before a lookup succeeds). */
+  credentials: BookingCredentials | null;
   /** A lookup is in flight. */
   finding: boolean;
   /** A cancellation is in flight. */
@@ -21,6 +29,8 @@ export interface ManageBookingState {
   /** True right after a cancellation succeeded (drives the confirmation message). */
   justCancelled: boolean;
   find: (reference: string, email: string) => Promise<void>;
+  /** Switch to a booking that replaced this one (a date change gives a new reference), keeping the email. */
+  adopt: (booking: GuestBooking) => void;
   cancel: () => Promise<void>;
   /** Back to the empty form (look up another booking). */
   reset: () => void;
@@ -37,7 +47,8 @@ export function useManageBooking(): ManageBookingState {
   const [error, setError] = useState<string | null>(null);
   const [justCancelled, setJustCancelled] = useState(false);
   // The email stays only in memory, to authorize the cancel call for the booking just found.
-  const credentials = useRef<{ reference: string; email: string } | null>(null);
+  const credentials = useRef<BookingCredentials | null>(null);
+  const [known, setKnown] = useState<BookingCredentials | null>(null);
   // A second tap while a request is in flight must not send a second request.
   const busy = useRef(false);
 
@@ -52,6 +63,7 @@ export function useManageBooking(): ManageBookingState {
     try {
       const found = await lookupBooking({ reference: reference.trim(), email: email.trim() });
       credentials.current = { reference: reference.trim(), email: email.trim() };
+      setKnown(credentials.current);
       setBooking(found);
     } catch (failure: unknown) {
       setBooking(null);
@@ -82,12 +94,25 @@ export function useManageBooking(): ManageBookingState {
     }
   }, []);
 
+  const adopt = useCallback((next: GuestBooking): void => {
+    const current = credentials.current;
+    if (current === null) {
+      return;
+    }
+    credentials.current = { reference: next.reference, email: current.email };
+    setKnown(credentials.current);
+    setBooking(next);
+    setError(null);
+    setJustCancelled(false);
+  }, []);
+
   const reset = useCallback((): void => {
     credentials.current = null;
+    setKnown(null);
     setBooking(null);
     setError(null);
     setJustCancelled(false);
   }, []);
 
-  return { booking, finding, cancelling, error, justCancelled, find, cancel, reset };
+  return { booking, credentials: known, finding, cancelling, error, justCancelled, find, adopt, cancel, reset };
 }
