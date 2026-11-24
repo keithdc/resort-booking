@@ -4,7 +4,7 @@
  * @dependencies class-validator
  */
 
-import { IsEmail, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsEmail, IsPhoneNumber, IsString, MaxLength, MinLength, ValidateIf } from 'class-validator';
 
 export class UpdateOrganizationDto {
   @IsString()
@@ -33,7 +33,9 @@ export class UpdateOrganizationDto {
   @IsEmail()
   public contactEmail!: string;
 
-  @IsString()
+  // Optional: an empty string is allowed, anything else must be a real international number.
+  @ValidateIf((dto: UpdateOrganizationDto): boolean => dto.contactPhone !== '')
+  @IsPhoneNumber(undefined, { message: 'contactPhone must be a valid international phone number, like +33612345678' })
   public contactPhone!: string;
 
   @IsString()

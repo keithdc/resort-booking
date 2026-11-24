@@ -4,7 +4,7 @@
  * @dependencies class-validator
  */
 
-import { IsArray, IsEmail, IsIn, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min } from 'class-validator';
+import { IsArray, IsEmail, IsIn, IsInt, IsOptional, IsPhoneNumber, IsString, Matches, Max, MaxLength, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import type { CreateHoldRequest, PaymentMethod } from '@resort-booking/shared-types';
 import { UUID_LIKE } from '../../../shared/validation/uuid-like';
@@ -35,7 +35,8 @@ export class CreateHoldDto implements CreateHoldRequest {
   @IsEmail()
   public bookerEmail!: string;
 
-  @IsString()
+  // International format (+33...), checked against real numbering plans.
+  @IsPhoneNumber(undefined, { message: 'bookerPhone must be a valid international phone number, like +33612345678' })
   @MaxLength(40)
   public bookerPhone!: string;
 

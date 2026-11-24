@@ -9,6 +9,7 @@ import {
   IsArray,
   IsBoolean,
   IsEmail,
+  IsPhoneNumber,
   IsNumber,
   IsString,
   Matches,
@@ -54,8 +55,7 @@ export class UpsertPropertyDto {
   @IsNumber()
   public longitude!: number;
 
-  @IsString()
-  @MinLength(6)
+  @IsPhoneNumber(undefined, { message: 'phone must be a valid international phone number, like +33612345678' })
   public phone!: string;
 
   @IsEmail()

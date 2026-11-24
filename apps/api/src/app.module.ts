@@ -6,11 +6,13 @@
 
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { HealthModule } from './modules/health/health.module';
 import { IdentityModule } from './modules/identity/identity.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { ExtrasModule } from './modules/extras/extras.module';
 import { PropertyModule } from './modules/property/property.module';
+import { RatesModule } from './modules/rates/rates.module';
 import { ReservationsModule } from './modules/reservations/reservations.module';
 import { DatabaseModule } from './shared/database/database.module';
 import { RedisModule } from './shared/redis/redis.module';
@@ -18,6 +20,7 @@ import { RedisModule } from './shared/redis/redis.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, envFilePath: ['.env', '.env.example'] }),
+    ScheduleModule.forRoot(),
     DatabaseModule,
     RedisModule,
     HealthModule,
@@ -26,6 +29,7 @@ import { RedisModule } from './shared/redis/redis.module';
     InventoryModule,
     ReservationsModule,
     ExtrasModule,
+    RatesModule,
   ],
 })
 export class AppModule {}

@@ -63,19 +63,6 @@ export function isoDateInTimeZone(now: Date, timeZone: string): string {
   return `${year}-${month}-${day}`;
 }
 
-/**
- * Stay total in minor units. Invalid nights or rates never invent a price.
- */
-export function quoteTotalCents(nights: number, nightlyRateCents: number): number {
-  if (!Number.isInteger(nights) || nights < 1) {
-    return 0;
-  }
-  if (!Number.isInteger(nightlyRateCents) || nightlyRateCents < 0) {
-    return 0;
-  }
-  return nights * nightlyRateCents;
-}
-
 function parseUtcDate(isoDate: string): Date | null {
   const [yearRaw, monthRaw, dayRaw] = isoDate.split('-');
   const year = Number.parseInt(yearRaw ?? '', 10);

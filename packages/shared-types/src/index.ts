@@ -257,13 +257,24 @@ export interface QuoteRequest {
   guestCount: number;
 }
 
+/** One priced group of nights on a quote, e.g. "Peak summer 2027": 3 nights x 26000. */
+export interface QuoteLine {
+  label: string;
+  nights: number;
+  nightlyRateCents: number;
+  subtotalCents: number;
+}
+
 export interface Quote {
   houseId: string;
   checkIn: string;
   checkOut: string;
   guestCount: number;
   nights: number;
+  /** The house standard rate. Individual nights can cost more or less; see `lines`. */
   nightlyRateCents: number;
+  /** Priced nights grouped by rate. Sum of `subtotalCents` equals `totalCents`. */
+  lines: QuoteLine[];
   totalCents: number;
   currencyCode: string;
   available: boolean;
@@ -458,4 +469,57 @@ export interface StaffReport {
   daily: ReportSeriesPoint[];
   paymentMethods: PaymentMethodSlice[];
   stays: StaffReservation[];
+}
+
+/** A date range with its own nightly rate on one house (peak season, holidays, ...). */
+export interface RatePeriod {
+  id: string;
+  houseId: string;
+  propertyId: string;
+  label: string;
+  /** First night, inclusive, YYYY-MM-DD. */
+  startDate: string;
+  /** Last night, inclusive, YYYY-MM-DD. */
+  endDate: string;
+  nightlyRateCents: number;
+}
+
+export interface RatePeriodWrite {
+  label: string;
+  startDate: string;
+  endDate: string;
+  nightlyRateCents: number;
+}
+
+/** The period another one collides with, named so staff can fix it. */
+export interface RatePeriodConflict {
+  label: string;
+  startDate: string;
+  endDate: string;
+}
+
+export interface BulkRatePeriodRequest extends RatePeriodWrite {
+  houseIds: string[];
+  /** Must be true to apply. Preview calls ignore it. The API refuses an unconfirmed apply. */
+  confirmed: boolean;
+}
+
+export interface BulkRatePeriodHouseResult {
+  houseId: string;
+  houseName: string;
+  status: 'will_add' | 'conflict';
+  conflict: RatePeriodConflict | null;
+}
+
+export interface BulkRatePeriodPreview {
+  propertyId: string;
+  results: BulkRatePeriodHouseResult[];
+  addCount: number;
+  conflictCount: number;
+}
+
+export interface BulkRatePeriodResult {
+  propertyId: string;
+  addedHouseIds: string[];
+  skippedHouseIds: string[];
 }

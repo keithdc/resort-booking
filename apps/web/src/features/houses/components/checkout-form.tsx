@@ -23,7 +23,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import { BorderBeam, NumberTicker, ShimmerButton } from '@resort-booking/ui';
+import { BorderBeam, EmailField, isValidEmail, isValidPhone, PhoneField, ShimmerButton } from '@resort-booking/ui';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { StayDatePicker } from '@/shared/components/stay-date-picker';
 import { useHouseAvailability } from '@/shared/hooks/use-availability';
@@ -33,6 +33,7 @@ import { formatCents } from '@/shared/utils/money';
 import { addDaysIsoDate, clampStayNights, todayIsoDate } from '@/shared/utils/today-iso';
 import { withDefaultStay, type StayQuery } from '@/shared/utils/stay-query';
 import { createHold, fetchQuote } from '../services/inventory-api';
+import { QuoteBreakdown } from './quote-breakdown';
 
 interface CheckoutFormProps {
   house: HouseDetail;
@@ -139,8 +140,8 @@ export function CheckoutForm({
       quote === null ||
       !quote.available ||
       fields.bookerName.trim() === '' ||
-      fields.bookerEmail.trim() === '' ||
-      fields.bookerPhone.trim() === ''
+      !isValidEmail(fields.bookerEmail) ||
+      !isValidPhone(fields.bookerPhone)
     );
   }, [fields.bookerEmail, fields.bookerName, fields.bookerPhone, overMaxNights, pending, quote]);
 
@@ -242,21 +243,19 @@ export function CheckoutForm({
           }}
           required
         />
-        <TextField
+        <EmailField
           label="Email"
-          type="email"
           value={fields.bookerEmail}
-          onChange={(event): void => {
-            setFields((current): CheckoutFields => ({ ...current, bookerEmail: event.target.value }));
+          onChange={(bookerEmail): void => {
+            setFields((current): CheckoutFields => ({ ...current, bookerEmail }));
           }}
           required
         />
-        <TextField
+        <PhoneField
           label="Phone"
-          type="tel"
           value={fields.bookerPhone}
-          onChange={(event): void => {
-            setFields((current): CheckoutFields => ({ ...current, bookerPhone: event.target.value }));
+          onChange={(bookerPhone): void => {
+            setFields((current): CheckoutFields => ({ ...current, bookerPhone }));
           }}
           required
         />
@@ -368,10 +367,7 @@ export function CheckoutForm({
           <Typography color="text.secondary">Choose dates to see the price.</Typography>
         ) : (
           <>
-            <Typography>
-              <NumberTicker value={quote.nights} /> night{quote.nights === 1 ? '' : 's'} ·{' '}
-              {formatCents(quote.totalCents, quote.currencyCode)}
-            </Typography>
+            <QuoteBreakdown quote={quote} />
             <Typography color="text.secondary">
               {quote.available ? 'These dates are free.' : 'These dates are not available.'}
             </Typography>

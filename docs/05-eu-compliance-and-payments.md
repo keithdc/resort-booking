@@ -72,7 +72,7 @@ When the guest chooses bank transfer:
 3. Guest uploads a receipt (PDF/JPG). Store the file; do not treat the upload as proof by itself.  
 4. Email staff: “awaiting verification.”  
 5. Staff in admin: match amount + reference on their bank, then **Confirm payment** (house stays occupied) or **Reject** (hold released, guest emailed).  
-6. If 48 hours pass with no confirmation, auto-expire the hold and set the reservation `expired`. Guest can start again.
+6. If 48 hours pass with no confirmation, auto-expire the hold and set the reservation `expired`. Guest can start again. The house is released by the clock at exactly 48 hours; the minute-by-minute sweeper then records the status and sends the guest email (`docs/01-architecture.md`, Hold expiry).
 
 This is **payment verification**, not Airbnb-style “accept this guest.” Staff are only saying “the money arrived.”
 
@@ -96,7 +96,7 @@ When **card or wallet** checkout starts:
 
 Bank transfer uses the same hold row with TTL **48 hours** until staff confirm or the hold expires.
 
-Never rely on Redis alone. Never confirm a stay without a unique overlap constraint in PostgreSQL on the house calendar.
+Never rely on Redis alone. Never confirm a stay without a unique overlap constraint in PostgreSQL on the house calendar. If the guest abandons checkout, nothing needs to run for the house to free up: an overdue hold is ignored by the clock, and a sweeper tidies the stored status (`docs/01-architecture.md`, Hold expiry).
 
 Card hold: `HOLD_TTL_SECONDS = 900`. Bank hold: `BANK_TRANSFER_HOLD_TTL_SECONDS = 172800`. Do not scatter magic numbers in components. Do not wait on extra-approval before converting a **card** hold.
 

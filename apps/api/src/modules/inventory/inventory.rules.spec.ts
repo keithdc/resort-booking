@@ -8,7 +8,6 @@ import {
   holdTtlSeconds,
   isCheckInBeforeToday,
   nightsBetween,
-  quoteTotalCents,
 } from './inventory.rules';
 
 describe('inventory.rules', () => {
@@ -29,18 +28,6 @@ describe('inventory.rules', () => {
   it('flags a guest check-in in the past', (): void => {
     expect(isCheckInBeforeToday('2026-09-14', '2026-09-15')).toBe(true);
     expect(isCheckInBeforeToday('2026-09-15', '2026-09-15')).toBe(false);
-  });
-
-  it('multiplies nights by the house rate', (): void => {
-    expect(quoteTotalCents(3, 18000)).toBe(54000);
-  });
-
-  it('rejects invalid night counts and negative rates', (): void => {
-    expect(quoteTotalCents(0, 18000)).toBe(0);
-    expect(quoteTotalCents(-2, 18000)).toBe(0);
-    expect(quoteTotalCents(1.5, 18000)).toBe(0);
-    expect(quoteTotalCents(2, -100)).toBe(0);
-    expect(quoteTotalCents(2, 99.5)).toBe(0);
   });
 
   it('rejects malformed ISO dates and impossible calendar days', (): void => {

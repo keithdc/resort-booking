@@ -9,7 +9,7 @@ import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { StayDatePicker } from './stay-date-picker';
+import { BOOKED_DAY_CLASS, StayDatePicker } from './stay-date-picker';
 
 interface HarnessProps {
   value?: string;
@@ -66,6 +66,19 @@ describe('StayDatePicker', (): void => {
     expect(dayButton('15')).toHaveProperty('disabled', true);
     expect(dayButton('16')).toHaveProperty('disabled', true);
     expect(dayButton('17')).toHaveProperty('disabled', true);
+  });
+
+  it('marks booked days with the slash style but not past days or the check-out day', async (): Promise<void> => {
+    render(<Harness />);
+    await openCalendar();
+
+    for (const booked of ['15', '16', '17']) {
+      expect(dayButton(booked).classList.contains(BOOKED_DAY_CLASS)).toBe(true);
+    }
+    // Past days are greyed out only, so "taken" reads differently from "gone".
+    expect(dayButton('9').classList.contains(BOOKED_DAY_CLASS)).toBe(false);
+    expect(dayButton('18').classList.contains(BOOKED_DAY_CLASS)).toBe(false);
+    expect(dayButton('20').classList.contains(BOOKED_DAY_CLASS)).toBe(false);
   });
 
   it('keeps the check-out day of a booked stay pickable', async (): Promise<void> => {

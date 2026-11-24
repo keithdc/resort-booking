@@ -45,6 +45,10 @@ interface InsertHoldInput {
   bookerEmail: string;
   bookerPhone: string;
   guestNote: string;
+  totalCents: number;
+  currencyCode: string;
+  /** JSON text of the quoted price lines. */
+  priceSnapshot: string;
 }
 
 @Injectable()
@@ -67,6 +71,25 @@ export class InventoryRepository {
       `,
       [houseId],
     );
+  }
+
+  /**
+   * Marks every overdue hold expired in one statement, across all houses.
+   * Idempotent: running it twice (or from two instances) expires each hold once.
+   * Returns how many holds this call expired.
+   */
+  public async expireAllOverdueHolds(): Promise<number> {
+    const result = await this.database.query(
+      `
+      UPDATE inventory_blocks
+      SET status = 'expired'
+      WHERE kind = 'hold'
+        AND status = 'active'
+        AND expires_at IS NOT NULL
+        AND expires_at < now()
+      `,
+    );
+    return result.rowCount ?? 0;
   }
 
   /**
@@ -131,11 +154,13 @@ export class InventoryRepository {
       INSERT INTO inventory_blocks (
         organization_id, property_id, house_id, kind, status,
         check_in, check_out, guest_count, payment_method, expires_at,
-        booker_name, booker_email, booker_phone, guest_note
+        booker_name, booker_email, booker_phone, guest_note,
+        total_cents, currency_code, price_snapshot
       ) VALUES (
         $1, $2, $3, 'hold', 'active',
         $4, $5, $6, $7, $8,
-        $9, $10, $11, $12
+        $9, $10, $11, $12,
+        $13, $14, $15::jsonb
       )
       RETURNING id, organization_id, property_id, house_id, status,
         check_in::text, check_out::text, guest_count, payment_method, expires_at,
@@ -154,6 +179,9 @@ export class InventoryRepository {
         input.bookerEmail,
         input.bookerPhone,
         input.guestNote,
+        input.totalCents,
+        input.currencyCode,
+        input.priceSnapshot,
       ],
     );
     const row = result.rows[0];

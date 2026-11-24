@@ -9,6 +9,7 @@
 import type { FormEvent } from 'react';
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import { Alert, Box, Button, Stack, TextField, Typography } from '@mui/material';
+import { EmailField, isValidEmail } from '@resort-booking/ui';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
 import { loginStaff } from '../services/staff-identity-api';
@@ -60,16 +61,7 @@ export function StaffLoginPage(): React.JSX.Element {
           </Alert>
         ) : null}
         <Stack component="form" spacing={2} onSubmit={(event): void => void onSubmit(event)}>
-          <TextField
-            label="Email"
-            type="email"
-            value={email}
-            onChange={(event): void => {
-              setEmail(event.target.value);
-            }}
-            required
-            autoComplete="username"
-          />
+          <EmailField label="Email" required value={email} onChange={setEmail} autoComplete="username" />
           <TextField
             label="Password"
             type="password"
@@ -80,7 +72,7 @@ export function StaffLoginPage(): React.JSX.Element {
             required
             autoComplete="current-password"
           />
-          <Button type="submit" variant="contained" disabled={pending}>
+          <Button type="submit" variant="contained" disabled={pending || !isValidEmail(email)}>
             {pending ? 'Signing in…' : 'Sign in'}
           </Button>
         </Stack>

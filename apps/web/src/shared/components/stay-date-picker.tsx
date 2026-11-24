@@ -10,9 +10,27 @@ import { DesktopDatePicker } from '@mui/x-date-pickers/DesktopDatePicker';
 import type { DateRange } from '@resort-booking/shared-types';
 import dayjs, { type Dayjs } from 'dayjs';
 import { useMemo } from 'react';
-import { isCheckInDisabled } from '../utils/disabled-dates';
+import { isCheckInDisabled, isDayUnavailable } from '../utils/disabled-dates';
 
 const ISO_FORMAT = 'YYYY-MM-DD';
+
+/** Class on booked days. Past days are greyed out without it. */
+export const BOOKED_DAY_CLASS = 'stay-date-picker-booked';
+
+// Diagonal slash through the day number so "booked" is visible, not just greyed out.
+const BOOKED_DAY_SX = {
+  position: 'relative',
+  '&::after': {
+    content: '""',
+    position: 'absolute',
+    // 20% shorter than the day cell so the slash sits inside the number, not edge to edge.
+    inset: '10%',
+    borderRadius: '50%',
+    pointerEvents: 'none',
+    background:
+      'linear-gradient(to top right, transparent calc(50% - 1px), currentColor calc(50% - 1px), currentColor calc(50% + 1px), transparent calc(50% + 1px))',
+  },
+} as const;
 
 interface StayDatePickerProps {
   label: string;
@@ -71,6 +89,10 @@ export function StayDatePicker({
           sx: { minWidth: 190, '& .MuiInputBase-root': { height: 56 } },
         },
         field: { clearable: true },
+        day: (state): { className?: string; sx?: typeof BOOKED_DAY_SX } =>
+          isDayUnavailable(unavailable, state.day.format(ISO_FORMAT))
+            ? { className: BOOKED_DAY_CLASS, sx: BOOKED_DAY_SX }
+            : {},
       }}
     />
   );

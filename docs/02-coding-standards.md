@@ -199,6 +199,7 @@ const byHouse = groupBy(photos, (p) => p.houseId);
 - **UserAvatar** (`shared/components/user-avatar.tsx`) — all staff/guest avatars. Deterministic color from initials. Never a raw MUI `Avatar` with a hardcoded `bgcolor` for people.
 - **getAvatarColor / getInitials** (`shared/utils/avatar-color.ts`) — same person, same color in web and admin.
 - **PropertyMap** (`shared/components/property-map.tsx`) — MapLibre + OpenFreeMap pin from `lat`/`lng`. Directions links to Google Maps and Apple Maps. Never paste a raw iframe with hardcoded coordinates.
+- **PhoneField / EmailField** (`packages/ui`, `import { PhoneField, EmailField } from '@resort-booking/ui'`) — every phone and email input in web and admin. `PhoneField` shows a country flag + calling code, takes the national number, and reports clean E.164 (`+33612345678`). Both validate with `isValidPhone` / `isValidEmail` (from the same package), show the message after the field is left, and the form disables submit while invalid. Never a plain `TextField type="tel"` or `type="email"`. The API re-checks with `@IsEmail()` and `@IsPhoneNumber()` (international format); phone numbers are stored as E.164.
 - **PhotoGallery** (`shared/components/photo-gallery.tsx`) — all property and house galleries.
 - Do not port CRM-only editors (mention chips, workflow localStorage) unless a story explicitly needs them.
 

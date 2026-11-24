@@ -150,6 +150,20 @@ Concurrent booking is the core risk. Freeze length follows the pay method.
 7. Never decrement inventory only in Redis.
 8. Stripe webhooks are idempotent (`event_id` unique in PostgreSQL).
 
+### Hold expiry (nobody has to be watching)
+
+Guests close tabs, lose signal, and walk away mid-checkout. **Nothing may depend on the browser or on a Redis event to release a house.** Expiry works in three layers, and only the first is required for correctness:
+
+1. **The clock is the rule (required).** A hold is dead the moment `expires_at < now()`. Every read treats it that way without writing anything: the availability endpoints skip overdue holds, and quotes and new holds mark overdue holds `expired` before checking overlap. A house is therefore bookable again exactly on time even if no job ran and no one touched that house.
+2. **Sweeper (housekeeping).** `HoldSweeperService` (`apps/api/src/modules/inventory/`) runs every minute and expires all overdue holds across all houses in **one** `UPDATE`. It keeps stored statuses honest for reports and staff views and is where expiry side effects belong (e.g. the bank-transfer "your hold expired" email). It is idempotent, never throws (a failed run is logged and retried the next minute), and skips a run that starts while the previous one is still going. Safe on several API instances: each hold is expired once.
+3. **Redis TTL (ephemeral hint only).** The `hold:<id>` key mirrors the TTL for fast checks. We **do not** use Redis keyspace expiry notifications: delivery is not guaranteed, and a missed event must never leave a house stuck.
+
+Rules for new code that touches holds:
+
+- Never rely on the sweeper for correctness. If a query decides availability, it filters by `expires_at` itself.
+- Side effects of expiry (emails, status changes on a pending bank-transfer reservation) go in the sweeper, and must be idempotent so a repeat run cannot send twice.
+- Do not loop per hold. Expire and notify in set-based statements (see the no-N+1 rule in `docs/02-coding-standards.md`).
+
 Details: `docs/05-eu-compliance-and-payments.md`.
 
 ## Auth

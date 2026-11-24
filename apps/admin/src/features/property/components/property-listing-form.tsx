@@ -20,6 +20,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
+import { EmailField, isValidEmail, isValidPhone, PhoneField } from '@resort-booking/ui';
 import { useRouter } from 'next/navigation';
 import { useMemo, useEffect, useRef, useState } from 'react';
 import { PropertyMap } from '@/shared/components/property-map';
@@ -200,23 +201,20 @@ export function PropertyListingForm({ property }: PropertyListingFormProps): Rea
                 }}
               />
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-                <TextField
+                <PhoneField
                   label="Phone"
                   required
-                  fullWidth
                   value={form.phone}
-                  onChange={(event): void => {
-                    setForm((current): FormState => ({ ...current, phone: event.target.value }));
+                  onChange={(phone): void => {
+                    setForm((current): FormState => ({ ...current, phone }));
                   }}
                 />
-                <TextField
+                <EmailField
                   label="Email"
                   required
-                  fullWidth
-                  type="email"
                   value={form.email}
-                  onChange={(event): void => {
-                    setForm((current): FormState => ({ ...current, email: event.target.value }));
+                  onChange={(email): void => {
+                    setForm((current): FormState => ({ ...current, email }));
                   }}
                 />
               </Stack>
@@ -352,7 +350,12 @@ export function PropertyListingForm({ property }: PropertyListingFormProps): Rea
             </Stack>
           </CardContent>
         </Card>
-        <Button variant="contained" size="large" disabled={pending} onClick={(): void => void onSubmit()}>
+        <Button
+          variant="contained"
+          size="large"
+          disabled={pending || !isValidPhone(form.phone) || !isValidEmail(form.email)}
+          onClick={(): void => void onSubmit()}
+        >
           {pending ? 'Saving…' : isCreate ? 'Create this place' : 'Save place'}
         </Button>
       </Stack>

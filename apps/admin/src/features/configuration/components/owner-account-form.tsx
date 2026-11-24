@@ -8,6 +8,7 @@
 
 import type { StaffProfile } from '@resort-booking/shared-types';
 import { Alert, Button, Snackbar, Stack, TextField, Typography } from '@mui/material';
+import { EmailField, isValidEmail } from '@resort-booking/ui';
 import { useState } from 'react';
 import { changeStaffPassword, saveStaffProfile } from '@/features/identity/services/staff-identity-api';
 import { ApiRequestError } from '@/shared/services/api-client';
@@ -69,15 +70,8 @@ export function OwnerAccountForm({ initial }: OwnerAccountFormProps): React.JSX.
           setName(event.target.value);
         }}
       />
-      <TextField
-        label="Login email"
-        type="email"
-        value={email}
-        onChange={(event): void => {
-          setEmail(event.target.value);
-        }}
-      />
-      <Button variant="contained" disabled={pendingProfile} onClick={(): void => void onSaveProfile()}>
+      <EmailField label="Login email" required value={email} onChange={setEmail} autoComplete="username" />
+      <Button variant="contained" disabled={pendingProfile || !isValidEmail(email)} onClick={(): void => void onSaveProfile()}>
         {pendingProfile ? 'Saving…' : 'Save login'}
       </Button>
       <Typography variant="h6" sx={{ pt: 2 }}>

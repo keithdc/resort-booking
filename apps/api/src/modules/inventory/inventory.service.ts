@@ -14,6 +14,7 @@ import type { Hold, HouseSearchResult, Quote } from '@resort-booking/shared-type
 import { DatabaseService } from '../../shared/database/database.service';
 import { RedisService } from '../../shared/redis/redis.service';
 import { PropertyRepository } from '../property/property.repository';
+import { RatesService, type PeriodsByHouse } from '../rates/rates.service';
 import type { CreateHoldDto } from './dto/create-hold.dto';
 import type { QuoteQueryDto } from './dto/quote-query.dto';
 import type { SearchQueryDto } from './dto/search-query.dto';
@@ -25,7 +26,6 @@ import {
   isCheckInBeforeToday,
   isoDateInTimeZone,
   nightsBetween,
-  quoteTotalCents,
 } from './inventory.rules';
 
 @Injectable()
@@ -35,6 +35,7 @@ export class InventoryService {
     private readonly inventory: InventoryRepository,
     private readonly database: DatabaseService,
     private readonly redis: RedisService,
+    private readonly rates: RatesService,
   ) {}
 
   /**
@@ -44,6 +45,7 @@ export class InventoryService {
     query: QuoteQueryDto,
     rejectPastCheckIn: boolean,
     excludeHoldId: string | null = null,
+    preloadedPeriods: PeriodsByHouse | null = null,
   ): Promise<Quote> {
     const house = await this.houses.getHouseById(query.houseId);
     if (house === null || (rejectPastCheckIn && !house.published)) {
@@ -80,6 +82,11 @@ export class InventoryService {
       excludeHoldId,
     );
 
+    // Search preloads periods for all houses in one query; a single quote loads its own.
+    const periods =
+      preloadedPeriods ?? (await this.rates.loadPeriods([house.id], query.checkIn, query.checkOut));
+    const price = this.rates.priceHouseStay(house, query.checkIn, query.checkOut, periods);
+
     return {
       houseId: house.id,
       checkIn: query.checkIn,
@@ -87,7 +94,8 @@ export class InventoryService {
       guestCount: query.guestCount,
       nights,
       nightlyRateCents: house.nightlyRateCents,
-      totalCents: quoteTotalCents(nights, house.nightlyRateCents),
+      lines: price.lines,
+      totalCents: price.totalCents,
       currencyCode: house.currencyCode,
       available: !overlapping,
     };
@@ -103,11 +111,15 @@ export class InventoryService {
         : null;
     const houses = await this.houses.listHousesByPropertySlug(propertySlug, true);
     const matches: HouseSearchResult[] = [];
+    const fitting = houses.filter((house): boolean => query.guestCount <= house.capacity);
+    // One query for every candidate house's seasonal periods instead of one per house.
+    const periods = await this.rates.loadPeriods(
+      fitting.map((house): string => house.id),
+      query.checkIn,
+      query.checkOut,
+    );
 
-    for (const house of houses) {
-      if (query.guestCount > house.capacity) {
-        continue;
-      }
+    for (const house of fitting) {
       const quote = await this.getQuote(
         {
           houseId: house.id,
@@ -116,6 +128,8 @@ export class InventoryService {
           guestCount: query.guestCount,
         },
         true,
+        null,
+        periods,
       );
       if (quote.available) {
         matches.push({ house, quote });
@@ -174,6 +188,14 @@ export class InventoryService {
             bookerEmail: dto.bookerEmail.trim(),
             bookerPhone: dto.bookerPhone.trim(),
             guestNote: (dto.guestNote ?? '').trim(),
+            totalCents: quote.totalCents,
+            currencyCode: quote.currencyCode,
+            // The quoted price travels with the hold so later rate edits never change it.
+            priceSnapshot: JSON.stringify({
+              lines: quote.lines,
+              totalCents: quote.totalCents,
+              currencyCode: quote.currencyCode,
+            }),
           });
           const optionIds = dto.requestOptionIds ?? [];
           const allowed = await this.houses.listRequestOptions(house.propertyId, true);

@@ -124,7 +124,7 @@ The nightly price is **not flat**. The operator has peak season, shoulder season
 
 ### Model (per house)
 
-- **Standard rate** (`standard_nightly_rate_cents`): the default nightly price for any night not covered by a rate period. Always set.
+- **Standard rate** (`houses.nightly_rate_cents`): the default nightly price for any night not covered by a rate period. Always set. The column name is historical; in the UI and docs it is the "standard rate".
 - **Rate periods**: an **array** of date ranges, each with its own nightly rate and a label. Many per house, any kind of range (peak season, holidays, a local festival, low season).
 - Money is integer minor units plus a currency code. Never floats.
 
@@ -151,6 +151,18 @@ interface RatePeriod {
 8. **Rebooking re-quotes.** A rebook prices the **new** nights with the periods and discounts in force at that time.
 9. **No N+1.** Quote and search load all periods and discounts for all candidate houses in **one** query each and price in memory (`docs/02-coding-standards.md`). Search shows the stay total per house, so this path is hot.
 10. **Property timezone** decides which calendar date a night belongs to.
+
+### Implemented (seasonal rates)
+
+Built and tested; discounts below are **not** built yet.
+
+- **Tables:** `rate_periods` (inclusive `start_date`/`end_date`, `nightly_rate_cents`, PostgreSQL exclusion constraint `rate_periods_no_overlap`) and `rate_period_bulk_applications` (audit log). `inventory_blocks.price_snapshot` stores the quoted lines on the hold.
+- **Guest API:** `GET /quotes` and `GET /search` return `lines` (priced nights grouped by rate: label, nights, rate, subtotal) and `totalCents`. Search loads every candidate house's periods in **one** query. `POST /holds` stores the quote (`total_cents`, `price_snapshot`).
+- **Staff API** (`StaffGuard`): `GET|POST /staff/houses/:houseId/rate-periods`, `PATCH|DELETE /staff/rate-periods/:periodId`, `POST /staff/properties/:propertyId/rate-periods/bulk/preview`, `POST /staff/properties/:propertyId/rate-periods/bulk` (needs `confirmed: true`, else `400 CONFIRMATION_REQUIRED`).
+- **Errors:** `409 RATE_PERIOD_OVERLAP` (names the clashing period), `400 INVALID_RATE_PERIOD`, `400 UNKNOWN_HOUSE`, `404 RATE_PERIOD_NOT_FOUND`.
+- **Admin:** Houses tab, "Seasonal rates" per house: list, add, edit, delete (with confirmation), and "Apply to all houses at this property" with the preview and warning dialog. Houses with a clash are skipped, never overwritten.
+- **Guest UI:** the checkout shows the per-rate breakdown from the API. Cards and the house header say "Standard rate", because individual nights can cost more.
+- **Known gaps:** the staff calendar falls back to `nights x standard rate` for a stay that has no stored `total_cents` (seeded demo stays have one; new holds do). `GET /holds/:id` re-quotes with today's periods rather than reading the stored snapshot, so a hold shown after a rate edit can display the new price. Both should read the snapshot when reservations are built.
 
 ### Apply to all houses (warning required)
 

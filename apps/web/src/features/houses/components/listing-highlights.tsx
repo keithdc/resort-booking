@@ -29,7 +29,7 @@ export function ListingHighlights({ city, sleeps, rateLabel }: ListingHighlights
       <Highlighter action="highlight" tone="secondary" isView={false}>
         Sleeps {sleeps} guests
       </Highlighter>
-      {' · From '}
+      {' · Standard rate '}
       <Highlighter action="highlight" tone="secondary" isView={false}>
         {rateLabel} / night
       </Highlighter>

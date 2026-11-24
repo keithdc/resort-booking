@@ -31,6 +31,9 @@ import { PhotoRankEditor } from './photo-rank-editor';
 import { ApiRequestError } from '@/shared/services/api-client';
 import { centsFromEuroInput, eurosInputFromCents, formatCents } from '@/shared/utils/money';
 import { createStaffHouse, fetchStaffHouse, updateStaffHouse } from '../services/staff-property-api';
+import { usePropertyRatePeriods } from '../hooks/use-property-rate-periods';
+import { HouseRatePeriodsDialog } from './house-rate-periods-dialog';
+import { HouseSeasonalRatesList } from './house-seasonal-rates-list';
 
 interface PropertyHousesFormProps {
   propertyId: string;
@@ -72,6 +75,8 @@ export function PropertyHousesForm({ propertyId, initial }: PropertyHousesFormPr
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [ratesHouse, setRatesHouse] = useState<HouseSummary | null>(null);
+  const seasons = usePropertyRatePeriods(propertyId);
 
   const toWrite = (): HouseWrite => ({
     name: draft.name.trim(),
@@ -143,7 +148,7 @@ export function PropertyHousesForm({ propertyId, initial }: PropertyHousesFormPr
             <TableRow>
               <TableCell>House</TableCell>
               <TableCell>Capacity</TableCell>
-              <TableCell>Nightly</TableCell>
+              <TableCell>Standard rate</TableCell>
               <TableCell>Published</TableCell>
               <TableCell />
             </TableRow>
@@ -151,7 +156,14 @@ export function PropertyHousesForm({ propertyId, initial }: PropertyHousesFormPr
           <TableBody>
             {houses.map((house): React.JSX.Element => (
               <TableRow key={house.id} hover>
-                <TableCell>{house.name}</TableCell>
+                <TableCell>
+                  {house.name}
+                  <HouseSeasonalRatesList
+                    houseName={house.name}
+                    periods={seasons.byHouse.get(house.id) ?? []}
+                    currencyCode={house.currencyCode}
+                  />
+                </TableCell>
                 <TableCell>{house.capacity}</TableCell>
                 <TableCell>{formatCents(house.nightlyRateCents, house.currencyCode)}</TableCell>
                 <TableCell>{house.published ? 'Yes' : 'No'}</TableCell>
@@ -164,6 +176,14 @@ export function PropertyHousesForm({ propertyId, initial }: PropertyHousesFormPr
                   >
                     Edit
                   </Button>
+                  <Button
+                    size="small"
+                    onClick={(): void => {
+                      setRatesHouse(house);
+                    }}
+                  >
+                    Seasonal rates
+                  </Button>
                 </TableCell>
               </TableRow>
             ))}
@@ -173,6 +193,16 @@ export function PropertyHousesForm({ propertyId, initial }: PropertyHousesFormPr
       <Button variant="contained" onClick={openCreate}>
         Add a house
       </Button>
+      <HouseRatePeriodsDialog
+        open={ratesHouse !== null}
+        house={ratesHouse}
+        propertyId={propertyId}
+        allHouseIds={houses.map((house): string => house.id)}
+        onClose={(): void => {
+          setRatesHouse(null);
+          void seasons.reload();
+        }}
+      />
       <Dialog open={open} onClose={(): void => setOpen(false)} fullWidth maxWidth="md">
         <DialogTitle>{editingId === null ? 'Add a house' : 'Edit house'}</DialogTitle>
         <DialogContent>

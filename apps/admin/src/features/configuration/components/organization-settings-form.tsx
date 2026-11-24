@@ -8,6 +8,7 @@
 
 import type { OrganizationSettings } from '@resort-booking/shared-types';
 import { Alert, Button, Card, CardContent, Snackbar, Stack, TextField, Typography } from '@mui/material';
+import { EmailField, isValidEmail, isValidPhone, PhoneField } from '@resort-booking/ui';
 import { useState } from 'react';
 import { ApiRequestError } from '@/shared/services/api-client';
 import { saveOrganizationSettings } from '@/features/property/services/staff-property-api';
@@ -24,6 +25,13 @@ export function OrganizationSettingsForm({ initial }: OrganizationSettingsFormPr
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+
+  // The phone is optional; the three inboxes are required. The API re-checks all of it.
+  const contactValid =
+    isValidEmail(form.bookingEmail) &&
+    isValidEmail(form.guestReplyEmail) &&
+    isValidEmail(form.contactEmail) &&
+    (form.contactPhone === '' || isValidPhone(form.contactPhone));
 
   const onSave = async (): Promise<void> => {
     setPending(true);
@@ -82,38 +90,38 @@ export function OrganizationSettingsForm({ initial }: OrganizationSettingsFormPr
                 setForm((current): OrganizationSettings => ({ ...current, ownerName: event.target.value }));
               }}
             />
-            <TextField
+            <EmailField
               label="Booking notifications email"
-              type="email"
+              required
               helperText="New stays and bank-transfer receipts."
               value={form.bookingEmail}
-              onChange={(event): void => {
-                setForm((current): OrganizationSettings => ({ ...current, bookingEmail: event.target.value }));
+              onChange={(bookingEmail): void => {
+                setForm((current): OrganizationSettings => ({ ...current, bookingEmail }));
               }}
             />
-            <TextField
+            <EmailField
               label="Guest-facing reply email"
-              type="email"
+              required
               helperText="Shown on listings and in booking emails."
               value={form.guestReplyEmail}
-              onChange={(event): void => {
-                setForm((current): OrganizationSettings => ({ ...current, guestReplyEmail: event.target.value }));
+              onChange={(guestReplyEmail): void => {
+                setForm((current): OrganizationSettings => ({ ...current, guestReplyEmail }));
               }}
             />
-            <TextField
+            <EmailField
               label="Ops email"
-              type="email"
+              required
               helperText="Internal operations inbox."
               value={form.contactEmail}
-              onChange={(event): void => {
-                setForm((current): OrganizationSettings => ({ ...current, contactEmail: event.target.value }));
+              onChange={(contactEmail): void => {
+                setForm((current): OrganizationSettings => ({ ...current, contactEmail }));
               }}
             />
-            <TextField
+            <PhoneField
               label="Ops phone"
               value={form.contactPhone}
-              onChange={(event): void => {
-                setForm((current): OrganizationSettings => ({ ...current, contactPhone: event.target.value }));
+              onChange={(contactPhone): void => {
+                setForm((current): OrganizationSettings => ({ ...current, contactPhone }));
               }}
             />
           </Stack>
@@ -173,7 +181,7 @@ export function OrganizationSettingsForm({ initial }: OrganizationSettingsFormPr
                 setForm((current): OrganizationSettings => ({ ...current, bic: event.target.value }));
               }}
             />
-            <Button variant="contained" disabled={pending} onClick={(): void => void onSave()}>
+            <Button variant="contained" disabled={pending || !contactValid} onClick={(): void => void onSave()}>
               {pending ? 'Saving…' : 'Save business details'}
             </Button>
           </Stack>
