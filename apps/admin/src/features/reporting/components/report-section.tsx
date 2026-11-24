@@ -20,11 +20,11 @@ interface ReportSectionProps {
 export function ReportSection({ section, level = 3, children }: ReportSectionProps): React.JSX.Element {
   const { title, caption } = SECTION_CAPTIONS[section];
   return (
-    <Box component="section" aria-label={title} sx={{ mb: 4, breakInside: 'avoid-page' }}>
-      <Typography variant={level === 2 ? 'h5' : 'h6'} component={level === 2 ? 'h2' : 'h3'}>
+    <Box component="section" aria-label={title} sx={{ mb: 7, breakInside: 'avoid-page' }}>
+      <Typography variant={level === 2 ? 'h5' : 'h6'} component={level === 2 ? 'h2' : 'h3'} sx={{ mb: 0.75 }}>
         {title}
       </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 2, maxWidth: 720 }}>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 3, maxWidth: 680, lineHeight: 1.6 }}>
         {caption}
       </Typography>
       {children}
@@ -41,7 +41,7 @@ interface EmptyNoteProps {
  */
 export function EmptyNote({ state }: EmptyNoteProps): React.JSX.Element {
   return (
-    <Typography color="text.secondary" sx={{ py: 2, px: 2, border: 1, borderColor: 'divider', borderStyle: 'dashed', borderRadius: 1 }}>
+    <Typography color="text.secondary" sx={{ py: 3, px: 3, border: 1, borderColor: 'divider', borderStyle: 'dashed', borderRadius: 1 }}>
       {EMPTY_STATES[state]}
     </Typography>
   );

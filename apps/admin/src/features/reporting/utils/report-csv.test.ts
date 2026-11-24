@@ -3,9 +3,8 @@
  * @feature reporting
  */
 
-import type { StaffReport } from '@resort-booking/shared-types';
 import { describe, expect, it } from 'vitest';
-import { staffReservation } from '@/test/fixtures';
+import { staffReport, staffReservation } from '@/test/fixtures';
 import { buildReportCsv, csvCell, csvFileName, csvFromRows } from './report-csv';
 
 describe('csvCell', () => {
@@ -47,7 +46,7 @@ describe('csvFromRows', () => {
 });
 
 describe('buildReportCsv', () => {
-  const report = {
+  const report = staffReport({
     currencyCode: 'EUR', netRevenueCents: 120000, grossRevenueCents: 130000, refundedCents: 10000, reservationCount: 3,
     occupiedNights: 10, occupancyPercent: 50, averageNightlyCents: 12000, cancellationRatePercent: 25,
     cancellationReasons: [{ reason: 'guest_request', cancelledCount: 1, paidCents: 30000, refundedCents: 10000 }],
@@ -55,7 +54,7 @@ describe('buildReportCsv', () => {
       staffReservation({ reference: 'BK-ABC1234567', bookerName: 'Ada, Countess', totalCents: 96000 }),
       staffReservation({ id: 'r2', reference: 'BK-ZZZ9999999', bookerName: '=cmd|calc', status: 'cancelled', paymentMethod: null }),
     ],
-  } as unknown as StaffReport;
+  });
   const context = { propertyName: 'All properties', periodLabel: '1 Jul – 31 Jul 2027', generatedOn: '2027-08-01' };
 
   it('starts with a byte order mark and a title block', () => {

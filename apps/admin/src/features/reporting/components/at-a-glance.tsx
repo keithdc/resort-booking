@@ -20,7 +20,7 @@ interface AtAGlanceProps {
 export function AtAGlance({ report }: AtAGlanceProps): React.JSX.Element {
   return (
     <ReportSection section="atAGlance" level={2}>
-      <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr', lg: 'repeat(4, 1fr)' } }}>
+      <Box sx={{ display: 'grid', gap: 3, gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr', lg: 'repeat(4, 1fr)' } }}>
         {buildGlanceCards(report).map((card: GlanceCard): React.JSX.Element => (
           <MetricCard key={card.key} card={card} />
         ))}

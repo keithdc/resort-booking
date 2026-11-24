@@ -26,22 +26,22 @@ const CHANGE_COLOR: Record<GlanceCard['change']['direction'], string> = {
 export function MetricCard({ card }: MetricCardProps): React.JSX.Element {
   const { change } = card;
   return (
-    <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 2, height: '100%', breakInside: 'avoid' }}>
+    <Paper variant="outlined" sx={{ p: 3, borderRadius: 2, height: '100%', breakInside: 'avoid' }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
         <Typography variant="overline" color="text.secondary" component="h3" sx={{ lineHeight: 1.6 }}>
           {card.label}
         </Typography>
         <MetricInfo metric={card.metric} />
       </Box>
-      <Typography variant="h4" component="p" sx={{ fontWeight: 600, my: 0.5 }}>
+      <Typography variant="h4" component="p" sx={{ fontWeight: 600, mt: 1, mb: 1.5 }}>
         {card.value}
       </Typography>
       {card.secondary !== null ? (
-        <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
+        <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1.5 }}>
           {card.secondary}
         </Typography>
       ) : null}
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5, lineHeight: 1.6 }}>
         {card.explanation}
       </Typography>
       <Box sx={{ color: CHANGE_COLOR[change.direction] }} aria-label={`Compared with the period before: ${change.long}`}>

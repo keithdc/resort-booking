@@ -28,14 +28,14 @@ export function AttentionStrip({ attention, currencyCode, onOpenTab }: Attention
   return (
     <ReportSection section="attention" level={2}>
       {items.length === 0 ? (
-        <Paper variant="outlined" sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 1.5, borderRadius: 2 }}>
+        <Paper variant="outlined" sx={{ p: 2.5, display: 'flex', alignItems: 'center', gap: 1.5, borderRadius: 2 }}>
           <CheckCircleOutlineIcon color="success" aria-hidden />
           <Typography>{EMPTY_STATES.nothingNeedsAttention}</Typography>
         </Paper>
       ) : (
-        <Box component="ul" sx={{ listStyle: 'none', m: 0, p: 0, display: 'grid', gap: 1.5, gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr', lg: 'repeat(4, 1fr)' } }}>
+        <Box component="ul" sx={{ listStyle: 'none', m: 0, p: 0, display: 'grid', gap: 2.5, gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr', lg: 'repeat(4, 1fr)' } }}>
           {items.map((item: AttentionItem): React.JSX.Element => (
-            <Paper key={item.key} component="li" variant="outlined" sx={{ p: 2, borderRadius: 2, borderColor: 'warning.main' }}>
+            <Paper key={item.key} component="li" variant="outlined" sx={{ p: 2.5, borderRadius: 2, borderColor: 'warning.main' }}>
               {item.href !== null ? (
                 <MuiLink component={NextLink} href={item.href} underline="hover" sx={{ fontWeight: 600 }}>
                   {item.text}

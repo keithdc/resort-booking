@@ -22,6 +22,7 @@ import {
   Typography,
 } from '@mui/material';
 import { formatCents } from '@/shared/utils/money';
+import { bookingStatusLabel, paymentMethodLabel } from '../utils/report-labels';
 
 export interface ReportDetail {
   title: string;
@@ -35,7 +36,7 @@ interface ReportDetailDialogProps {
 }
 
 /**
- * Stay list behind a KPI, bar, or payment chip.
+ * The bookings behind a bar or a row of the report.
  */
 export function ReportDetailDialog({ detail, onClose }: ReportDetailDialogProps): React.JSX.Element {
   return (
@@ -50,7 +51,7 @@ export function ReportDetailDialog({ detail, onClose }: ReportDetailDialogProps)
           </DialogTitle>
           <DialogContent>
             {detail.stays.length === 0 ? (
-              <Typography color="text.secondary">No bookings in this slice.</Typography>
+              <Typography color="text.secondary">No bookings here. Try a longer period.</Typography>
             ) : (
               <Table size="small">
                 <TableHead>
@@ -78,14 +79,8 @@ export function ReportDetailDialog({ detail, onClose }: ReportDetailDialogProps)
                         {stay.checkIn} → {stay.checkOut}
                       </TableCell>
                       <TableCell>{stay.guestCount}</TableCell>
-                      <TableCell>{statusLabel(stay)}</TableCell>
-                      <TableCell>
-                        {stay.paymentMethod === 'bank_transfer'
-                          ? 'Bank transfer'
-                          : stay.paymentMethod === 'card'
-                            ? 'Card / wallets'
-                            : '—'}
-                      </TableCell>
+                      <TableCell>{bookingStatusLabel(stay)}</TableCell>
+                      <TableCell>{paymentMethodLabel(stay.paymentMethod)}</TableCell>
                       <TableCell>{formatCents(stay.totalCents, stay.currencyCode)}</TableCell>
                     </TableRow>
                   ))}
@@ -100,32 +95,4 @@ export function ReportDetailDialog({ detail, onClose }: ReportDetailDialogProps)
       ) : null}
     </Dialog>
   );
-}
-
-function statusLabel(stay: StaffReservation): string {
-  if (stay.rebookOfId !== null) {
-    return `Rebook · ${stay.status}`;
-  }
-  if (stay.status === 'active') {
-    return 'Pending payment';
-  }
-  if (stay.status === 'released') {
-    return 'Released hold';
-  }
-  if (stay.status === 'cancelled') {
-    return 'Cancelled';
-  }
-  if (stay.status === 'expired') {
-    return 'Expired hold';
-  }
-  if (stay.status === 'confirmed' && stay.arrivalStatus === 'checked_in') {
-    return 'In-house';
-  }
-  if (stay.status === 'confirmed' && stay.arrivalStatus === 'checked_out') {
-    return 'Checked out';
-  }
-  if (stay.status === 'confirmed') {
-    return 'Confirmed';
-  }
-  return stay.status;
 }

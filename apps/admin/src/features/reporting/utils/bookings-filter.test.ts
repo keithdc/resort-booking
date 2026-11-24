@@ -4,8 +4,8 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { staffReservation } from '@/test/fixtures';
-import { countByStatus, filterBookings } from './bookings-filter';
+import { staffRefund, staffReservation } from '@/test/fixtures';
+import { countByStatus, filterBookings, withReportRefunds } from './bookings-filter';
 
 const ROWS = [
   staffReservation({ id: '1', bookerName: 'Ada Lovelace', reference: 'BK-AAAA000001' }),
@@ -50,5 +50,20 @@ describe('countByStatus', () => {
   it('counts each status', () => {
     expect(countByStatus(ROWS)).toEqual({ confirmed: 1, awaiting_payment: 1, cancelled: 1, expired: 1 });
     expect(countByStatus([])).toEqual({ confirmed: 0, awaiting_payment: 0, cancelled: 0, expired: 0 });
+  });
+});
+
+describe('withReportRefunds', () => {
+  it('attaches only the refunds of that booking', () => {
+    const refunds = [staffRefund({ id: 'f1', reservationId: '2' }), staffRefund({ id: 'f2', reservationId: '3' })];
+
+    expect(withReportRefunds(ROWS[1]!, refunds).refunds.map((refund) => refund.id)).toEqual(['f1']);
+    expect(withReportRefunds(ROWS[0]!, refunds).refunds).toEqual([]);
+  });
+
+  it('does not change the original row', () => {
+    const row = ROWS[1]!;
+    withReportRefunds(row, [staffRefund({ reservationId: '2' })]);
+    expect(row.refunds).toEqual([]);
   });
 });

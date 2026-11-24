@@ -80,6 +80,7 @@ Unpublished properties and stays must not appear on the guest site.
 - Per property: stays, calendars (**past dates stay enabled** — staff are not blocked), extras, cancellation/rebook config, reservations, **check-in (verify guest count)**, reviews (publish/hide), photos, map, phone, email.
 - Bank transfer queue: verify receipt / mark paid / reject. Do not treat this as guest-approval of the booking.
 - On-request extras: approve or decline (with an optional note). If approved and priced, charge via Stripe or a follow-up bank transfer — do not reopen the stay hold.
+- **Reports** (`/reports`): the owner report, described under "Owner report" below.
 - Adding a stay never requires a deploy or a code change.
 
 ## Availability: booked dates in the API response
@@ -370,3 +371,31 @@ Those can be added later. Channel managers (re-sync to Airbnb) are a **conscious
 - **Booking dialog** (calendar → click a booking): shows the reference, amount paid, terms accepted, and the cancellation, refund and history records. **Cancel booking** and **Change dates** open from here. Both default focus to the safe button, put the exact euro amount on the confirm button, and need a written note (3–500 characters) kept with the staff name.
 - **Change dates** is a rebook: the old booking is cancelled and a new one (new reference) is created. Staff can waive the fee and, when money is due, record that it was settled outside the app.
 - **Refunds** (`/refunds`, nav “Refunds”): queue filtered by Needs attention / Pending / Failed / Done / All, by property, and by search. **Retry** applies to failed refunds and pending provider refunds. A hand refund (`provider: manual`) is sent outside the app, then **Mark as refunded** with a note. The home page shows a heads-up when refunds need attention.
+
+## Owner report (`/reports`)
+
+Written for the owner (the client), not for engineers: plain words, one number per question, every term explained. The page only chooses the period and property and arranges what `GET /staff/reports` returns; all figures are computed in NestJS (`report-summary.rules.ts`, `report-summary.repository.ts`, `reservations.service.ts`).
+
+**Page structure**
+
+1. **Header:** period buttons (This month, Last month, Next 30 days, This year, Custom with first and last day, both included), a property filter (All properties by default), **Refresh**, **Download CSV**, **Print / Save as PDF**.
+2. **At a glance:** exactly four cards: Revenue, Bookings, Occupancy, Average nightly rate. Each has a plain one-line explanation and a change against the equal-length period right before (arrow and words, "no earlier data" when that period had nothing).
+3. **Needs your attention:** unpaid holds (opens the Bookings tab filtered to Awaiting payment), refunds to pay (links to `/refunds`), arrivals today and in the next 7 days. Only items above zero show; otherwise "Nothing needs attention." Counted as of today, whatever period is shown.
+4. **Tabs** (`?tab=`): Overview (one chart of revenue bars and an occupancy line, plus up to three plain sentences built only from true facts), Properties & stays (sortable table, every stay listed even if unbooked, share of revenue), Bookings (search, status filter, opens the booking), Cancellations & refunds, Payments & offers.
+5. Every section has a one or two sentence caption, every tab a one-line purpose, and every empty state says why it is empty and what to do. These words, and one definition per number, live in `apps/admin/src/features/reporting/utils/metric-definitions.ts` (tested). No jargon such as "pipeline".
+6. **Print / PDF** uses the browser's print: controls hide, all tabs print in order under a title block (property, period, date), and the definitions are appended. **CSV** has a summary block and one row per booking; text that could run as a spreadsheet formula is neutralised.
+
+**Definitions** (same wording as the tooltips)
+
+- **Period:** nights are counted on the night they are slept; a booking across two periods is split by nights.
+- **Bookings:** confirmed, paid bookings with at least one night in the period.
+- **Paid by guests (gross):** confirmed booking revenue plus what guests paid for cancelled bookings in the period (shared out over their nights).
+- **Refunded:** cancellation refunds of bookings cancelled in the period, any status (pending and failed ones are still owed). A date change is not a cancellation, and its price difference is already in the new booking's total.
+- **Revenue (net):** paid by guests minus refunded: what the property kept.
+- **Occupancy:** booked nights divided by (all stays x all nights in the period).
+- **Average nightly rate:** confirmed revenue divided by booked nights.
+- **Cancellation rate:** cancelled bookings divided by confirmed plus cancelled, in the period.
+- **Discount given:** `discount_redemptions` on confirmed bookings in the period, per discount.
+- **Previous period:** the same numbers for the equal-length window ending where the chosen period starts (`StaffReport.previous`).
+
+An API from before this report (not restarted) is tolerated: the admin fills the missing fields with defaults (`withReportDefaults`) instead of crashing. Opening a booking from the report attaches its refunds; its date-change history is only complete on the calendar's booking dialog.

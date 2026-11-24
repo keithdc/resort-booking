@@ -4,7 +4,7 @@
  * @dependencies report-labels
  */
 
-import type { StaffReservation } from '@resort-booking/shared-types';
+import type { StaffRefund, StaffReservation } from '@resort-booking/shared-types';
 import { bookingStatusKey, type BookingStatusKey } from './report-labels';
 
 /**
@@ -39,4 +39,12 @@ export function countByStatus(rows: readonly StaffReservation[]): Record<Booking
     counts[bookingStatusKey(row)] += 1;
   }
   return counts;
+}
+
+/**
+ * The report lists bookings without their refunds (to keep it light). Before opening one, attach the
+ * refunds the report did load for it, so a cancelled booking does not look as if nothing was refunded.
+ */
+export function withReportRefunds(row: StaffReservation, refunds: readonly StaffRefund[]): StaffReservation {
+  return { ...row, refunds: refunds.filter((refund: StaffRefund): boolean => refund.reservationId === row.id) };
 }
