@@ -14,6 +14,7 @@ import { PropertyMap } from '@/shared/components/property-map';
 import { formatAddress } from '@/shared/utils/format-address';
 import { todayIsoDate } from '@/shared/utils/today-iso';
 import { withDefaultStay, type StayQuery } from '@/shared/utils/stay-query';
+import { fetchPropertyOffersOrEmpty } from '../services/offers-api';
 import { fetchCancellationPolicyOrNull, fetchHouses, fetchProperty } from '../services/property-api';
 import { parsePropertyStaySearch, type PropertyStaySearch, type RawSearchParams } from '../utils/property-stay-search';
 import { PropertyStayList } from './property-stay-list';
@@ -48,11 +49,12 @@ export async function PropertyDetailPage({
   searchParams = {},
 }: PropertyDetailPageProps): Promise<React.JSX.Element> {
   const search = parsePropertyStaySearch(searchParams, slug, todayIsoDate());
-  const [property, houses, policy, results] = await Promise.all([
+  const [property, houses, policy, results, offers] = await Promise.all([
     fetchProperty(slug),
     fetchHouses(slug),
     fetchCancellationPolicyOrNull(slug),
     loadAvailability(slug, search),
+    fetchPropertyOffersOrEmpty(slug),
   ]);
   const stay: StayQuery =
     search.kind === 'search'
@@ -93,6 +95,7 @@ export async function PropertyDetailPage({
           search={search}
           results={results}
           stay={stay}
+          offers={offers}
         />
         <CancellationPolicySection
           policy={policy}

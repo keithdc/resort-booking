@@ -7,6 +7,7 @@
 import { Module } from '@nestjs/common';
 import { IdentityModule } from '../identity/identity.module';
 import { PropertyModule } from '../property/property.module';
+import { ReportSummaryRepository } from './report-summary.repository';
 import { ReservationsController } from './reservations.controller';
 import { ReservationsPublicController } from './reservations.public.controller';
 import { ReservationsRepository } from './reservations.repository';
@@ -15,7 +16,7 @@ import { ReservationsService } from './reservations.service';
 @Module({
   imports: [IdentityModule, PropertyModule],
   controllers: [ReservationsController, ReservationsPublicController],
-  providers: [ReservationsService, ReservationsRepository],
+  providers: [ReservationsService, ReservationsRepository, ReportSummaryRepository],
   exports: [ReservationsService],
 })
 export class ReservationsModule {}

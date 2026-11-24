@@ -95,6 +95,50 @@ describe('DiscountDialog', () => {
     expect(screen.getByRole('dialog', { name: 'Edit discount' })).toBeTruthy();
   });
 
+  describe('show on the website', () => {
+    const promotedSwitch = (): HTMLInputElement => screen.getByRole('switch', { name: 'Show on the website' });
+
+    it('is off by default and explains itself', () => {
+      renderDialog();
+      expect(promotedSwitch().checked).toBe(false);
+      expect(screen.getByText('Guests see this offer on stay pages before they pick dates.')).toBeTruthy();
+      expect(promotedSwitch().getAttribute('aria-describedby')).toBe('discount-promoted-help');
+    });
+
+    it('sends the choice when saved', async () => {
+      const onSaved = renderDialog({ initial: { label: 'Long stay', value: '10', minNightsOn: true, minNights: '7' } });
+
+      await userEvent.click(promotedSwitch());
+      await userEvent.click(saveButton());
+
+      expect(onSaved.mock.calls[0]?.[0].promoted).toBe(true);
+    });
+
+    it('stays available with a promo code, and warns that the code becomes public', async () => {
+      const onSaved = renderDialog({
+        initial: { label: 'Welcome', value: '10', promoOn: true, promoCode: 'WELCOME15' },
+      });
+
+      expect(promotedSwitch().disabled).toBe(false);
+      expect(promotedSwitch().checked).toBe(false);
+      expect(screen.getByText('Guests will SEE this code on the website. Leave off to keep the code private.')).toBeTruthy();
+
+      await userEvent.click(promotedSwitch());
+      await userEvent.click(saveButton());
+      expect(onSaved.mock.calls[0]?.[0]).toMatchObject({ promoted: true, conditions: [{ kind: 'promo_code', code: 'WELCOME15' }] });
+    });
+
+    it('goes back to the plain helper text when the promo code is unticked', async () => {
+      renderDialog({ initial: { label: 'Welcome', value: '10', promoOn: true, promoCode: 'WELCOME15' } });
+      expect(screen.getByText(/Guests will SEE this code/)).toBeTruthy();
+
+      await tick(/Promo code/);
+
+      expect(screen.queryByText(/Guests will SEE this code/)).toBeNull();
+      expect(screen.getByText('Guests see this offer on stay pages before they pick dates.')).toBeTruthy();
+    });
+  });
+
   describe('guardrails', () => {
     it('keeps Save disabled until name, amount and a condition are filled in', async () => {
       renderDialog();
@@ -224,6 +268,7 @@ describe('DiscountDialog', () => {
         priority: 100,
         active: true,
         maxRedemptions: null,
+        promoted: false,
       });
     });
 

@@ -23,6 +23,7 @@ interface DiscountRow {
   priority: number;
   active: boolean;
   max_redemptions: number | null;
+  promoted: boolean;
   redemptions: number;
 }
 
@@ -34,7 +35,7 @@ export interface PropertyScope {
 // Redemptions are counted in the same statement: no per-discount query.
 const SELECT = `
   SELECT d.id, d.property_id, d.label, d.effect_kind, d.effect_value, d.conditions, d.always_on,
-    d.house_ids, d.combinable, d.priority, d.active, d.max_redemptions,
+    d.house_ids, d.combinable, d.priority, d.active, d.max_redemptions, d.promoted,
     COALESCE(r.used, 0)::int AS redemptions
   FROM discounts d
   LEFT JOIN (
@@ -61,6 +62,17 @@ export class DiscountsRepository {
   }
 
   /**
+   * The active discounts staff chose to advertise at one property, in ONE query.
+   */
+  public async listPromotedForProperty(propertyId: string): Promise<Discount[]> {
+    const result = await this.database.query<DiscountRow>(
+      `${SELECT} WHERE d.property_id = $1 AND d.active AND d.promoted ORDER BY d.priority, d.label`,
+      [propertyId],
+    );
+    return result.rows.map(mapDiscount);
+  }
+
+  /**
    * One discount by id.
    */
   public async getById(discountId: string): Promise<Discount | null> {
@@ -77,8 +89,8 @@ export class DiscountsRepository {
       `
       INSERT INTO discounts (
         organization_id, property_id, label, effect_kind, effect_value, conditions, always_on,
-        house_ids, combinable, priority, active, max_redemptions
-      ) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8::uuid[], $9, $10, $11, $12)
+        house_ids, combinable, priority, active, max_redemptions, promoted
+      ) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8::uuid[], $9, $10, $11, $12, $13)
       RETURNING id
       `,
       [scope.organizationId, scope.propertyId, ...writeParams(write)],
@@ -99,7 +111,8 @@ export class DiscountsRepository {
       `
       UPDATE discounts
       SET label = $2, effect_kind = $3, effect_value = $4, conditions = $5::jsonb, always_on = $6,
-        house_ids = $7::uuid[], combinable = $8, priority = $9, active = $10, max_redemptions = $11
+        house_ids = $7::uuid[], combinable = $8, priority = $9, active = $10, max_redemptions = $11,
+        promoted = $12
       WHERE id = $1
       `,
       [discountId, ...writeParams(write)],
@@ -165,6 +178,7 @@ function writeParams(write: DiscountWrite): unknown[] {
     write.priority,
     write.active,
     write.maxRedemptions,
+    write.promoted,
   ];
 }
 
@@ -186,6 +200,7 @@ function mapDiscount(row: DiscountRow): Discount {
     priority: row.priority,
     active: row.active,
     maxRedemptions: row.max_redemptions,
+    promoted: row.promoted,
     redemptions: row.redemptions,
   };
 }

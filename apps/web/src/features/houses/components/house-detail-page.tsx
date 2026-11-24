@@ -13,9 +13,12 @@ import {
   fetchProperty,
   fetchRequestOptions,
 } from '@/features/property/services/property-api';
+import { fetchPropertyOffersOrEmpty } from '@/features/property/services/offers-api';
+import { OfferChips } from '@/shared/components/offer-chips';
 import { PhotoGallery } from '@/shared/components/photo-gallery';
 import { PropertyMap } from '@/shared/components/property-map';
 import { formatAddress } from '@/shared/utils/format-address';
+import { offersForHouse } from '@/shared/utils/offers';
 import type { StayQuery } from '@/shared/utils/stay-query';
 import { StayQuoteProvider } from '../context/stay-quote-context';
 import { CheckoutForm } from './checkout-form';
@@ -26,6 +29,8 @@ interface HouseDetailPageProps {
   propertySlug: string;
   houseSlug: string;
   stay: StayQuery;
+  /** A promo code from the link (`?promo=CODE`) to pre-fill in checkout. The guest still presses Apply. */
+  promoCode?: string;
 }
 
 /**
@@ -35,14 +40,17 @@ export async function HouseDetailPage({
   propertySlug,
   houseSlug,
   stay,
+  promoCode = '',
 }: HouseDetailPageProps): Promise<React.JSX.Element> {
-  const [house, requestOptions, extras, property, policy] = await Promise.all([
+  const [house, requestOptions, extras, property, policy, propertyOffers] = await Promise.all([
     fetchHouse(propertySlug, houseSlug),
     fetchRequestOptions(propertySlug),
     fetchExtras(propertySlug),
     fetchProperty(propertySlug),
     fetchCancellationPolicyOrNull(propertySlug),
+    fetchPropertyOffersOrEmpty(propertySlug),
   ]);
+  const offers = offersForHouse(propertyOffers, house.id);
   const lat = house.latitude ?? house.propertyLatitude;
   const lng = house.longitude ?? house.propertyLongitude;
 
@@ -73,6 +81,25 @@ export async function HouseDetailPage({
         }}
       >
         <Box>
+          {offers.length > 0 ? (
+            <Box
+              component="section"
+              aria-label="Offers for this stay"
+              sx={{
+                mb: 3,
+                p: 2,
+                borderRadius: 2,
+                border: 1,
+                borderColor: 'success.main',
+                bgcolor: 'action.hover',
+              }}
+            >
+              <Typography variant="subtitle2" component="h2" sx={{ mb: 1, color: 'success.dark' }}>
+                {offers.length === 1 ? 'Offer for this stay' : 'Offers for this stay'}
+              </Typography>
+              <OfferChips offers={offers} copyable />
+            </Box>
+          ) : null}
           {house.description.trim() !== '' ? (
             <>
               <Typography variant="h6" component="h2" gutterBottom>
@@ -137,6 +164,8 @@ export async function HouseDetailPage({
             requestOptions={requestOptions}
             extras={extras}
             customRequestsEnabled={property.customRequestsEnabled}
+            offers={offers}
+            initialPromoCode={promoCode}
           />
         </Box>
       </Box>

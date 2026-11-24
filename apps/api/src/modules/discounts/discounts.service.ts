@@ -173,6 +173,7 @@ export class DiscountsService {
       priority: dto.priority,
       active: dto.active,
       maxRedemptions: dto.maxRedemptions,
+      promoted: dto.promoted ?? false,
     };
     const problem = validateDiscountWrite(write);
     if (problem !== null) {

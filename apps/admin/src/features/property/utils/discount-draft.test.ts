@@ -35,6 +35,7 @@ function discount(overrides: Partial<Discount> = {}): Discount {
     priority: 100,
     active: true,
     maxRedemptions: null,
+    promoted: false,
     redemptions: 0,
     ...overrides,
   };
@@ -77,6 +78,7 @@ describe('draftToWrite', () => {
       priority: 100,
       active: true,
       maxRedemptions: null,
+      promoted: false,
     });
   });
 
@@ -130,6 +132,27 @@ describe('draftToWrite', () => {
   });
 });
 
+describe('promoted (show on the website)', () => {
+  it('is off unless chosen', () => {
+    expect(EMPTY_DISCOUNT_DRAFT.promoted).toBe(false);
+    expect(draftToWrite(draft()).promoted).toBe(false);
+  });
+
+  it('is sent when chosen on a code-free discount', () => {
+    expect(draftToWrite(draft({ promoted: true })).promoted).toBe(true);
+  });
+
+  it('is allowed with a promo code: staff choose to show the code', () => {
+    expect(draftToWrite(draft({ promoted: true, promoOn: true, promoCode: 'SPRING10' })).promoted).toBe(true);
+    expect(draftToWrite(draft({ promoted: false, promoOn: true, promoCode: 'SPRING10' })).promoted).toBe(false);
+  });
+
+  it('fills the switch from a saved discount', () => {
+    expect(draftFromDiscount(discount({ promoted: true })).promoted).toBe(true);
+    expect(draftFromDiscount(discount({ promoted: false })).promoted).toBe(false);
+  });
+});
+
 describe('draftFromDiscount', () => {
   it('round-trips every kind of discount', () => {
     const original = discount({
@@ -158,6 +181,7 @@ describe('draftFromDiscount', () => {
       priority: original.priority,
       active: original.active,
       maxRedemptions: original.maxRedemptions,
+      promoted: original.promoted,
     });
   });
 

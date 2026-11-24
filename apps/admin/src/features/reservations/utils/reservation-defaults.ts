@@ -4,7 +4,7 @@
  * @dependencies shared-types
  */
 
-import type { StaffReport, StaffReservation } from '@resort-booking/shared-types';
+import type { PropertyReportRow, StaffReport, StaffReservation } from '@resort-booking/shared-types';
 
 /** The fields an API from before cancellations and refunds existed does not send. */
 type NewerFields =
@@ -38,13 +38,66 @@ export function withReservationDefaults(raw: RawStaffReservation): StaffReservat
   };
 }
 
+/** The report fields an API from before the owner report existed does not send. */
+type NewerReportFields =
+  | 'grossRevenueCents'
+  | 'refundedCents'
+  | 'netRevenueCents'
+  | 'cancellationRatePercent'
+  | 'cancellationReasons'
+  | 'refunds'
+  | 'discountUsage'
+  | 'attention'
+  | 'previous';
+
+type RawPropertyReportRow = Omit<PropertyReportRow, 'houseCount'> & Partial<Pick<PropertyReportRow, 'houseCount'>>;
+
+/** A report as the API may send it: older servers lack the newer fields and carry raw reservations. */
+export type RawStaffReport = Omit<StaffReport, 'pipeline' | 'stays' | 'properties' | NewerReportFields> &
+  Partial<Pick<StaffReport, NewerReportFields>> & {
+    pipeline: RawStaffReservation[];
+    stays: RawStaffReservation[];
+    properties: RawPropertyReportRow[];
+  };
+
 /**
- * The same for a report, whose pipeline and stays lists carry reservations.
+ * The same for a report, whose pipeline and stays lists carry reservations. The owner-report numbers
+ * an old API does not send fall back to what the older fields already say, or to zero.
  */
-export function withReportDefaults(report: Omit<StaffReport, 'pipeline' | 'stays'> & { pipeline: RawStaffReservation[]; stays: RawStaffReservation[] }): StaffReport {
+export function withReportDefaults(report: RawStaffReport): StaffReport {
   return {
     ...report,
     pipeline: report.pipeline.map(withReservationDefaults),
     stays: report.stays.map(withReservationDefaults),
+    properties: report.properties.map(
+      (property: RawPropertyReportRow): PropertyReportRow => ({ ...property, houseCount: property.houseCount ?? property.houses.length }),
+    ),
+    grossRevenueCents: report.grossRevenueCents ?? report.revenueCents,
+    refundedCents: report.refundedCents ?? 0,
+    netRevenueCents: report.netRevenueCents ?? report.revenueCents,
+    cancellationRatePercent: report.cancellationRatePercent ?? 0,
+    cancellationReasons: report.cancellationReasons ?? [],
+    refunds: report.refunds ?? [],
+    discountUsage: report.discountUsage ?? [],
+    attention: report.attention ?? {
+      unpaidHoldCount: 0,
+      refundsToPayCount: 0,
+      refundsToPayCents: 0,
+      arrivalsTodayCount: 0,
+      arrivalsNext7DaysCount: 0,
+    },
+    previous: report.previous ?? {
+      from: report.from,
+      to: report.from,
+      reservationCount: 0,
+      occupiedNights: 0,
+      occupancyPercent: 0,
+      averageNightlyCents: 0,
+      grossRevenueCents: 0,
+      refundedCents: 0,
+      netRevenueCents: 0,
+      cancelledCount: 0,
+      cancellationRatePercent: 0,
+    },
   };
 }

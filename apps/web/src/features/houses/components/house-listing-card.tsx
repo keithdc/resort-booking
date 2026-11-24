@@ -4,10 +4,11 @@
  * @dependencies MUI
  */
 
-import type { HouseSummary, Quote } from '@resort-booking/shared-types';
+import type { HouseSummary, PromotedOffer, Quote } from '@resort-booking/shared-types';
 import { Box, CardActionArea, CardContent, CardMedia, Typography } from '@mui/material';
 import { Highlighter, MagicCard } from '@resort-booking/ui';
 import NextLink from 'next/link';
+import { OfferChips } from '@/shared/components/offer-chips';
 import { formatCents } from '@/shared/utils/money';
 import { houseHref, type StayQuery } from '@/shared/utils/stay-query';
 
@@ -20,6 +21,8 @@ interface HouseListingCardProps {
    * link so the guest can open the stay and pick other dates. Default "unknown" = no search.
    */
   availability?: 'unknown' | 'available' | 'unavailable';
+  /** Offers that apply to this stay, as text chips (no buttons: the whole card is a link). */
+  offers?: readonly PromotedOffer[];
 }
 
 /**
@@ -30,6 +33,7 @@ export function HouseListingCard({
   quote,
   stay,
   availability = 'unknown',
+  offers = [],
 }: HouseListingCardProps): React.JSX.Element {
   const unavailable = availability === 'unavailable';
   return (
@@ -74,6 +78,11 @@ export function HouseListingCard({
               Sleeps {house.capacity}
             </Highlighter>
           </Typography>
+          {offers.length > 0 && !unavailable ? (
+            <Box sx={{ mt: 1.5 }}>
+              <OfferChips offers={offers} />
+            </Box>
+          ) : null}
           {unavailable ? (
             <Typography sx={{ mt: 1, color: 'text.secondary', fontWeight: 600 }}>
               Not available for these dates and guests

@@ -48,6 +48,7 @@ function discount(overrides: Partial<Discount> = {}): Discount {
     priority: 100,
     active: true,
     maxRedemptions: null,
+    promoted: false,
     redemptions: 0,
     ...overrides,
   };
@@ -64,6 +65,7 @@ function write(overrides: Partial<DiscountWrite> = {}): DiscountWrite {
     priority: 100,
     active: true,
     maxRedemptions: null,
+    promoted: false,
     ...overrides,
   };
 }
@@ -318,6 +320,12 @@ describe('applyDiscounts', () => {
 });
 
 describe('validateDiscountWrite', () => {
+  it('allows advertising a promo-code discount: staff choose to make the code public', () => {
+    expect(validateDiscountWrite(write({ promoted: true, conditions: [{ kind: 'promo_code', code: 'WELCOME15' }] }))).toBeNull();
+    expect(validateDiscountWrite(write({ promoted: true }))).toBeNull();
+    expect(validateDiscountWrite(write({ promoted: false, conditions: [{ kind: 'promo_code', code: 'ABC' }] }))).toBeNull();
+  });
+
   it('accepts a good discount', () => {
     expect(validateDiscountWrite(write())).toBeNull();
   });

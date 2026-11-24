@@ -4,11 +4,12 @@
  * @dependencies house-listing-card, property-stay-search — shows the API's availability answer
  */
 
-import type { HouseSearchResult, HouseSummary } from '@resort-booking/shared-types';
+import type { HouseSearchResult, HouseSummary, PromotedOffer } from '@resort-booking/shared-types';
 import { Box, Link as MuiLink, Typography } from '@mui/material';
 import { BlurFade } from '@resort-booking/ui';
 import NextLink from 'next/link';
 import { HouseListingCard } from '@/features/houses/components/house-listing-card';
+import { offersForHouse } from '@/shared/utils/offers';
 import type { StayQuery } from '@/shared/utils/stay-query';
 import { arrangeStays, describeAvailability, type PropertyStaySearch } from '../utils/property-stay-search';
 
@@ -20,6 +21,8 @@ interface PropertyStayListProps {
   results: HouseSearchResult[] | null;
   /** The stay carried onto each stay link. */
   stay: StayQuery;
+  /** Advertised offers for the property; each card shows the ones that apply to its stay. */
+  offers?: readonly PromotedOffer[];
 }
 
 function summaryText(
@@ -52,6 +55,7 @@ export function PropertyStayList({
   search,
   results,
   stay,
+  offers = [],
 }: PropertyStayListProps): React.JSX.Element {
   const entries = arrangeStays(houses, results);
   const summary = summaryText(search, results, houses.length);
@@ -94,6 +98,7 @@ export function PropertyStayList({
                     quote={entry.quote}
                     stay={stay}
                     availability={entry.availability}
+                    offers={offersForHouse(offers, entry.house.id)}
                   />
                 </Box>
               </BlurFade>

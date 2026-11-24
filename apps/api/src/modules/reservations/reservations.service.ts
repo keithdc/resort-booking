@@ -24,6 +24,15 @@ import { nightsBetween } from '../inventory/inventory.rules';
 import { PropertyService } from '../property/property.service';
 import type { StaffDayQueryDto } from './dto/staff-day.query.dto';
 import type { StaffRangeQueryDto } from './dto/staff-range.query.dto';
+import { ReportSummaryRepository } from './report-summary.repository';
+import {
+  buildPeriodSummary,
+  cancellationTotals,
+  confirmedTotals,
+  nightlyCents,
+  previousRange,
+  rangedRevenueCents,
+} from './report-summary.rules';
 import { ReservationsRepository } from './reservations.repository';
 import {
   calendarDayCounts,
@@ -41,10 +50,28 @@ import {
   type PolicySnapshot,
 } from './reservations.rules';
 
+function emptyPoint(date: string): ReportSeriesPoint {
+  return { date, revenueCents: 0, occupiedNights: 0, stayCount: 0, pendingCount: 0, cancelledCount: 0 };
+}
+
+function emptyProperty(propertyId: string, propertyName: string, currencyCode: string): PropertyReportRow {
+  return {
+    propertyId,
+    propertyName,
+    reservationCount: 0,
+    occupiedNights: 0,
+    revenueCents: 0,
+    currencyCode,
+    houseCount: 0,
+    houses: [],
+  };
+}
+
 @Injectable()
 export class ReservationsService {
   public constructor(
     private readonly reservations: ReservationsRepository,
+    private readonly summaries: ReportSummaryRepository,
     private readonly properties: PropertyService,
   ) {}
 
@@ -81,51 +108,57 @@ export class ReservationsService {
   }
 
   /**
-   * Occupied nights, revenue, occupancy, and daily series. UI only renders this.
+   * The owner report: nights, money (gross, refunded, net), occupancy, cancellations, payments,
+   * discounts, what needs attention today, and the same headline numbers for the period before.
+   * UI only renders this. Every statement here is one query for the whole property, not per booking.
    */
   public async getReport(query: StaffRangeQueryDto): Promise<StaffReport> {
     this.assertRange(query.from, query.to);
     const propertyId = query.propertyId ?? null;
-    const stays = await this.reservations.listConfirmedOverlapping(query.from, query.to, propertyId);
-    const pipeline = await this.reservations.listPipelineOverlapping(query.from, query.to, propertyId);
-    const houseCount = await this.reservations.countHouses(propertyId);
+    const asOfDate = reportAsOfDate();
+    const before = previousRange(query.from, query.to) ?? { from: query.from, to: query.from };
+    const [stays, pipeline, catalog, reasons, refunds, discountUsage, attention, previousStays, previousReasons] =
+      await Promise.all([
+        this.reservations.listConfirmedOverlapping(query.from, query.to, propertyId),
+        this.reservations.listPipelineOverlapping(query.from, query.to, propertyId),
+        this.summaries.houseCatalog(propertyId),
+        this.summaries.cancellationsByReason(query.from, query.to, propertyId),
+        this.summaries.cancellationRefunds(query.from, query.to, propertyId),
+        this.summaries.discountUsage(query.from, query.to, propertyId),
+        this.summaries.attention(asOfDate, propertyId),
+        this.reservations.listConfirmedOverlapping(before.from, before.to, propertyId),
+        this.summaries.cancellationsByReason(before.from, before.to, propertyId),
+      ]);
+
+    const houseCount = catalog.length;
     const span = nightsBetween(query.from, query.to) ?? 0;
     const availableNights = houseCount * span;
     const dates = eachIsoDate(query.from, query.to);
     const dailyMap = new Map<string, ReportSeriesPoint>();
     for (const date of dates) {
-      dailyMap.set(date, {
-        date,
-        revenueCents: 0,
-        occupiedNights: 0,
-        stayCount: 0,
-        pendingCount: 0,
-        cancelledCount: 0,
-      });
+      dailyMap.set(date, emptyPoint(date));
     }
 
+    // Every stay of the property starts with zeros, so a stay nobody booked still shows in the table.
     const byProperty = new Map<string, PropertyReportRow>();
-    const paymentMap = new Map<PaymentMethodSlice['paymentMethod'], PaymentMethodSlice>();
-    let occupiedNights = 0;
-    let revenueCents = 0;
-    let guestCount = 0;
-    const asOfDate = reportAsOfDate();
+    for (const row of catalog) {
+      let property = byProperty.get(row.propertyId);
+      if (property === undefined) {
+        property = emptyProperty(row.propertyId, row.propertyName, row.currencyCode);
+        byProperty.set(row.propertyId, property);
+      }
+      property.houseCount += 1;
+      property.houses.push({ houseId: row.houseId, houseName: row.houseName, reservationCount: 0, occupiedNights: 0, revenueCents: 0 });
+    }
 
+    const paymentMap = new Map<PaymentMethodSlice['paymentMethod'], PaymentMethodSlice>();
     for (const stay of stays) {
-      const stayNights = nightsBetween(stay.checkIn, stay.checkOut) ?? 1;
-      const nightly = Math.round(stay.totalCents / stayNights);
+      const nightly = nightlyCents(stay);
       const nights = overlapNights(stay.checkIn, stay.checkOut, query.from, query.to);
-      const rangedRevenue = nightly * nights;
-      occupiedNights += nights;
-      revenueCents += rangedRevenue;
-      guestCount += stay.guestCount;
+      const rangedRevenue = rangedRevenueCents(stay, query.from, query.to);
 
       const method: PaymentMethodSlice['paymentMethod'] = stay.paymentMethod ?? 'unknown';
-      const slice = paymentMap.get(method) ?? {
-        paymentMethod: method,
-        reservationCount: 0,
-        revenueCents: 0,
-      };
+      const slice = paymentMap.get(method) ?? { paymentMethod: method, reservationCount: 0, revenueCents: 0 };
       slice.reservationCount += 1;
       slice.revenueCents += rangedRevenue;
       paymentMap.set(method, slice);
@@ -145,15 +178,7 @@ export class ReservationsService {
 
       let property = byProperty.get(stay.propertyId);
       if (property === undefined) {
-        property = {
-          propertyId: stay.propertyId,
-          propertyName: stay.propertyName,
-          reservationCount: 0,
-          occupiedNights: 0,
-          revenueCents: 0,
-          currencyCode: stay.currencyCode,
-          houses: [],
-        };
+        property = emptyProperty(stay.propertyId, stay.propertyName, stay.currencyCode);
         byProperty.set(stay.propertyId, property);
       }
       property.reservationCount += 1;
@@ -162,14 +187,9 @@ export class ReservationsService {
 
       let house = property.houses.find((row: HouseReportRow): boolean => row.houseId === stay.houseId);
       if (house === undefined) {
-        house = {
-          houseId: stay.houseId,
-          houseName: stay.houseName,
-          reservationCount: 0,
-          occupiedNights: 0,
-          revenueCents: 0,
-        };
+        house = { houseId: stay.houseId, houseName: stay.houseName, reservationCount: 0, occupiedNights: 0, revenueCents: 0 };
         property.houses.push(house);
+        property.houseCount += 1;
       }
       house.reservationCount += 1;
       house.occupiedNights += nights;
@@ -211,23 +231,40 @@ export class ReservationsService {
       }
     }
 
-    const firstProperty = [...byProperty.values()][0];
+    const totals = confirmedTotals(stays, query.from, query.to);
+    const summary = buildPeriodSummary({
+      from: query.from,
+      to: query.to,
+      houseCount,
+      reservationCount: stays.length,
+      totals,
+      cancellations: cancellationTotals(reasons),
+    });
+    const previous = buildPeriodSummary({
+      from: before.from,
+      to: before.to,
+      houseCount,
+      reservationCount: previousStays.length,
+      totals: confirmedTotals(previousStays, before.from, before.to),
+      cancellations: cancellationTotals(previousReasons),
+    });
+
     return {
       from: query.from,
       to: query.to,
       asOfDate,
       propertyId,
-      currencyCode: firstProperty?.currencyCode ?? 'EUR',
+      currencyCode: stays[0]?.currencyCode ?? catalog[0]?.currencyCode ?? 'EUR',
       houseCount,
       availableNights,
       reservationCount: stays.length,
-      occupiedNights,
-      revenueCents,
-      averageNightlyCents: occupiedNights === 0 ? 0 : Math.round(revenueCents / occupiedNights),
-      occupancyPercent: availableNights === 0 ? 0 : Math.round((occupiedNights / availableNights) * 1000) / 10,
+      occupiedNights: totals.occupiedNights,
+      revenueCents: totals.revenueCents,
+      averageNightlyCents: summary.averageNightlyCents,
+      occupancyPercent: summary.occupancyPercent,
       upcomingStayCount: stays.filter((stay: StaffReservation): boolean => isUpcomingArrival(stay, asOfDate)).length,
       inHouseStayCount: stays.filter((stay: StaffReservation): boolean => isInHouseNow(stay, asOfDate)).length,
-      guestCount,
+      guestCount: totals.guestCount,
       propertyBookedCount: uniquePropertyCount(stays),
       pendingPaymentCount,
       cancelledCount,
@@ -235,16 +272,18 @@ export class ReservationsService {
       expiredHoldCount,
       pipeline,
       properties: [...byProperty.values()],
-      daily: dates.map((date: string): ReportSeriesPoint => dailyMap.get(date) ?? {
-        date,
-        revenueCents: 0,
-        occupiedNights: 0,
-        stayCount: 0,
-        pendingCount: 0,
-        cancelledCount: 0,
-      }),
+      daily: dates.map((date: string): ReportSeriesPoint => dailyMap.get(date) ?? emptyPoint(date)),
       paymentMethods: [...paymentMap.values()],
       stays,
+      grossRevenueCents: summary.grossRevenueCents,
+      refundedCents: summary.refundedCents,
+      netRevenueCents: summary.netRevenueCents,
+      cancellationRatePercent: summary.cancellationRatePercent,
+      cancellationReasons: reasons,
+      refunds,
+      discountUsage,
+      attention,
+      previous,
     };
   }
 

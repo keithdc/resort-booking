@@ -48,6 +48,8 @@ export interface DiscountDraft {
   active: boolean;
   limitOn: boolean;
   maxRedemptions: string;
+  /** Show the offer on the guest site. With a promo code this makes the code public. */
+  promoted: boolean;
 }
 
 /** Problems found in a draft, by form area. Missing key means that area is fine. */
@@ -93,6 +95,7 @@ export const EMPTY_DISCOUNT_DRAFT: DiscountDraft = {
   active: true,
   limitOn: false,
   maxRedemptions: '',
+  promoted: false,
 };
 
 // --- Draft <-> API ---
@@ -117,6 +120,7 @@ export function draftFromDiscount(discount: Discount): DiscountDraft {
     active: discount.active,
     limitOn: discount.maxRedemptions !== null,
     maxRedemptions: discount.maxRedemptions === null ? '' : String(discount.maxRedemptions),
+    promoted: discount.promoted,
   };
   for (const condition of discount.conditions) {
     switch (condition.kind) {
@@ -166,6 +170,7 @@ export function draftToWrite(draft: DiscountDraft): DiscountWrite {
     priority: Number(draft.priority.trim()),
     active: draft.active,
     maxRedemptions: draft.limitOn ? Number(draft.maxRedemptions.trim()) : null,
+    promoted: draft.promoted,
   };
 }
 

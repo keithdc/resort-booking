@@ -474,6 +474,8 @@ export interface PropertyReportRow {
   occupiedNights: number;
   revenueCents: number;
   currencyCode: string;
+  /** Every stay of the property, booked or not. */
+  houseCount: number;
   houses: HouseReportRow[];
 }
 
@@ -490,6 +492,50 @@ export interface PaymentMethodSlice {
   paymentMethod: PaymentMethod | 'unknown';
   reservationCount: number;
   revenueCents: number;
+}
+
+/** The headline numbers of one period, computed the same way for the chosen period and the one before it. */
+export interface PeriodSummary {
+  from: string;
+  to: string;
+  reservationCount: number;
+  occupiedNights: number;
+  occupancyPercent: number;
+  averageNightlyCents: number;
+  /** Paid for bookings with nights in the period: confirmed bookings plus cancelled ones that kept money. */
+  grossRevenueCents: number;
+  /** Refunded on bookings cancelled in the period (date-change differences are already in the new total). */
+  refundedCents: number;
+  /** grossRevenueCents minus refundedCents: what the property kept. */
+  netRevenueCents: number;
+  cancelledCount: number;
+  cancellationRatePercent: number;
+}
+
+/** Cancelled bookings with nights in the period, grouped by why they were cancelled. */
+export interface CancellationReasonRow {
+  /** guest_request, property_cancelled or goodwill (a date change is not a cancellation). */
+  reason: string;
+  cancelledCount: number;
+  paidCents: number;
+  refundedCents: number;
+}
+
+/** Money one discount gave away on confirmed bookings with nights in the period. */
+export interface DiscountUsageRow {
+  discountId: string;
+  label: string;
+  redemptionCount: number;
+  discountCents: number;
+}
+
+/** What needs a person today. Counted as of today, not for the chosen period. */
+export interface ReportAttention {
+  unpaidHoldCount: number;
+  refundsToPayCount: number;
+  refundsToPayCents: number;
+  arrivalsTodayCount: number;
+  arrivalsNext7DaysCount: number;
 }
 
 export interface StaffReport {
@@ -518,6 +564,17 @@ export interface StaffReport {
   daily: ReportSeriesPoint[];
   paymentMethods: PaymentMethodSlice[];
   stays: StaffReservation[];
+  grossRevenueCents: number;
+  refundedCents: number;
+  netRevenueCents: number;
+  cancellationRatePercent: number;
+  cancellationReasons: CancellationReasonRow[];
+  /** Refunds for the bookings cancelled in the period (newest first, at most 200). */
+  refunds: StaffRefund[];
+  discountUsage: DiscountUsageRow[];
+  attention: ReportAttention;
+  /** The same headline numbers for the equal-length period right before this one. */
+  previous: PeriodSummary;
 }
 
 /** A date range with its own nightly rate on one house (peak season, holidays, ...). */
@@ -650,6 +707,8 @@ export interface DiscountWrite {
   priority: number;
   active: boolean;
   maxRedemptions: number | null;
+  /** Advertise on the guest site before dates are picked. For a promo-code discount this makes the code public. */
+  promoted: boolean;
 }
 
 export interface Discount extends DiscountWrite {
@@ -657,6 +716,34 @@ export interface Discount extends DiscountWrite {
   propertyId: string;
   /** Confirmed stays that used this discount. */
   redemptions: number;
+}
+
+/**
+ * A discount staff chose to advertise. Public: carries its promo code only because staff chose to show it,
+ * and never carries priority or stacking rules.
+ * The numbers are for display only; the quote is the only place a price is calculated.
+ */
+export interface PromotedOffer {
+  id: string;
+  name: string;
+  kind: 'percent' | 'fixed';
+  /** Whole percent for `percent`, cents for `fixed`. */
+  value: number;
+  /** Currency of a fixed offer; null for a percentage. */
+  currencyCode: string | null;
+  /** Nights needed to qualify, when the offer has a minimum stay. */
+  minNights: number | null;
+  /** True when the minimum stay is the only condition besides a promo code, so "add N nights" is an honest hint. */
+  nightsOnly: boolean;
+  /** The code a guest types, only for an advertised code discount; null for automatic ones. */
+  promoCode: string | null;
+  /** Stays it applies to; null means every published stay at the property. */
+  houseIds: string[] | null;
+  /** Booking window (first and last day a guest can book it), when it has one. */
+  validFrom: string | null;
+  validTo: string | null;
+  /** Ready-made guest text built in the API, e.g. "Save 10% when you stay 7 or more nights". */
+  headline: string;
 }
 
 // --- Payments ---

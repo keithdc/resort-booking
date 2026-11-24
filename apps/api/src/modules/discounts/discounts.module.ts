@@ -10,11 +10,13 @@ import { PropertyModule } from '../property/property.module';
 import { DiscountsController } from './discounts.controller';
 import { DiscountsRepository } from './discounts.repository';
 import { DiscountsService } from './discounts.service';
+import { OffersController } from './offers.controller';
+import { OffersService } from './offers.service';
 
 @Module({
   imports: [IdentityModule, PropertyModule],
-  controllers: [DiscountsController],
-  providers: [DiscountsService, DiscountsRepository],
+  controllers: [DiscountsController, OffersController],
+  providers: [DiscountsService, DiscountsRepository, OffersService],
   exports: [DiscountsService],
 })
 export class DiscountsModule {}

@@ -4,10 +4,10 @@
  * @feature property
  */
 
-import type { CancellationPolicy, HouseSearchResult, HouseSummary, PropertyDetail } from '@resort-booking/shared-types';
+import type { CancellationPolicy, HouseSearchResult, HouseSummary, PromotedOffer, PropertyDetail } from '@resort-booking/shared-types';
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { makeHouse, makeProperty, makeResult } from '../test-fixtures';
+import { makeHouse, makeOffer, makeProperty, makeResult } from '../test-fixtures';
 import { PropertyDetailPage } from './property-detail-page';
 
 const api = vi.hoisted(() => ({
@@ -15,6 +15,7 @@ const api = vi.hoisted(() => ({
   fetchHouses: vi.fn<(slug: string) => Promise<HouseSummary[]>>(),
   fetchCancellationPolicyOrNull: vi.fn<(slug: string) => Promise<CancellationPolicy | null>>(),
   fetchStaySearch: vi.fn<(checkIn: string, checkOut: string, guests: number, slug: string) => Promise<HouseSearchResult[]>>(),
+  fetchPropertyOffersOrEmpty: vi.fn<(slug: string) => Promise<PromotedOffer[]>>(),
 }));
 
 vi.mock('../services/property-api', () => ({
@@ -22,6 +23,7 @@ vi.mock('../services/property-api', () => ({
   fetchHouses: api.fetchHouses,
   fetchCancellationPolicyOrNull: api.fetchCancellationPolicyOrNull,
 }));
+vi.mock('../services/offers-api', () => ({ fetchPropertyOffersOrEmpty: api.fetchPropertyOffersOrEmpty }));
 vi.mock('@/features/houses/services/inventory-api', () => ({ fetchStaySearch: api.fetchStaySearch }));
 vi.mock('next/navigation', () => ({ useRouter: (): { push: () => void } => ({ push: (): void => undefined }) }));
 vi.mock('@/shared/components/property-map', () => ({ PropertyMap: (): null => null }));
@@ -57,6 +59,7 @@ describe('PropertyDetailPage', () => {
     api.fetchProperty.mockResolvedValue(makeProperty());
     api.fetchHouses.mockResolvedValue([LAKE, SPRUCE, DUNE]);
     api.fetchCancellationPolicyOrNull.mockResolvedValue(POLICY);
+    api.fetchPropertyOffersOrEmpty.mockResolvedValue([]);
   });
 
   afterEach(cleanup);
@@ -186,5 +189,39 @@ describe('PropertyDetailPage', () => {
       const current = order[index];
       expect(previous !== undefined && current !== undefined && Boolean(previous.compareDocumentPosition(current) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
     }
+  });
+
+  describe('offers', () => {
+    const LONG = makeOffer({ id: 'long', houseIds: null });
+    const CODE = makeOffer({ id: 'code', promoCode: 'WELCOME10', headline: 'Use code WELCOME10 for 10% off', houseIds: ['spruce'] });
+
+    it('shows no banner and no chips when there are no offers (or the call failed)', async () => {
+      await renderPage();
+
+      expect(screen.queryByRole('region', { name: 'Current offers' })).toBeNull();
+      expect(screen.queryByRole('list', { name: 'Current offers' })).toBeNull();
+      expect(api.fetchPropertyOffersOrEmpty).toHaveBeenCalledWith('alpine-lake');
+    });
+
+    it('has no banner strip: offers show on the stay cards only', async () => {
+      api.fetchPropertyOffersOrEmpty.mockResolvedValue([LONG, CODE]);
+
+      await renderPage();
+
+      expect(screen.queryByRole('region', { name: 'Current offers' })).toBeNull();
+    });
+
+    it('shows each stay card only the offers that apply to that stay', async () => {
+      api.fetchPropertyOffersOrEmpty.mockResolvedValue([LONG, CODE]);
+
+      await renderPage();
+
+      const cards = screen.getAllByRole('link').filter((link) => link.getAttribute('data-availability') !== null);
+      const text = (name: string): string => cards.find((card) => card.textContent?.includes(name))?.textContent ?? '';
+      expect(text('Lake Chalet')).toContain('Save 10% when you stay 7 or more nights');
+      expect(text('Lake Chalet')).not.toContain('WELCOME10');
+      expect(text('Spruce Studio')).toContain('Use code WELCOME10 for 10% off');
+      expect(text('Dune House')).not.toContain('WELCOME10');
+    });
   });
 });

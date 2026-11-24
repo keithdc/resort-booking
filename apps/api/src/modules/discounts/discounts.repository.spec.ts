@@ -8,16 +8,38 @@ import { Client, type PoolClient } from 'pg';
 import { DatabaseService } from '../../shared/database/database.service';
 import { DiscountsRepository } from './discounts.repository';
 
+function row(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: 'd1',
+    property_id: 'p1',
+    label: 'Long stay',
+    effect_kind: 'percent',
+    effect_value: 10,
+    conditions: [{ kind: 'min_nights', nights: 7 }],
+    always_on: false,
+    house_ids: null,
+    combinable: false,
+    priority: 100,
+    active: true,
+    max_redemptions: null,
+    promoted: true,
+    redemptions: 0,
+    ...overrides,
+  };
+}
+
 describe('DiscountsRepository', () => {
   const clientQuery = jest.fn<Promise<{ rows: unknown[] }>, [string, ...unknown[]]>();
+  const dbQuery = jest.fn<Promise<{ rows: unknown[]; rowCount?: number }>, [string, unknown[]?]>();
   let repository: DiscountsRepository;
   let client: PoolClient;
 
   beforeEach(async () => {
     jest.resetAllMocks();
     clientQuery.mockResolvedValue({ rows: [] });
+    dbQuery.mockResolvedValue({ rows: [], rowCount: 0 });
     const moduleRef = await Test.createTestingModule({
-      providers: [DiscountsRepository, { provide: DatabaseService, useValue: { query: jest.fn() } }],
+      providers: [DiscountsRepository, { provide: DatabaseService, useValue: { query: dbQuery } }],
     }).compile();
     repository = moduleRef.get(DiscountsRepository);
     client = Object.assign(new Client(), { release: (): void => undefined, query: clientQuery });
@@ -47,6 +69,58 @@ describe('DiscountsRepository', () => {
 
       expect(clientQuery).toHaveBeenCalledTimes(2);
       expect(clientQuery.mock.calls[1]?.[1]).toEqual(['new', ['d1', 'd2'], [100, 200]]);
+    });
+  });
+
+  describe('promoted (show on the website)', () => {
+    it('reads the choice with each discount', async () => {
+      dbQuery.mockResolvedValue({ rows: [row({ promoted: true }), row({ id: 'd2', promoted: false })] });
+
+      const found = await repository.listForProperties(['p1'], false);
+
+      expect(found.map((discount) => discount.promoted)).toEqual([true, false]);
+      expect(dbQuery.mock.calls[0]?.[0]).toContain('d.promoted');
+    });
+
+    it('lists the advertised, active discounts of one property in ONE query', async () => {
+      dbQuery.mockResolvedValue({ rows: [row()] });
+
+      const found = await repository.listPromotedForProperty('p1');
+
+      expect(found).toHaveLength(1);
+      expect(dbQuery).toHaveBeenCalledTimes(1);
+      const [sql, params] = dbQuery.mock.calls[0] ?? ['', []];
+      expect(sql).toContain('d.promoted');
+      expect(sql).toContain('d.active');
+      expect(params).toEqual(['p1']);
+    });
+
+    it('saves the choice on insert and on update', async () => {
+      dbQuery.mockResolvedValueOnce({ rows: [{ id: 'd1' }] }).mockResolvedValueOnce({ rows: [row()] });
+      const write = {
+        label: 'Long stay',
+        effect: { kind: 'percent' as const, percent: 10 },
+        conditions: [{ kind: 'min_nights' as const, nights: 7 }],
+        alwaysOn: false,
+        houseIds: null,
+        combinable: false,
+        priority: 100,
+        active: true,
+        maxRedemptions: null,
+        promoted: true,
+      };
+
+      await repository.insert({ organizationId: 'o1', propertyId: 'p1' }, write);
+      const insertParams = dbQuery.mock.calls[0]?.[1] ?? [];
+      expect(dbQuery.mock.calls[0]?.[0]).toContain('promoted');
+      expect(insertParams[insertParams.length - 1]).toBe(true);
+
+      dbQuery.mockReset();
+      dbQuery.mockResolvedValueOnce({ rows: [], rowCount: 1 }).mockResolvedValueOnce({ rows: [row({ promoted: false })] });
+      await repository.update('d1', { ...write, promoted: false });
+      const updateParams = dbQuery.mock.calls[0]?.[1] ?? [];
+      expect(dbQuery.mock.calls[0]?.[0]).toContain('promoted = $12');
+      expect(updateParams[updateParams.length - 1]).toBe(false);
     });
   });
 });

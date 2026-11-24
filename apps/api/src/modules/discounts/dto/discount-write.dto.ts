@@ -4,7 +4,8 @@
  * @dependencies class-validator
  */
 
-import { IsArray, IsBoolean, IsInt, IsObject, IsString, Matches, Max, MaxLength, Min, ValidateIf } from 'class-validator';
+import { IsArray, IsBoolean, IsInt, IsObject, IsOptional, IsString, Matches, Max, MaxLength, Min, ValidateIf } from 'class-validator';
+import { KeepRawValue } from '../../../shared/validation/keep-raw-value';
 import { UUID_LIKE } from '../../../shared/validation/uuid-like';
 
 /**
@@ -45,4 +46,10 @@ export class DiscountWriteDto {
   @IsInt()
   @Min(1)
   public maxRedemptions!: number | null;
+
+  /** Advertise on the guest site. Optional so older clients keep working (defaults to false). */
+  @IsOptional()
+  @KeepRawValue()
+  @IsBoolean()
+  public promoted?: boolean;
 }

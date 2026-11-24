@@ -32,6 +32,7 @@ function discount(overrides: Partial<Discount> = {}): Discount {
     priority: 100,
     active: true,
     maxRedemptions: null,
+    promoted: false,
     redemptions: 0,
     ...overrides,
   };
@@ -229,6 +230,26 @@ describe('DiscountsService', () => {
       expect(insert).not.toHaveBeenCalled();
     });
 
+    it('does not advertise a discount unless asked to', async () => {
+      await service.create(PROPERTY, dto());
+      expect(insert.mock.calls[0]?.[1].promoted).toBe(false);
+    });
+
+    it('saves the "show on the website" choice', async () => {
+      await service.create(PROPERTY, dto({ promoted: true }));
+      expect(insert.mock.calls[0]?.[1].promoted).toBe(true);
+    });
+
+    it('lets staff advertise a promo-code discount (the code becomes public by their choice)', async () => {
+      await service.create(PROPERTY, dto({ promoted: true, conditions: [{ kind: 'promo_code', code: 'WELCOME15' }] }));
+      expect(insert.mock.calls[0]?.[1]).toMatchObject({ promoted: true, conditions: [{ kind: 'promo_code', code: 'WELCOME15' }] });
+    });
+
+    it('keeps a promo-code discount private unless asked', async () => {
+      await service.create(PROPERTY, dto({ conditions: [{ kind: 'promo_code', code: 'WELCOME15' }] }));
+      expect(insert.mock.calls[0]?.[1].promoted).toBe(false);
+    });
+
     it('accepts an explicit always-on discount', async () => {
       await service.create(PROPERTY, dto({ conditions: [], alwaysOn: true }));
 
@@ -264,6 +285,13 @@ describe('DiscountsService', () => {
 
       expect(updated.label).toBe('Renamed');
       expect(update).toHaveBeenCalledWith('d1', expect.objectContaining({ label: 'Renamed' }));
+    });
+
+    it('updates the "show on the website" choice', async () => {
+      getById.mockResolvedValue(discount());
+      update.mockResolvedValue(discount({ promoted: true }));
+      await service.update('d1', dto({ promoted: true }));
+      expect(update).toHaveBeenCalledWith('d1', expect.objectContaining({ promoted: true }));
     });
 
     it('checks the houses against the discount\'s own property', async () => {

@@ -797,3 +797,72 @@ describe('Stay header follows the dates in the checkout', () => {
     await waitFor(() => expect(header()).toContain('Standard rate 180,00 € / night'));
   });
 });
+
+describe('CheckoutForm offers', () => {
+  const LONG_STAY = {
+    id: 'o1',
+    name: 'Long stay',
+    kind: 'percent' as const,
+    value: 10,
+    currencyCode: null,
+    minNights: 7,
+    nightsOnly: true,
+    promoCode: null,
+    houseIds: null,
+    validFrom: null,
+    validTo: null,
+    headline: 'Save 10% when you stay 7 or more nights',
+  };
+
+  function renderWith(extra: { offers?: (typeof LONG_STAY)[]; initialPromoCode?: string }): void {
+    render(
+      <LocalizationProvider dateAdapter={AdapterDayjs}>
+        <CheckoutForm
+          house={HOUSE}
+          initialStay={{ checkIn: '2027-07-10', checkOut: '2027-07-11', nights: '1', guestCount: '2', propertySlug: 'pine-coast' }}
+          requestOptions={[]}
+          extras={[]}
+          customRequestsEnabled={false}
+          {...extra}
+        />
+      </LocalizationProvider>,
+    );
+  }
+
+  beforeEach(() => {
+    inventory.fetchQuote.mockReset();
+    inventory.fetchQuote.mockResolvedValue(QUOTE);
+  });
+
+  afterEach(cleanup);
+
+  it('invites a longer stay with the nights still missing, and stops once there are enough', async () => {
+    renderWith({ offers: [LONG_STAY] });
+    await screen.findByText('These dates are free.');
+    expect(screen.getByText('Add 6 more nights to save 10%')).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText(/^Nights/), { target: { value: '5' } });
+    expect(await screen.findByText('Add 2 more nights to save 10%')).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText(/^Nights/), { target: { value: '7' } });
+    await waitFor(() => expect(screen.queryByText(/more night/)).toBeNull());
+  });
+
+  it('shows no hint without offers', async () => {
+    renderWith({});
+    await screen.findByText('These dates are free.');
+    expect(screen.queryByText(/more night/)).toBeNull();
+  });
+
+  it('puts a code from the link in the promo field but does not apply it', async () => {
+    renderWith({ initialPromoCode: 'WELCOME10' });
+    await screen.findByText('These dates are free.');
+
+    expect((screen.getByLabelText(/Promo code/) as HTMLInputElement).value).toBe('WELCOME10');
+    expect(inventory.fetchQuote.mock.calls.every((call) => call[4] === '')).toBe(true);
+    expect(screen.queryByRole('button', { name: 'Remove' })).toBeNull();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    await waitFor(() => expect(inventory.fetchQuote.mock.calls.at(-1)?.[4]).toBe('WELCOME10'));
+  });
+});

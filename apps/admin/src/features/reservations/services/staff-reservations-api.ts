@@ -19,11 +19,15 @@ import type {
   StaffReservation,
 } from '@resort-booking/shared-types';
 import { getStaffApiOk, mutateStaffApiOk } from '@/shared/services/api-client';
-import { withReportDefaults, withReservationDefaults, type RawStaffReservation } from '../utils/reservation-defaults';
+import {
+  withReportDefaults,
+  withReservationDefaults,
+  type RawStaffReport,
+  type RawStaffReservation,
+} from '../utils/reservation-defaults';
 
 // The same results as the shared types, but a reservation may come from an API that is older than this
 // app and lacks the newer fields. They are filled in right here (see reservation-defaults).
-type RawStaffReport = Omit<StaffReport, 'pipeline' | 'stays'> & { pipeline: RawStaffReservation[]; stays: RawStaffReservation[] };
 type RawStaffCancelResult = Omit<StaffCancelResult, 'reservation'> & { reservation: RawStaffReservation };
 type RawStaffChangeResult = Omit<StaffChangeResult, 'reservation'> & { reservation: RawStaffReservation };
 

@@ -5,6 +5,7 @@
  */
 
 import { HouseDetailPage } from '@/features/houses';
+import { parsePromoParam } from '@/shared/utils/offers';
 import { stayQueryFromRecord, withDefaultStay } from '@/shared/utils/stay-query';
 
 export const dynamic = 'force-dynamic';
@@ -16,6 +17,7 @@ interface HousePageProps {
     checkOut?: string;
     nights?: string;
     guestCount?: string;
+    promo?: string | string[];
   }>;
 }
 
@@ -30,6 +32,7 @@ export default async function HouseRoute({ params, searchParams }: HousePageProp
       propertySlug={slug}
       houseSlug={staySlug}
       stay={withDefaultStay(stayQueryFromRecord(query))}
+      promoCode={parsePromoParam(query.promo)}
     />
   );
 }

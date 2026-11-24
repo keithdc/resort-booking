@@ -227,22 +227,6 @@ export class ReservationsRepository {
   }
 
   /**
-   * Houses that can sell nights in this report (published or not — staff view).
-   */
-  public async countHouses(propertyId: string | null): Promise<number> {
-    const result = await this.database.query<{ n: string }>(
-      `
-      SELECT COUNT(*)::text AS n
-      FROM houses h
-      INNER JOIN properties p ON p.id = h.property_id
-      WHERE ($1::uuid IS NULL OR p.id = $1)
-      `,
-      [propertyId],
-    );
-    return Number.parseInt(result.rows[0]?.n ?? '0', 10);
-  }
-
-  /**
    * One property's current policy, for saving with a new booking. Two queries, both filtered to the
    * property (unlike listBookingConfig, which reads every property for the staff screen).
    */

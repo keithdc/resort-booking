@@ -12,6 +12,7 @@ import type {
   HouseDetail,
   HouseRequestOption,
   PaymentMethod,
+  PromotedOffer,
   Quote,
   ReservationConfirmation,
 } from '@resort-booking/shared-types';
@@ -38,6 +39,7 @@ import { useHouseAvailability } from '@/shared/hooks/use-availability';
 import { ApiRequestError } from '@/shared/services/api-client';
 import { maxNightsFor } from '@/shared/utils/disabled-dates';
 import { formatCents } from '@/shared/utils/money';
+import { nightsHint } from '@/shared/utils/offers';
 import { addDaysIsoDate, clampStayNights, todayIsoDate } from '@/shared/utils/today-iso';
 import { withDefaultStay, type StayQuery } from '@/shared/utils/stay-query';
 import { usePublishStayQuote } from '../context/stay-quote-context';
@@ -55,6 +57,10 @@ interface CheckoutFormProps {
   requestOptions: HouseRequestOption[];
   extras: ExtraService[];
   customRequestsEnabled: boolean;
+  /** Advertised offers for this stay, for the "add N nights" hint. */
+  offers?: readonly PromotedOffer[];
+  /** A code from the link, put in the promo field but not applied until the guest presses Apply. */
+  initialPromoCode?: string;
 }
 
 interface CheckoutFields {
@@ -77,6 +83,8 @@ export function CheckoutForm({
   requestOptions,
   extras,
   customRequestsEnabled,
+  offers = [],
+  initialPromoCode = '',
 }: CheckoutFormProps): React.JSX.Element {
   const todayIso = todayIsoDate();
   const defaults = withDefaultStay(initialStay);
@@ -94,7 +102,7 @@ export function CheckoutForm({
   const [quote, setQuote] = useState<Quote | null>(null);
   const [quoteError, setQuoteError] = useState<string | null>(null);
   // What the guest typed vs the code the quote was priced with (applied only on request).
-  const [promoInput, setPromoInput] = useState('');
+  const [promoInput, setPromoInput] = useState(initialPromoCode);
   const [appliedPromo, setAppliedPromo] = useState('');
   // Must be ticked before the dates can be held; the API refuses a hold without it.
   const [termsAccepted, setTermsAccepted] = useState(false);
@@ -108,6 +116,7 @@ export function CheckoutForm({
 
   const guestCount = Number.parseInt(fields.guestCount, 10);
   const nights = clampStayNights(Number.parseInt(fields.nights, 10));
+  const nightsOfferHint = nightsHint(offers, nights);
   const checkOut = addDaysIsoDate(fields.checkIn, nights);
   const availability = useHouseAvailability(house.propertySlug, house.slug, fields.checkIn);
   const maxNights = maxNightsFor(fields.checkIn, availability.maxCheckOutDate);
@@ -322,6 +331,11 @@ export function CheckoutForm({
         />
         </Stack>
         </Stack>
+        {nightsOfferHint === null ? null : (
+          <Typography variant="body2" role="status" aria-live="polite" sx={{ color: 'secondary.main', fontWeight: 600 }}>
+            {nightsOfferHint}
+          </Typography>
+        )}
         <Typography variant="caption" color="text.secondary">
           Leave on {checkOut} · Sleeps {house.capacity}
         </Typography>

@@ -6,7 +6,7 @@
 
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
-import { makeHouse, makeQuote } from '@/features/property/test-fixtures';
+import { makeHouse, makeOffer, makeQuote } from '@/features/property/test-fixtures';
 import { HouseListingCard } from './house-listing-card';
 
 const HOUSE = makeHouse('lake', 'Lake Chalet');
@@ -53,5 +53,26 @@ describe('HouseListingCard availability', () => {
     render(<HouseListingCard house={HOUSE} quote={makeQuote('lake', 64000)} stay={STAY} availability="unavailable" />);
 
     expect(screen.queryByText(/for 2 nights/)).toBeNull();
+  });
+});
+
+describe('HouseListingCard offers', () => {
+  afterEach(cleanup);
+
+  it('shows the headline of each offer as text, with no button inside the link', () => {
+    const code = makeOffer({ id: 'c', promoCode: 'WELCOME10', headline: 'Use code WELCOME10 for 10% off' });
+    render(<HouseListingCard house={HOUSE} quote={null} stay={null} offers={[makeOffer(), code]} />);
+
+    expect(screen.getByText('Save 10% when you stay 7 or more nights')).toBeTruthy();
+    expect(screen.getByText('Use code WELCOME10 for 10% off')).toBeTruthy();
+    expect(screen.queryByRole('button')).toBeNull();
+  });
+
+  it('shows no offers by default, and none on a muted unavailable stay', () => {
+    const { rerender } = render(<HouseListingCard house={HOUSE} quote={null} stay={null} />);
+    expect(screen.queryByRole('list', { name: 'Current offers' })).toBeNull();
+
+    rerender(<HouseListingCard house={HOUSE} quote={null} stay={STAY} availability="unavailable" offers={[makeOffer()]} />);
+    expect(screen.queryByText('Save 10% when you stay 7 or more nights')).toBeNull();
   });
 });

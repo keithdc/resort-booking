@@ -8,24 +8,32 @@ import type { Discount, DiscountWrite } from '@resort-booking/shared-types';
 import { getStaffApiOk, mutateStaffApiOk } from '@/shared/services/api-client';
 
 /**
+ * A server that has not been restarted since "show on the website" was added sends no `promoted`: read it as off.
+ */
+function withDiscountDefaults(discount: Discount): Discount {
+  return { ...discount, promoted: discount.promoted === true };
+}
+
+/**
  * Every discount at a property, switched-off ones included.
  */
-export function fetchDiscounts(propertyId: string): Promise<Discount[]> {
-  return getStaffApiOk<Discount[]>(`/staff/properties/${propertyId}/discounts`);
+export async function fetchDiscounts(propertyId: string): Promise<Discount[]> {
+  const discounts = await getStaffApiOk<Discount[]>(`/staff/properties/${propertyId}/discounts`);
+  return discounts.map(withDiscountDefaults);
 }
 
 /**
  * Adds a discount. The API checks the rules and answers with a readable message.
  */
-export function createDiscount(propertyId: string, body: DiscountWrite): Promise<Discount> {
-  return mutateStaffApiOk<Discount>(`/staff/properties/${propertyId}/discounts`, 'POST', body);
+export async function createDiscount(propertyId: string, body: DiscountWrite): Promise<Discount> {
+  return withDiscountDefaults(await mutateStaffApiOk<Discount>(`/staff/properties/${propertyId}/discounts`, 'POST', body));
 }
 
 /**
  * Edits a discount. Stays already booked keep the price they were quoted.
  */
-export function updateDiscount(discountId: string, body: DiscountWrite): Promise<Discount> {
-  return mutateStaffApiOk<Discount>(`/staff/discounts/${discountId}`, 'PATCH', body);
+export async function updateDiscount(discountId: string, body: DiscountWrite): Promise<Discount> {
+  return withDiscountDefaults(await mutateStaffApiOk<Discount>(`/staff/discounts/${discountId}`, 'PATCH', body));
 }
 
 /**

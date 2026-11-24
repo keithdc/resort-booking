@@ -6,13 +6,26 @@
 
 import { NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import type { PropertyBookingConfig, PropertyDetail, StaffReservation } from '@resort-booking/shared-types';
+import type {
+  CancellationReasonRow,
+  DiscountUsageRow,
+  PropertyBookingConfig,
+  PropertyDetail,
+  ReportAttention,
+  StaffRefund,
+  StaffReservation,
+} from '@resort-booking/shared-types';
+import type { HouseCatalogRow } from './report-summary.repository';
 import type { PolicySnapshot } from './reservations.rules';
 import { PropertyService } from '../property/property.service';
+import { ReportSummaryRepository } from './report-summary.repository';
 import { ReservationsRepository } from './reservations.repository';
 import { ReservationsService } from './reservations.service';
 
 const PROPERTY = 'property-1';
+const CATALOG_LAKE: HouseCatalogRow = { houseId: 'house', houseName: 'Lake Chalet', propertyId: PROPERTY, propertyName: 'Alpine Lake', currencyCode: 'EUR' };
+const CATALOG_BARN: HouseCatalogRow = { houseId: 'barn', houseName: 'Old Barn', propertyId: PROPERTY, propertyName: 'Alpine Lake', currencyCode: 'EUR' };
+const NO_ATTENTION: ReportAttention = { unpaidHoldCount: 0, refundsToPayCount: 0, refundsToPayCents: 0, arrivalsTodayCount: 0, arrivalsNext7DaysCount: 0 };
 
 function property(): PropertyDetail {
   return {
@@ -67,6 +80,7 @@ describe('ReservationsService.getPublicPolicy', () => {
       providers: [
         ReservationsService,
         { provide: ReservationsRepository, useValue: { getBookingConfig, getPolicySnapshot } },
+        { provide: ReportSummaryRepository, useValue: {} },
         { provide: PropertyService, useValue: { getPublishedProperty } },
       ],
     }).compile();
@@ -137,6 +151,7 @@ describe('ReservationsService.getPolicySnapshot', () => {
       providers: [
         ReservationsService,
         { provide: ReservationsRepository, useValue: { getBookingConfig, getPolicySnapshot } },
+        { provide: ReportSummaryRepository, useValue: {} },
         { provide: PropertyService, useValue: { getPublishedProperty: jest.fn() } },
       ],
     }).compile();
@@ -164,7 +179,11 @@ describe('ReservationsService.getPolicySnapshot', () => {
 describe('ReservationsService.getReport after a guest changed the dates of a booking', () => {
   const listConfirmedOverlapping = jest.fn<Promise<StaffReservation[]>, [string, string, string | null]>();
   const listPipelineOverlapping = jest.fn<Promise<StaffReservation[]>, [string, string, string | null]>();
-  const countHouses = jest.fn<Promise<number>, [string | null]>();
+  const houseCatalog = jest.fn<Promise<HouseCatalogRow[]>, [string | null]>();
+  const cancellationsByReason = jest.fn<Promise<CancellationReasonRow[]>, [string, string, string | null]>();
+  const cancellationRefunds = jest.fn<Promise<StaffRefund[]>, [string, string, string | null]>();
+  const discountUsage = jest.fn<Promise<DiscountUsageRow[]>, [string, string, string | null]>();
+  const attention = jest.fn<Promise<ReportAttention>, [string, string | null]>();
   let service: ReservationsService;
 
   function stay(overrides: Partial<StaffReservation>): StaffReservation {
@@ -210,11 +229,19 @@ describe('ReservationsService.getReport after a guest changed the dates of a boo
     jest.resetAllMocks();
     listConfirmedOverlapping.mockResolvedValue([NEW]);
     listPipelineOverlapping.mockResolvedValue([OLD, NEW]);
-    countHouses.mockResolvedValue(1);
+    houseCatalog.mockResolvedValue([CATALOG_LAKE]);
+    cancellationsByReason.mockResolvedValue([]);
+    cancellationRefunds.mockResolvedValue([]);
+    discountUsage.mockResolvedValue([]);
+    attention.mockResolvedValue(NO_ATTENTION);
     const moduleRef = await Test.createTestingModule({
       providers: [
         ReservationsService,
-        { provide: ReservationsRepository, useValue: { listConfirmedOverlapping, listPipelineOverlapping, countHouses } },
+        { provide: ReservationsRepository, useValue: { listConfirmedOverlapping, listPipelineOverlapping } },
+        {
+          provide: ReportSummaryRepository,
+          useValue: { houseCatalog, cancellationsByReason, cancellationRefunds, discountUsage, attention },
+        },
         { provide: PropertyService, useValue: { getPublishedProperty: jest.fn() } },
       ],
     }).compile();
@@ -255,5 +282,124 @@ describe('ReservationsService.getReport after a guest changed the dates of a boo
     const newDay = calendar.days.find((day) => day.date === '2027-07-20');
     expect(oldDay).toMatchObject({ cancelledCount: 1, rebookCount: 0, bookingCount: 0 });
     expect(newDay).toMatchObject({ rebookCount: 1, cancelledCount: 0 });
+  });
+});
+
+describe('ReservationsService.getReport owner numbers', () => {
+  const listConfirmedOverlapping = jest.fn<Promise<StaffReservation[]>, [string, string, string | null]>();
+  const listPipelineOverlapping = jest.fn<Promise<StaffReservation[]>, [string, string, string | null]>();
+  const houseCatalog = jest.fn<Promise<HouseCatalogRow[]>, [string | null]>();
+  const cancellationsByReason = jest.fn<Promise<CancellationReasonRow[]>, [string, string, string | null]>();
+  const cancellationRefunds = jest.fn<Promise<StaffRefund[]>, [string, string, string | null]>();
+  const discountUsage = jest.fn<Promise<DiscountUsageRow[]>, [string, string, string | null]>();
+  const attention = jest.fn<Promise<ReportAttention>, [string, string | null]>();
+  let service: ReservationsService;
+
+  function booking(overrides: Partial<StaffReservation>): StaffReservation {
+    return {
+      id: 'b', organizationId: 'org', propertyId: PROPERTY, propertyName: 'Alpine Lake', houseId: 'house',
+      houseName: 'Lake Chalet', checkIn: '2027-07-10', checkOut: '2027-07-12', guestCount: 2, bookerName: 'Ada',
+      bookerEmail: 'ada@example.com', bookerPhone: '+33612345678', guestNote: '', paymentMethod: 'card',
+      status: 'confirmed', kind: 'reservation', arrivalStatus: 'expected', rebookOfId: null, totalCents: 20000,
+      currencyCode: 'EUR', requestNames: [], reference: 'BK-0000000000', paidCents: 20000, termsAcceptedAt: null,
+      cancellation: null, replacedByReference: null, rebookOfReference: null, refunds: [], changes: [],
+      ...overrides,
+    };
+  }
+
+  beforeEach(async () => {
+    jest.resetAllMocks();
+    listConfirmedOverlapping.mockResolvedValue([]);
+    listPipelineOverlapping.mockResolvedValue([]);
+    houseCatalog.mockResolvedValue([CATALOG_BARN, CATALOG_LAKE]);
+    cancellationsByReason.mockResolvedValue([]);
+    cancellationRefunds.mockResolvedValue([]);
+    discountUsage.mockResolvedValue([]);
+    attention.mockResolvedValue(NO_ATTENTION);
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        ReservationsService,
+        { provide: ReservationsRepository, useValue: { listConfirmedOverlapping, listPipelineOverlapping } },
+        { provide: ReportSummaryRepository, useValue: { houseCatalog, cancellationsByReason, cancellationRefunds, discountUsage, attention } },
+        { provide: PropertyService, useValue: { getPublishedProperty: jest.fn() } },
+      ],
+    }).compile();
+    service = moduleRef.get(ReservationsService);
+  });
+
+  const RANGE = { from: '2027-07-01', to: '2027-07-11', propertyId: PROPERTY };
+
+  it('asks for the equal-length period before and reports its headline numbers', async () => {
+    listConfirmedOverlapping.mockImplementation(async (from: string): Promise<StaffReservation[]> =>
+      from === '2027-07-01' ? [booking({ totalCents: 40000, checkIn: '2027-07-02', checkOut: '2027-07-04' })] : [booking({ id: 'old', totalCents: 10000, checkIn: '2027-06-21', checkOut: '2027-06-23' })],
+    );
+
+    const report = await service.getReport(RANGE);
+
+    expect(listConfirmedOverlapping).toHaveBeenCalledWith('2027-06-21', '2027-07-01', PROPERTY);
+    expect(report.previous).toMatchObject({ from: '2027-06-21', to: '2027-07-01', reservationCount: 1, grossRevenueCents: 10000, netRevenueCents: 10000 });
+    expect(report.revenueCents).toBe(40000);
+    expect(report.netRevenueCents).toBe(40000);
+  });
+
+  it('adds money kept from cancellations to gross and takes refunds off for net', async () => {
+    listConfirmedOverlapping.mockImplementation(async (from: string): Promise<StaffReservation[]> =>
+      from === '2027-07-01' ? [booking({ totalCents: 40000, checkIn: '2027-07-02', checkOut: '2027-07-04' })] : [],
+    );
+    cancellationsByReason.mockImplementation(async (from: string): Promise<CancellationReasonRow[]> =>
+      from === '2027-07-01'
+        ? [
+            { reason: 'guest_request', cancelledCount: 1, paidCents: 32000, refundedCents: 8000 },
+            { reason: 'property_cancelled', cancelledCount: 1, paidCents: 10000, refundedCents: 10000 },
+          ]
+        : [],
+    );
+
+    const report = await service.getReport(RANGE);
+
+    expect(report.grossRevenueCents).toBe(40000 + 42000);
+    expect(report.refundedCents).toBe(18000);
+    expect(report.netRevenueCents).toBe(64000);
+    expect(report.cancellationReasons).toHaveLength(2);
+    expect(report.cancellationRatePercent).toBe(66.7); // 2 cancelled of 1 confirmed + 2
+  });
+
+  it('lists every stay of the property, booked or not, with the stay count per property', async () => {
+    listConfirmedOverlapping.mockImplementation(async (from: string): Promise<StaffReservation[]> =>
+      from === '2027-07-01' ? [booking({})] : [],
+    );
+
+    const report = await service.getReport(RANGE);
+
+    expect(report.houseCount).toBe(2);
+    expect(report.availableNights).toBe(20);
+    expect(report.properties).toHaveLength(1);
+    expect(report.properties[0]?.houseCount).toBe(2);
+    expect(report.properties[0]?.houses.map((house) => [house.houseName, house.reservationCount])).toEqual([
+      ['Old Barn', 0],
+      ['Lake Chalet', 1],
+    ]);
+  });
+
+  it('passes discount usage, refunds and attention through, as of the report date', async () => {
+    discountUsage.mockResolvedValue([{ discountId: 'd', label: 'Long stay', redemptionCount: 2, discountCents: 5000 }]);
+    attention.mockResolvedValue({ ...NO_ATTENTION, refundsToPayCount: 2, refundsToPayCents: 9000 });
+
+    const report = await service.getReport(RANGE);
+
+    expect(report.discountUsage).toEqual([{ discountId: 'd', label: 'Long stay', redemptionCount: 2, discountCents: 5000 }]);
+    expect(report.attention.refundsToPayCount).toBe(2);
+    expect(attention).toHaveBeenCalledWith(report.asOfDate, PROPERTY);
+  });
+
+  it('is all zero for a period without anything', async () => {
+    const report = await service.getReport(RANGE);
+
+    expect(report).toMatchObject({ reservationCount: 0, netRevenueCents: 0, cancellationRatePercent: 0, occupancyPercent: 0 });
+    expect(report.previous.netRevenueCents).toBe(0);
+  });
+
+  it('rejects a range that ends before it starts', async () => {
+    await expect(service.getReport({ from: '2027-07-11', to: '2027-07-01' })).rejects.toMatchObject({ response: { code: 'INVALID_DATES' } });
   });
 });

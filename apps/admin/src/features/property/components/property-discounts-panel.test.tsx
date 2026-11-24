@@ -60,12 +60,13 @@ function discount(id: string, overrides: Partial<Discount> = {}): Discount {
     priority: 100,
     active: true,
     maxRedemptions: null,
+    promoted: false,
     redemptions: 0,
     ...overrides,
   };
 }
 
-const LONG_STAY = discount('long', { label: 'Long stay', redemptions: 3, maxRedemptions: 10 });
+const LONG_STAY = discount('long', { label: 'Long stay', redemptions: 3, maxRedemptions: 10, promoted: true });
 const WELCOME = discount('welcome', {
   label: 'Welcome code',
   effect: { kind: 'fixed', amountCents: 2000 },
@@ -116,6 +117,14 @@ describe('PropertyDiscountsPanel', () => {
     expect(welcome).toContain('Can combine · priority 5');
     expect(welcome).toContain('Unlimited');
     expect(welcome).toContain('Off');
+  });
+
+  it('marks only the advertised discounts as Promoted', async () => {
+    renderPanel();
+    await screen.findByRole('table', { name: 'Discounts' });
+
+    expect(plain(row('Long stay').textContent)).toContain('Promoted');
+    expect(plain(row('Welcome code').textContent)).not.toContain('Promoted');
   });
 
   it('shows a helpful empty state', async () => {

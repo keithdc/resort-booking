@@ -84,6 +84,12 @@ export function PropertyDiscountsPanel({ propertyId, houses }: PropertyDiscounts
                 <TableCell>
                   {discount.label}{' '}
                   <Chip size="small" color={discount.active ? 'success' : 'default'} label={discount.active ? 'On' : 'Off'} />
+                  {discount.promoted ? (
+                    <>
+                      {' '}
+                      <Chip size="small" variant="outlined" color="primary" label="Promoted" />
+                    </>
+                  ) : null}
                 </TableCell>
                 <TableCell>{summarizeEffect(discount.effect, currencyCode)}</TableCell>
                 <TableCell>{summarizeConditions(discount)}</TableCell>

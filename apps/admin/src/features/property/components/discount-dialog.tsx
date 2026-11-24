@@ -90,6 +90,7 @@ export function DiscountDialog({
   const problems: DraftProblems = validateDraft(draft);
   const valid = Object.keys(problems).length === 0;
   const conditionsOff = draft.alwaysOn;
+  const codeIsPublic = draft.promoOn && !draft.alwaysOn;
   const currencyLabel = currencyCode === 'EUR' ? '€' : currencyCode;
 
   const toggleHouse = (houseId: string, checked: boolean): void => {
@@ -348,6 +349,21 @@ export function DiscountDialog({
               control={<Switch checked={draft.active} onChange={(event): void => onChange({ active: event.target.checked })} />}
               label="Switched on"
             />
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={draft.promoted}
+                  onChange={(event): void => onChange({ promoted: event.target.checked })}
+                  slotProps={{ input: { 'aria-describedby': 'discount-promoted-help' } }}
+                />
+              }
+              label="Show on the website"
+            />
+            <FormHelperText id="discount-promoted-help">
+              {codeIsPublic
+                ? 'Guests will SEE this code on the website. Leave off to keep the code private.'
+                : 'Guests see this offer on stay pages before they pick dates.'}
+            </FormHelperText>
             <FormControlLabel
               control={<Checkbox checked={draft.limitOn} onChange={(event): void => onChange({ limitOn: event.target.checked })} />}
               label="Limit number of uses"

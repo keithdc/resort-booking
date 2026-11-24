@@ -1,0 +1,165 @@
+/**
+ * @file apps/api/src/modules/reservations/report-summary.repository.spec.ts
+ * @feature reservations
+ * @dependencies ReportSummaryRepository
+ *
+ * Each report number is ONE aggregate statement, however many bookings exist (no N+1), and the
+ * statements keep the rules the owner relies on: cancelled bookings only, date changes excluded.
+ */
+
+import { Test } from '@nestjs/testing';
+import type { QueryResult, QueryResultRow } from 'pg';
+import { DatabaseService } from '../../shared/database/database.service';
+import { ReportSummaryRepository } from './report-summary.repository';
+
+type QueryFn = (text: string, params?: readonly unknown[]) => Promise<QueryResult<QueryResultRow>>;
+
+function result(rows: QueryResultRow[]): QueryResult<QueryResultRow> {
+  return { rows, rowCount: rows.length, command: 'SELECT', oid: 0, fields: [] };
+}
+
+async function build(rowsPerCall: QueryResultRow[][]): Promise<{ repository: ReportSummaryRepository; query: jest.Mock<ReturnType<QueryFn>, Parameters<QueryFn>> }> {
+  const query = jest.fn<ReturnType<QueryFn>, Parameters<QueryFn>>();
+  rowsPerCall.forEach((rows: QueryResultRow[]): void => {
+    query.mockResolvedValueOnce(result(rows));
+  });
+  const moduleRef = await Test.createTestingModule({
+    providers: [ReportSummaryRepository, { provide: DatabaseService, useValue: { query } }],
+  }).compile();
+  return { repository: moduleRef.get(ReportSummaryRepository), query };
+}
+
+describe('ReportSummaryRepository.cancellationsByReason', () => {
+  it('maps the rows and asks once, with the range and property', async () => {
+    const { repository, query } = await build([
+      [
+        { reason: 'guest_request', cancelled_count: 2, paid_cents: 20000, refunded_cents: 5000 },
+        { reason: 'property_cancelled', cancelled_count: 1, paid_cents: 9000, refunded_cents: 9000 },
+      ],
+    ]);
+
+    const rows = await repository.cancellationsByReason('2027-07-01', '2027-08-01', 'prop');
+
+    expect(rows).toEqual([
+      { reason: 'guest_request', cancelledCount: 2, paidCents: 20000, refundedCents: 5000 },
+      { reason: 'property_cancelled', cancelledCount: 1, paidCents: 9000, refundedCents: 9000 },
+    ]);
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(query.mock.calls[0]?.[1]).toEqual(['2027-07-01', '2027-08-01', 'prop']);
+  });
+
+  it('counts only cancelled bookings and leaves out date changes', async () => {
+    const { repository, query } = await build([[]]);
+
+    await repository.cancellationsByReason('2027-07-01', '2027-08-01', null);
+
+    const sql = query.mock.calls[0]?.[0] ?? '';
+    expect(sql).toContain("ib.status = 'cancelled'");
+    expect(sql).toContain("<> 'dates_changed'");
+    expect(sql).toContain('rebook_of_id = ib.id');
+    expect(query.mock.calls[0]?.[1]).toEqual(['2027-07-01', '2027-08-01', null]);
+  });
+
+  it('is empty when nothing was cancelled', async () => {
+    const { repository } = await build([[]]);
+    await expect(repository.cancellationsByReason('2027-07-01', '2027-08-01', null)).resolves.toEqual([]);
+  });
+});
+
+describe('ReportSummaryRepository.discountUsage', () => {
+  it('maps per-discount rows and counts only confirmed bookings', async () => {
+    const { repository, query } = await build([
+      [{ discount_id: 'd1', label: 'Long stay', redemption_count: 3, discount_cents: 12000 }],
+    ]);
+
+    const rows = await repository.discountUsage('2027-07-01', '2027-08-01', null);
+
+    expect(rows).toEqual([{ discountId: 'd1', label: 'Long stay', redemptionCount: 3, discountCents: 12000 }]);
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(query.mock.calls[0]?.[0]).toContain("ib.status = 'confirmed'");
+  });
+});
+
+describe('ReportSummaryRepository.attention', () => {
+  it('uses two statements and maps both', async () => {
+    const { repository, query } = await build([
+      [{ unpaid_hold_count: 2, arrivals_today_count: 1, arrivals_next_7_days_count: 4 }],
+      [{ refund_count: 3, refund_cents: 15000 }],
+    ]);
+
+    const attention = await repository.attention('2027-07-01', 'prop');
+
+    expect(attention).toEqual({
+      unpaidHoldCount: 2,
+      refundsToPayCount: 3,
+      refundsToPayCents: 15000,
+      arrivalsTodayCount: 1,
+      arrivalsNext7DaysCount: 4,
+    });
+    expect(query).toHaveBeenCalledTimes(2);
+    expect(query.mock.calls[0]?.[1]).toEqual(['2027-07-01', 'prop']);
+    expect(query.mock.calls[1]?.[0]).toContain("status IN ('pending', 'failed')");
+  });
+
+  it('falls back to zeros when a statement returns no row', async () => {
+    const { repository } = await build([[], []]);
+    await expect(repository.attention('2027-07-01', null)).resolves.toEqual({
+      unpaidHoldCount: 0,
+      refundsToPayCount: 0,
+      refundsToPayCents: 0,
+      arrivalsTodayCount: 0,
+      arrivalsNext7DaysCount: 0,
+    });
+  });
+});
+
+describe('ReportSummaryRepository.cancellationRefunds', () => {
+  it('maps refunds from one capped statement', async () => {
+    const { repository, query } = await build([
+      [
+        {
+          id: 'f1',
+          organization_id: 'org',
+          inventory_block_id: '00000001-0000-4000-8000-000000000000',
+          property_name: 'Alpine Lake',
+          stay_name: 'Lake Chalet',
+          booker_name: 'Ada',
+          booker_email: 'ada@example.com',
+          kind: 'cancellation',
+          amount_cents: 8000,
+          percent: 25,
+          currency_code: 'EUR',
+          status: 'succeeded',
+          provider: 'mock',
+          failure_reason: null,
+          reason: 'guest_request',
+          initiated_by: 'guest',
+          resolution_note: null,
+          resolved_by_name: null,
+          created_at: new Date('2027-06-01T10:00:00Z'),
+        },
+      ],
+    ]);
+
+    const refunds = await repository.cancellationRefunds('2027-07-01', '2027-08-01', null);
+
+    expect(refunds).toHaveLength(1);
+    expect(refunds[0]).toMatchObject({ id: 'f1', amountCents: 8000, percent: 25, status: 'succeeded', stayName: 'Lake Chalet' });
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(query.mock.calls[0]?.[0]).toContain('LIMIT 200');
+  });
+});
+
+describe('ReportSummaryRepository.houseCatalog', () => {
+  it('maps every stay with its property', async () => {
+    const { repository, query } = await build([
+      [{ house_id: 'h1', house_name: 'Lake Chalet', property_id: 'p1', property_name: 'Alpine Lake', currency_code: 'EUR' }],
+    ]);
+
+    await expect(repository.houseCatalog('p1')).resolves.toEqual([
+      { houseId: 'h1', houseName: 'Lake Chalet', propertyId: 'p1', propertyName: 'Alpine Lake', currencyCode: 'EUR' },
+    ]);
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(query.mock.calls[0]?.[1]).toEqual(['p1']);
+  });
+});

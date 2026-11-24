@@ -4,7 +4,7 @@
  * @dependencies shared-types — builders for tests only
  */
 
-import type { HouseSearchResult, HouseSummary, PropertyDetail, Quote } from '@resort-booking/shared-types';
+import type { HouseSearchResult, HouseSummary, PromotedOffer, PropertyDetail, Quote } from '@resort-booking/shared-types';
 
 export function makeHouse(id: string, name: string): HouseSummary {
   return {
@@ -74,5 +74,23 @@ export function makeProperty(): PropertyDetail {
     addressLine: '8 Route du Lac',
     postalCode: '74000',
     photos: [],
+  };
+}
+
+export function makeOffer(overrides: Partial<PromotedOffer> = {}): PromotedOffer {
+  return {
+    id: 'o1',
+    name: 'Long stay',
+    kind: 'percent',
+    value: 10,
+    currencyCode: null,
+    minNights: 7,
+    nightsOnly: true,
+    promoCode: null,
+    houseIds: null,
+    validFrom: null,
+    validTo: null,
+    headline: 'Save 10% when you stay 7 or more nights',
+    ...overrides,
   };
 }
