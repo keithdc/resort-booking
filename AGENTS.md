@@ -27,6 +27,10 @@ You are working on a **direct-booking** monorepo (Airbnb replacement), not a CRM
 - Property listings: photos, OSM map + directions, phone (`tel:`) and email. No in-app chat.
 - Booking UX: name/email/phone + guest count + pay. No ID storage. 5 min freeze warning; expired hold keeps the form. Optional review after the stay. Arrival: staff verify headcount. Guest calendars disable past days; **admin calendars do not**.
 - **No business logic in React.** Holds, availability, refunds, payments: NestJS only.
+- **All code has tests.** Every new or changed function, service, repository method, controller route, hook, and component ships with test cases in the same change: the happy path, edge cases, error paths, and the bugs you can foresee (date boundaries, overlaps, empty input, unauthorized access). Pure rules go in `*.rules.ts` with a `*.spec.ts` beside them. No feature is done until its tests pass and `lint` and `test` are green. A bug fix starts with a failing test that reproduces it. Tests are the record of how the system is meant to behave (`docs/02-coding-standards.md`, Testing).
+- **Booked dates come from the API.** Availability endpoints return unavailable date ranges (dates only, no guest data) and guest pickers disable them. The API still rejects overlaps with `DATES_UNAVAILABLE`. Admin pickers do not disable booked or past days.
+- **Pricing is by date range, not flat.** Each house has a base nightly rate plus rate periods (peak season, etc.). A stay is priced per night and summed in NestJS, then snapshotted on the reservation. Periods on one house must never overlap (DB constraint + `RATE_PERIOD_OVERLAP`). "Apply to all houses" needs a preview and a warning dialog. Discounts are admin-configured (effect + conditions) and calculated in the API. No flat `nights × rate` and no price math in React (`docs/04-product-domain.md`).
+- **No N+1 queries in the API.** Never query inside a loop; batch by id arrays, joins, or `GROUP BY` in the repository (`docs/02-coding-standards.md`).
 
 ## Stack
 

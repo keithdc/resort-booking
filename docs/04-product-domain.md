@@ -19,6 +19,7 @@ Organization (the client / operator)
   └── Property (resort or accommodation site)     ← 2 at launch, N later
         ├── ExtraService (catalog: breakfast, transfer, …)
         └── House (one bookable listing)          ← many per property
+              ├── Standard rate + RatePeriod[] (peak season, holidays, …)
               └── Calendar / rates / photos / amenities
                     └── Reservation (guest stay)
                           └── ReservationExtra (instant paid, or on-request pending)
@@ -29,6 +30,8 @@ Organization (the client / operator)
 | Organization | The owner account. Staff belong here. All properties hang off this. |
 | Property | One site (resort / accommodation). Name, slug, address, lat/lng, phone, email, photo gallery, public content. |
 | House | One bookable unit with its **own** availability calendar (Airbnb listing equivalent). Usually entire-house, not a shared hotel room type. |
+| RatePeriod | A date range with its own nightly rate on one house (e.g. peak season). Nights outside any period use the house standard rate. See **Pricing by date range**. |
+| Discount | Admin-configured effect (percent or fixed) plus conditions (long stay, early bird, promo code, …). See **Discounts**. |
 | Guest | Person booking on `apps/web`. |
 | Staff | People in `apps/admin` who manage properties, houses, extras, calendars, and reservations. |
 | ExtraService | Admin-defined add-on for a property (breakfast, airport transfer, late checkout). `instant` (priced, paid at checkout) or `on_request` (staff approve later). |
@@ -40,9 +43,9 @@ Every durable row that is property-scoped stores `organization_id` and `property
 
 - Browse **all published properties**, or land on one property by URL (`/properties/[slug]`).
 - Property page: **photo gallery**, short description, **map + address**, **phone** (`tel:`) and email, list of houses.
-- Inside a property, list **houses** with photos, capacity, amenities, and price for selected dates.
+- Inside a property, list **houses** with photos, capacity, amenities, and price for selected dates (the **stay total**, which can differ by season; "from €X / night" only when no dates are picked).
 - House page: gallery, amenities, map (same pin as the property unless the house has its own coordinates), contact, book CTA.
-- Search: check-in, check-out, guest count — across one property or all properties. **Past days are disabled** on guest calendars.
+- Search: check-in, check-out, guest count — across one property or all properties. **Past days and already-booked dates are disabled** on guest calendars (booked dates come from the availability API, see **Availability: booked dates in the API response**).
 - House page is the SEO/ads landing URL (`/properties/[slug]/houses/[slug]`).
 - Book: **short checkout** — booker name, email, phone, **number of guests**, pay. No ID, no guest name list.
 - Instant extras: optional checkboxes on the same page — not required to finish.
@@ -54,10 +57,166 @@ Unpublished properties and houses must not appear on the guest site.
 
 - Organization home: list of properties, **Add property**.
 - Property context switcher (required once there are 2+ resorts).
+- Per house: **standard rate** and **rate periods** (date range + nightly rate, no overlaps), editable without a deploy. "Apply to all houses" shows a warning first.
+- Per property: **discounts** (long stay, early bird, promo code, …) with conditions and stacking rules.
 - Per property: houses, calendars (**past dates stay enabled** — staff are not blocked), extras, cancellation/rebook config, reservations, **check-in (verify guest count)**, reviews (publish/hide), photos, map, phone, email.
 - Bank transfer queue: verify receipt / mark paid / reject. Do not treat this as guest-approval of the stay.
 - On-request extras: approve or decline (with an optional note). If approved and priced, charge via Stripe or a follow-up bank transfer — do not reopen the house hold.
 - Adding a house never requires a deploy or a code change.
+
+## Availability: booked dates in the API response
+
+Guests must **see which dates are taken before they pick**, not discover it after a failed search. The API returns the unavailable dates and the guest date pickers **disable** them. Booking rules still live in NestJS; the UI only disables what the API says is taken.
+
+**Endpoints (guest, public, published listings only):**
+
+- `GET /properties/:slug/houses/:houseSlug/availability?from=YYYY-MM-DD&to=YYYY-MM-DD` returns the unavailable dates for one house over a bounded window (default: today through 12 months, max 24 months).
+- `GET /properties/:slug/availability?from&to` returns the dates when **no house** at the property is free (`fullyBookedNights`), so a property-level picker only disables days that truly cannot be booked. A day is **not** disabled while any house is still free.
+- Optional `checkIn=YYYY-MM-DD` (house endpoint only): once the guest picks a check-in, the response also includes `maxCheckOutDate`, the latest valid check-out (the day the next booking starts, or the window end `to` when nothing follows). The UI disables later days on the check-out picker. The UI never works this out itself. A check-in that is in the past or outside the window returns `400 INVALID_DATES`; one that falls on an occupied night returns `409 CHECK_IN_UNAVAILABLE`.
+- Other errors: `404 HOUSE_NOT_FOUND` / `PROPERTY_NOT_FOUND` (also for unpublished listings), `400 INVALID_DATES` (malformed or inverted), `400 WINDOW_TOO_LARGE` (over 24 months). A `from` in the past is raised to today.
+
+**What counts as unavailable (computed in the API):**
+
+- Confirmed reservations, including `pending_payment` bank transfers.
+- **Active holds** (card 15 minutes, bank 48 hours). They free up again if the hold expires, so the UI refetches when the picker opens and after any `DATES_UNAVAILABLE` error. A hold past `expires_at` is excluded by clock even if its row has not been marked `expired` yet; the GET never writes.
+- Staff blocks (`inventory_blocks`).
+- Hotel-style edges: a check-out day is **free as a check-in** for the next guest. Only occupied **nights** disable a day as a check-in.
+
+**Response shape (interface in `packages/shared-types`):**
+
+```ts
+interface DateRange {
+  startDate: string;   // first occupied night, YYYY-MM-DD
+  endDate: string;     // check-out day (exclusive), same [start, end) rule as reservations
+}
+
+interface HouseAvailability {
+  houseId: string;
+  from: string;
+  to: string;
+  unavailable: DateRange[];       // merged, sorted, non-overlapping
+  maxCheckOutDate: string | null; // null unless checkIn was sent
+}
+
+interface PropertyAvailability {
+  propertyId: string;
+  from: string;
+  to: string;
+  fullyBookedNights: DateRange[]; // nights when every published house is taken
+}
+```
+
+**Privacy:** guests get **dates only**. Never a guest name, reservation id, hold id, or the reason (booked vs held vs blocked). Staff see details through the staff calendar, not this endpoint.
+
+**Rules:**
+
+1. **The picker is UX, the API is the rule.** Disabled dates are a convenience. `GET quotes` and `POST holds` still validate overlap and return `DATES_UNAVAILABLE` if two guests race for the same dates. See `docs/01-architecture.md`.
+2. **Past days** stay disabled on guest calendars too (property timezone). **Admin calendars do not disable booked or past days:** staff keep full rights, and the admin calendar shows the stays with their details.
+3. **PostgreSQL is the source.** The response is built from PostgreSQL on every request today. A short Redis cache per house is allowed later, invalidated on hold, confirm, cancel, expire, and block. Never build the list from Redis alone.
+4. **No N+1.** The property-level response and search load occupied nights for all houses in one query and merge ranges in memory.
+5. **Bounded window.** `from`/`to` are required or defaulted, and a window over the maximum is rejected, so a request cannot load unbounded rows.
+6. **Merged ranges.** Back-to-back stays are returned as separate ranges only when there is a free check-in day between them; otherwise they are merged into one range so the UI stays simple.
+7. **Empty and error states.** If the request fails the picker stays usable and the API quote check is the fallback. A fully booked window shows a clear "no availability, try other dates" message, never a blank calendar.
+
+## Pricing by date range
+
+The nightly price is **not flat**. The operator has peak season, shoulder season, holidays, and so on, so the same house costs a different amount depending on which nights the guest books. This replaces the single `houses.nightly_rate_cents` quote.
+
+### Model (per house)
+
+- **Standard rate** (`standard_nightly_rate_cents`): the default nightly price for any night not covered by a rate period. Always set.
+- **Rate periods**: an **array** of date ranges, each with its own nightly rate and a label. Many per house, any kind of range (peak season, holidays, a local festival, low season).
+- Money is integer minor units plus a currency code. Never floats.
+
+```ts
+interface RatePeriod {
+  id: string;
+  houseId: string;
+  label: string;          // "Peak 2027", "Christmas"
+  startDate: string;      // inclusive night, YYYY-MM-DD
+  endDate: string;        // inclusive night, >= startDate
+  nightlyRateCents: number;
+}
+```
+
+### Rules (all enforced in NestJS, none in React)
+
+1. **Priced per night.** The nights of a stay are check-in through the night before check-out. Each night takes the rate of the period that contains it, otherwise the standard rate. The stay subtotal is the **sum of the nightly rates**.
+2. **Stays can cross seasons.** A stay that starts in standard rate and ends in peak is priced night by night, not at one rate for the whole stay.
+3. **Conflict guardrail: no overlapping periods on one house.** Enforced in two places: PostgreSQL (exclusion constraint on `house_id` + date range, so no code path can bypass it) and the service (so the error is readable). Two periods that touch on the same night conflict. Back-to-back ranges (one ends the 14th, the next starts the 15th) are fine. Gaps are fine and fall back to the standard rate.
+4. **Conflict errors are specific.** The API rejects an add or edit with `409` and `code: "RATE_PERIOD_OVERLAP"`, and the body names the conflicting period (label + dates) so staff can fix it. The admin form shows that message inline and keeps the form filled. It never saves a conflicting period and never silently shrinks or deletes another one.
+5. **Other validation:** `endDate >= startDate`, rate is a non-negative integer, label required. Admin may use past dates (staff are never blocked); editing a period changes future quotes only.
+6. **Quote shows the breakdown.** `GET quotes` returns the subtotal **and** the per-night lines (or grouped by rate), then any discount lines, then the total. The house page and checkout show "3 nights × €180 + 2 nights × €260 − 10% long stay". The UI renders what the API returns and never recomputes it.
+7. **Price is snapshotted at booking.** The reservation stores the nightly breakdown, the discount lines applied, and the total. Editing a period or discount later never changes an existing reservation. Refunds use the amount actually paid (`docs/07-cancellation-policy.md`).
+8. **Rebooking re-quotes.** A rebook prices the **new** nights with the periods and discounts in force at that time.
+9. **No N+1.** Quote and search load all periods and discounts for all candidate houses in **one** query each and price in memory (`docs/02-coding-standards.md`). Search shows the stay total per house, so this path is hot.
+10. **Property timezone** decides which calendar date a night belongs to.
+
+### Apply to all houses (warning required)
+
+A resort has many houses, so admin offers **"Apply to all houses"** (or a chosen subset) when adding a rate period, so peak season is not typed house by house. This touches many houses at once, so it is guarded:
+
+1. **Preview first.** Before saving, the API runs a dry run (`POST .../rate-periods/bulk/preview`) and returns, per house: will be added, or conflicts with period X.
+2. **Warning dialog.** Admin must confirm a dialog that states how many houses will change, names the period (label, dates, rate), and lists every house that has a conflict. The primary action is not the default focus. This is a destructive-class action under `docs/02-coding-standards.md`.
+3. **Conflicts are never overwritten silently.** For houses with a conflict, staff choose explicitly: **skip those houses** (default) or **cancel the whole operation**. Replacing an existing period is a separate, deliberate edit on that house, not a side effect of bulk apply.
+4. **All or nothing per confirmation.** The apply runs in one transaction. The result lists what was added and what was skipped. A toast summarizes it.
+5. **Existing reservations are untouched**, and the dialog says so. Only future quotes change.
+6. **Audit log.** Record who applied it, when, and to which houses.
+
+## Discounts
+
+Discounts are **admin-configured and flexible**. The client should be able to add a new kind of discount without a deploy. The API owns all calculation. React only displays the discount lines the quote returns.
+
+### Model
+
+A discount is an **effect** plus a list of **conditions**. It applies when **all** conditions match.
+
+```ts
+type DiscountEffect =
+  | { kind: "percent"; percent: number }          // 0-100 off the eligible amount
+  | { kind: "fixed"; amountCents: number };       // fixed amount off
+
+type DiscountCondition =
+  | { kind: "min_nights"; nights: number }                 // long stay
+  | { kind: "booking_lead_days"; minDays?: number; maxDays?: number } // early bird / last minute
+  | { kind: "stay_dates"; startDate: string; endDate: string }        // stay falls in a window
+  | { kind: "booking_window"; startDate: string; endDate: string }    // booked within a sale window
+  | { kind: "weekday"; days: number[] }                    // e.g. Sun-Thu only
+  | { kind: "promo_code"; code: string };                  // guest types a code
+
+interface Discount {
+  id: string;
+  propertyId: string;
+  houseIds: string[] | null;   // null = every house in the property
+  label: string;               // shown on the quote and the email
+  effect: DiscountEffect;
+  conditions: DiscountCondition[];
+  combinable: boolean;         // may stack with other combinable discounts
+  priority: number;            // lower runs first
+  active: boolean;
+  maxRedemptions: number | null;
+}
+```
+
+New condition kinds are added to the union and to the API evaluator. The admin screen is data-driven off the same union, so adding one is a code change in one place, not a new table.
+
+Typical presets staff can create from the same form: **long stay** (e.g. 7+ nights, 10%), **early bird** (booked 60+ days ahead), **last minute**, **seasonal sale** (stay dates), **promo code**, **weekday special**.
+
+### Rules (NestJS only)
+
+1. **Applies to the stay subtotal only** (the summed nightly rates). Extras are not discounted unless a later story says so.
+2. **Stacking:** by default the guest gets the **single best** matching discount. Discounts marked `combinable` may stack with each other, applied in `priority` order, each on the amount left by the previous one.
+3. **Floor:** the stay total never goes below zero, and a fixed discount never exceeds the subtotal.
+4. **Rounding:** `round(amount * percent / 100)` in integer cents, same method everywhere.
+5. **Promo codes** are validated by the API, case-insensitive, and rate-limited (no guessing codes by brute force). An invalid or expired code gives a clear message and never blocks the booking.
+6. **Visible, not hidden:** the quote, the checkout summary, and the confirmation email show each discount as its own line with its label.
+7. **Snapshot:** applied discount lines are stored on the reservation (`price_snapshot`). Later edits or deletions of a discount never change a booked stay.
+8. **Guardrails in admin:** percent 0-100 integer, fixed amount non-negative, at least one condition unless explicitly marked "always on", date windows with `end >= start`, and a warning when a `combinable` stack could exceed a configurable maximum total discount percent (org setting, not hardcoded).
+9. **Scope:** property-wide by default, or limited to chosen houses. Property-wide "apply to all houses" discounts show the same confirmation warning as bulk rate periods.
+10. **Cancellation and refunds** use the amount actually paid (after discount). See `docs/07-cancellation-policy.md`.
+11. **No N+1:** active discounts for the property are loaded once per quote or search request.
+
+**Still not decided (do not build until the client confirms):** minimum-night rules per season, weekend rates as a separate price (weekday *discounts* above are covered), taxes and city-tax lines, gift cards.
 
 ## Cancellation
 

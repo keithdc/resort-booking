@@ -10,6 +10,8 @@ import { Box, Stack, TextField, Typography } from '@mui/material';
 import { BorderBeam, ShimmerButton } from '@resort-booking/ui';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { StayDatePicker } from '@/shared/components/stay-date-picker';
+import { usePropertyUnavailable } from '@/shared/hooks/use-availability';
 import { addDaysIsoDate, clampStayNights, todayIsoDate } from '@/shared/utils/today-iso';
 import { searchHref, withDefaultStay, type StayQuery } from '@/shared/utils/stay-query';
 
@@ -26,8 +28,10 @@ const FIELD_SX = {
  */
 export function StaySearchBar({ initial }: StaySearchBarProps): React.JSX.Element {
   const router = useRouter();
-  const minDate = todayIsoDate();
+  const todayIso = todayIsoDate();
   const [query, setQuery] = useState<StayQuery>(() => withDefaultStay(initial));
+  // One resort: disable nights when every house is taken. All resorts: nothing to disable.
+  const availability = usePropertyUnavailable(query.propertySlug === '' ? null : query.propertySlug);
 
   const submit = (): void => {
     if (query.checkIn === '' || query.checkOut === '') {
@@ -49,13 +53,13 @@ export function StaySearchBar({ initial }: StaySearchBarProps): React.JSX.Elemen
             submit();
           }}
         >
-          <TextField
+          <StayDatePicker
             label="Check-in"
-            type="date"
-            fullWidth
             value={query.checkIn}
-            onChange={(event): void => {
-              const checkIn = event.target.value;
+            unavailable={availability.unavailable}
+            todayIso={todayIso}
+            onOpen={availability.refresh}
+            onChange={(checkIn): void => {
               const nights = clampStayNights(Number.parseInt(query.nights, 10));
               setQuery((current): StayQuery => ({
                 ...current,
@@ -64,12 +68,6 @@ export function StaySearchBar({ initial }: StaySearchBarProps): React.JSX.Elemen
                 checkOut: addDaysIsoDate(checkIn, nights),
               }));
             }}
-            sx={FIELD_SX}
-            slotProps={{
-              inputLabel: { shrink: true },
-              htmlInput: { min: minDate },
-            }}
-            required
           />
           <TextField
             label="Nights"

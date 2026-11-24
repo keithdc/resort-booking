@@ -134,8 +134,8 @@ Prisma/Stripe client types: wrap in our interfaces at the module boundary. Do no
 - Date range **To** must not allow a date before **From** (`min` constraint).
 - Checkout / end date cannot be before check-in / start date in any picker.
 - Guest search must treat stay dates as the primary filter (nights, not a single calendar day). Guest **count** is a number up to house capacity — not a list of names.
-- **Guest calendars** (`apps/web`): **disable all days before today** (property timezone). Guests cannot pick a past check-in.
-- **Admin calendars** (`apps/admin`): **do not disable past days**. Staff have full rights (history, blocks, corrections). Guest `minDate` logic must not be reused on admin pickers.
+- **Guest calendars** (`apps/web`): **disable all days before today** (property timezone). Guests cannot pick a past check-in. Also disable **already-booked dates** using the unavailable ranges and `maxCheckOutDate` from the availability API (`docs/04-product-domain.md`). The UI renders what the API returns and never works out overlaps itself. The API still rejects a taken range with `DATES_UNAVAILABLE`.
+- **Admin calendars** (`apps/admin`): **do not disable past days or booked days** (booked stays are shown with details instead). Staff have full rights (history, blocks, corrections). Guest `minDate` logic must not be reused on admin pickers.
 - Search and admin lists are property-aware: guests can search one resort or all resorts; staff always work inside a selected property unless the screen is the property list.
 
 ## API / NestJS
@@ -147,6 +147,32 @@ Prisma/Stripe client types: wrap in our interfaces at the module boundary. Do no
 - Success mutations may return `{ status: "ok", data: T }`.
 - Group HTTP routes by feature module, not by verb.
 - Redis is allowed for holds, locks, cache, and queues — never as the source of truth for reservations.
+
+### No N+1 queries (strict)
+
+The API must never run one query per row of a parent result. This is a hard rule, not a performance nicety: list screens (calendar, reports, search, property and house lists) grow with every resort and house added.
+
+- **Never query inside a loop.** No `await repo.find…()` inside `for`, `map`, `forEach`, or `Promise.all(rows.map(...))` when the query depends on the row. Fetch all children for all parents in one query, then group in memory.
+- **Batch by ids.** Load related rows with `WHERE parent_id = ANY($1)` (parameterized array), or a `JOIN`, then index the result in a `Map` keyed by id.
+- **Use SQL for aggregation.** Counts, sums, occupancy, and revenue per property or per house are computed with `GROUP BY` / joins / `json_agg` in the repository, never by fetching rows and looping with extra lookups.
+- **Repositories expose set-based methods.** Prefer `findByIds(ids)`, `listHousesForProperties(propertyIds)`, `listPhotosForHouses(houseIds)` over single-row `findById` used repeatedly. A single-row method is for single-row endpoints.
+- **Services compose, repositories fetch.** A service may call several repository methods, but each is called once per request with the full id set, never once per item.
+- **Cross-module reads follow the same rule.** If module A needs data for N rows owned by module B, it calls B's batch method through B's public exports.
+- **Pagination and bounds.** List endpoints take a bounded date range or page size so one request cannot load unbounded rows.
+- **Review check.** Any new or changed list endpoint states its query count (constant, not proportional to row count). A reviewer rejects a change where the count grows with the data.
+
+```ts
+// BAD — 1 + N queries
+const houses = await this.repo.listHouses(propertyId);
+for (const house of houses) {
+  house.photos = await this.repo.listPhotos(house.id);
+}
+
+// GOOD — 2 queries regardless of N
+const houses = await this.repo.listHouses(propertyId);
+const photos = await this.repo.listPhotosForHouses(houses.map((h) => h.id));
+const byHouse = groupBy(photos, (p) => p.houseId);
+```
 
 ## Code reuse
 
@@ -178,9 +204,18 @@ Prisma/Stripe client types: wrap in our interfaces at the module boundary. Do no
 
 ## Testing
 
-- Every feature has tests.
+- **Non-negotiable: all code has tests.** No code merges without test cases in the same change. Tests are how we see what the system does and catch bugs before guests do.
+- What "has tests" means:
+  - Every new or changed exported function, service method, repository method, controller route, hook, and component is covered.
+  - Cover the happy path, boundaries (first/last night, check-out day, empty list, one item, max window), error paths (not found, conflict, invalid input, unauthorized), and any bug you can foresee.
+  - Business rules live in pure functions (`*.rules.ts`) so they can be tested without Nest, Redis, or Postgres. Services are tested with mocked repositories.
+  - Controllers and DTOs: test that validation rejects bad input and the route returns the documented error `code`.
+  - Privacy-sensitive responses (e.g. guest availability) have a test asserting no guest data leaks.
+- **Bug fixes start with a failing test** that reproduces the bug, then the fix.
+- A change is not done until `npm run lint:<app>` and `npm run test` pass for every app touched. Never skip, delete, or weaken a test to get green; if a test is wrong, fix it and say why in the commit.
 - Frontends: `[filename].test.tsx` next to the file or in `__tests__/`.
 - API: `[filename].spec.ts` next to the Nest provider.
 - Test hooks, utils, component behavior, and service rules (holds, overlap, cancel).
+- API list endpoints and repositories that return parents with children: test that the query count stays constant as rows grow (e.g. assert the repository is called once with all ids).
 - Mock Redis, Postgres, and HTTP. Never hit real services in unit tests.
 - Tests must be fast, isolated, and deterministic.

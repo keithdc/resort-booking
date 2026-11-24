@@ -81,7 +81,7 @@ Seed: `rebookable = false`, `rebookFeeType = none` (safest: cancel and book agai
 1. Guest picks new check-in / check-out on the **same house**.
 2. API checks availability (no overlap with others; 15-min hold on the new dates while they pay any balance).
 3. Quote:
-   - `newStayTotal` for the new nights (current rates).
+   - `newStayTotal` for the new nights (current rate periods and discounts, priced per night; see `docs/04-product-domain.md`, Pricing by date range and Discounts). Refunds always use the amount actually paid, after any discount.
    - `fee` from snapshot: `0`, or `rebookFeeValue`, or `round(originalPaid * rebookFeeValue / 100)`.
    - If `newStayTotal + fee > alreadyPaid`: guest pays the **difference** (card/wallet; bank transfer uses the pending-payment path).
    - If `newStayTotal + fee < alreadyPaid`: refund the **difference** (same channel rules as cancel refunds).

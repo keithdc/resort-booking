@@ -6,6 +6,7 @@
 
 import { Module } from '@nestjs/common';
 import { PropertyModule } from '../property/property.module';
+import { AvailabilityService } from './availability.service';
 import { InventoryController } from './inventory.controller';
 import { InventoryRepository } from './inventory.repository';
 import { InventoryService } from './inventory.service';
@@ -13,6 +14,6 @@ import { InventoryService } from './inventory.service';
 @Module({
   imports: [PropertyModule],
   controllers: [InventoryController],
-  providers: [InventoryService, InventoryRepository],
+  providers: [InventoryService, AvailabilityService, InventoryRepository],
 })
 export class InventoryModule {}

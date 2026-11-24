@@ -8,6 +8,8 @@
 
 import { CssBaseline, ThemeProvider } from '@mui/material';
 import { AppRouterCacheProvider } from '@mui/material-nextjs/v15-appRouter';
+import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { createAppTheme } from '@resort-booking/ui';
 import type { ReactNode } from 'react';
 
@@ -25,7 +27,7 @@ export function AppProviders({ children }: AppProvidersProps): React.JSX.Element
     <AppRouterCacheProvider>
       <ThemeProvider theme={theme}>
         <CssBaseline />
-        {children}
+        <LocalizationProvider dateAdapter={AdapterDayjs}>{children}</LocalizationProvider>
       </ThemeProvider>
     </AppRouterCacheProvider>
   );

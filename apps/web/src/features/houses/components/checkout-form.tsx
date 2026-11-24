@@ -25,7 +25,10 @@ import {
 } from '@mui/material';
 import { BorderBeam, NumberTicker, ShimmerButton } from '@resort-booking/ui';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { StayDatePicker } from '@/shared/components/stay-date-picker';
+import { useHouseAvailability } from '@/shared/hooks/use-availability';
 import { ApiRequestError } from '@/shared/services/api-client';
+import { maxNightsFor } from '@/shared/utils/disabled-dates';
 import { formatCents } from '@/shared/utils/money';
 import { addDaysIsoDate, clampStayNights, todayIsoDate } from '@/shared/utils/today-iso';
 import { withDefaultStay, type StayQuery } from '@/shared/utils/stay-query';
@@ -60,7 +63,7 @@ export function CheckoutForm({
   extras,
   customRequestsEnabled,
 }: CheckoutFormProps): React.JSX.Element {
-  const minDate = todayIsoDate();
+  const todayIso = todayIsoDate();
   const defaults = withDefaultStay(initialStay);
   const [fields, setFields] = useState<CheckoutFields>({
     checkIn: defaults.checkIn,
@@ -84,6 +87,9 @@ export function CheckoutForm({
   const guestCount = Number.parseInt(fields.guestCount, 10);
   const nights = clampStayNights(Number.parseInt(fields.nights, 10));
   const checkOut = addDaysIsoDate(fields.checkIn, nights);
+  const availability = useHouseAvailability(house.propertySlug, house.slug, fields.checkIn);
+  const maxNights = maxNightsFor(fields.checkIn, availability.maxCheckOutDate);
+  const overMaxNights = maxNights !== null && nights > maxNights;
 
   useEffect((): (() => void) => {
     const timer = window.setInterval((): void => {
@@ -129,13 +135,14 @@ export function CheckoutForm({
   const checkoutDisabled = useMemo((): boolean => {
     return (
       pending ||
+      overMaxNights ||
       quote === null ||
       !quote.available ||
       fields.bookerName.trim() === '' ||
       fields.bookerEmail.trim() === '' ||
       fields.bookerPhone.trim() === ''
     );
-  }, [fields.bookerEmail, fields.bookerName, fields.bookerPhone, pending, quote]);
+  }, [fields.bookerEmail, fields.bookerName, fields.bookerPhone, overMaxNights, pending, quote]);
 
   const onHold = async (): Promise<void> => {
     setPending(true);
@@ -171,25 +178,18 @@ export function CheckoutForm({
         <Typography variant="body2" color="text.secondary">
           Check-in starts today. Choose how many nights — checkout is calculated for you.
         </Typography>
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ xs: 'stretch', sm: 'center' }}>
-        <TextField
+        <Stack spacing={1.5}>
+        <StayDatePicker
           label="Check-in"
-          type="date"
-          fullWidth
           value={fields.checkIn}
-          onChange={(event): void => {
-            setFields((current): CheckoutFields => ({
-              ...current,
-              checkIn: event.target.value,
-            }));
+          unavailable={availability.unavailable}
+          todayIso={todayIso}
+          onOpen={availability.refresh}
+          onChange={(checkIn): void => {
+            setFields((current): CheckoutFields => ({ ...current, checkIn }));
           }}
-          sx={{ '& .MuiInputBase-root': { height: 56 } }}
-          slotProps={{
-            inputLabel: { shrink: true },
-            htmlInput: { min: minDate },
-          }}
-          required
         />
+        <Stack direction="row" spacing={1.5} alignItems="flex-start">
         <TextField
           label="Nights"
           type="number"
@@ -202,9 +202,15 @@ export function CheckoutForm({
             }));
           }}
           sx={{ '& .MuiInputBase-root': { height: 56 } }}
+          error={overMaxNights}
+          helperText={
+            overMaxNights && availability.maxCheckOutDate !== null
+              ? `Another stay starts on ${availability.maxCheckOutDate}. Max ${String(maxNights)} night${maxNights === 1 ? '' : 's'}.`
+              : undefined
+          }
           slotProps={{
             inputLabel: { shrink: true },
-            htmlInput: { min: 1, max: 30 },
+            htmlInput: { min: 1, max: maxNights !== null && maxNights >= 1 ? Math.min(30, maxNights) : 30 },
           }}
           required
         />
@@ -223,6 +229,7 @@ export function CheckoutForm({
           }}
           required
         />
+        </Stack>
         </Stack>
         <Typography variant="caption" color="text.secondary">
           Leave on {checkOut} · Sleeps {house.capacity}

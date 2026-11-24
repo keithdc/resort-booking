@@ -269,6 +269,30 @@ export interface Quote {
   available: boolean;
 }
 
+/** Half-open night range [startDate, endDate): endDate is the check-out day. */
+export interface DateRange {
+  startDate: string;
+  endDate: string;
+}
+
+/** Guest-safe unavailable dates for one house. Dates only, never guest data. */
+export interface HouseAvailability {
+  houseId: string;
+  from: string;
+  to: string;
+  unavailable: DateRange[];
+  /** Latest valid check-out for the requested check-in. Null when no check-in was sent. */
+  maxCheckOutDate: string | null;
+}
+
+/** Nights when no published house at the property is free. */
+export interface PropertyAvailability {
+  propertyId: string;
+  from: string;
+  to: string;
+  fullyBookedNights: DateRange[];
+}
+
 export interface CreateHoldRequest {
   houseId: string;
   checkIn: string;

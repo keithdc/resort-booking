@@ -26,6 +26,12 @@ export interface HoldRow {
   guest_note: string;
 }
 
+export interface OccupiedRangeRow {
+  house_id: string;
+  check_in: string;
+  check_out: string;
+}
+
 interface InsertHoldInput {
   organizationId: string;
   propertyId: string;
@@ -86,6 +92,34 @@ export class InventoryRepository {
       [houseId, checkIn, checkOut, excludeId],
     );
     return result.rows[0]?.exists === true;
+  }
+
+  /**
+   * Occupied night ranges for many houses in one query (no per-house loop).
+   * Counts confirmed stays, staff blocks, and holds that have not timed out. Read-only:
+   * overdue holds are filtered by clock here instead of being expired on a GET.
+   */
+  public async listOccupiedRanges(
+    houseIds: readonly string[],
+    from: string,
+    to: string,
+  ): Promise<OccupiedRangeRow[]> {
+    if (houseIds.length === 0) {
+      return [];
+    }
+    const result = await this.database.query<OccupiedRangeRow>(
+      `
+      SELECT house_id, check_in::text AS check_in, check_out::text AS check_out
+      FROM inventory_blocks
+      WHERE house_id = ANY($1::uuid[])
+        AND status IN ('active', 'confirmed')
+        AND NOT (kind = 'hold' AND expires_at IS NOT NULL AND expires_at < now())
+        AND daterange(check_in, check_out, '[)') && daterange($2::date, $3::date, '[)')
+      ORDER BY house_id, check_in
+      `,
+      [houseIds, from, to],
+    );
+    return result.rows;
   }
 
   /**

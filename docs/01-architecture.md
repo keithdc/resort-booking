@@ -113,6 +113,7 @@ src/
 ```
 
 - Controllers are thin. Validation happens in DTOs/pipes. Business rules live in services. SQL lives in repositories.
+- **No N+1 queries.** Repositories fetch sets (by id arrays, joins, or `GROUP BY`), never one query per row in a loop. Rules and examples: `docs/02-coding-standards.md` (API / NestJS).
 - Features must not reach into another feature's files except through that feature's public module/API.
 - Every guest or admin screen that shows data has a matching API module, tables, and migration. No hardcoded inventory or prices.
 
@@ -125,7 +126,7 @@ Implement in this order unless a story requires otherwise:
 3. `houses` — houses per property (listings), amenities, photos, publish state, capacity
 4. `inventory` — per-house calendars, blocked dates, holds
 5. `extras` — property service catalog; instant vs on-request; reservation extra lines
-6. `rates` — per-house (and optional property defaults) seasons, taxes, extras pricing for instant services
+6. `rates` — per-house standard rate plus an array of **date-range rate periods** (peak season etc., overlap rejected in PostgreSQL and the service, priced per night and summed), **discounts** (effect + conditions, admin-configured), bulk apply with preview, taxes, extras pricing for instant services. Quote and search call it with all house ids at once. Product rules: `docs/04-product-domain.md` (Pricing by date range, Discounts).
 7. `reservations` — search, quote, hold, confirm, cancel (tier snapshot), rebook if `rebookable`
 8. `guests` — booker contact + **guest count**; check-in verifies party size on arrival
 9. `payments` — intents, captures, refunds, webhook idempotency; later charge for approved extras
@@ -139,7 +140,8 @@ Do not model “one global resort.” Launch with two properties in data, but th
 
 Concurrent booking is the core risk. Freeze length follows the pay method.
 
-1. Search availability in PostgreSQL (date-range overlap on the house).
+0. The availability endpoints return occupied dates (reservations, active holds, blocks) so guest pickers can disable them. That is a read for UX only; steps 1-2 below remain the rule.
+1. Search availability in PostgreSQL (date-range overlap on the house) and price each free house for the stay from its rate periods.
 2. On checkout start: persist a `holds` row. Redis TTL **900 seconds** (card) or **172800 seconds** (bank transfer).
 3. Card: on successful Stripe payment, convert hold → confirmed reservation in one transaction. Instant extras settle in that payment.
 4. Bank: reservation is `pending_payment` until staff verify the transfer (receipt + reference). Then convert hold → confirmed. Reject/expiry releases the house.
@@ -171,3 +173,4 @@ Details: `docs/05-eu-compliance-and-payments.md`.
 - No single frontend for both guest and admin.
 - No `any` in TypeScript (`as any`, `Record<string, any>`, `any[]` included). Object shapes use `interface`.
 - No feature UI without a matching API + migration.
+- No N+1 queries in the API (no queries inside loops; batch by ids or join).

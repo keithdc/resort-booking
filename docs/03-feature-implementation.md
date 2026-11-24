@@ -66,7 +66,9 @@ If both apps need the same screen patterns, extract MUI wrappers into `packages/
 - Date pickers enforce check-in ≤ check-out
 - Search inputs have a clear button when filled
 
-## 7. Tests
+## 7. Tests (required, not optional)
+
+A feature is not finished without tests. Write them in the same change as the code, covering the happy path, boundaries, error paths, and foreseeable bugs. See `docs/02-coding-standards.md` (Testing).
 
 - API: service rules (availability overlap, expired hold, double book, cancel policy)
 - Frontend: hook + critical component interactions
