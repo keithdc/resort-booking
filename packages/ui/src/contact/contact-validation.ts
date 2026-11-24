@@ -70,11 +70,11 @@ export function isValidPhone(e164: string): boolean {
 /**
  * Message for the phone field, or null when fine. An empty optional phone is fine.
  */
-export function phoneError(e164: string, required: boolean, countryName: string): string | null {
+export function phoneError(e164: string, required: boolean): string | null {
   if (e164.trim() === '') {
     return required ? 'Enter a phone number' : null;
   }
-  return isValidPhone(e164) ? null : `Enter a valid phone number for ${countryName}`;
+  return isValidPhone(e164) ? null : 'Enter a valid phone number';
 }
 
 export interface CountryOption {

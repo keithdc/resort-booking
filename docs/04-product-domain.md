@@ -154,7 +154,7 @@ interface RatePeriod {
 
 ### Implemented (seasonal rates)
 
-Built and tested; discounts below are **not** built yet.
+Built and tested. Discounts are built too (see **Implemented (discounts)** below).
 
 - **Tables:** `rate_periods` (inclusive `start_date`/`end_date`, `nightly_rate_cents`, PostgreSQL exclusion constraint `rate_periods_no_overlap`) and `rate_period_bulk_applications` (audit log). `inventory_blocks.price_snapshot` stores the quoted lines on the hold.
 - **Guest API:** `GET /quotes` and `GET /search` return `lines` (priced nights grouped by rate: label, nights, rate, subtotal) and `totalCents`. Search loads every candidate house's periods in **one** query. `POST /holds` stores the quote (`total_cents`, `price_snapshot`).
@@ -162,7 +162,7 @@ Built and tested; discounts below are **not** built yet.
 - **Errors:** `409 RATE_PERIOD_OVERLAP` (names the clashing period), `400 INVALID_RATE_PERIOD`, `400 UNKNOWN_HOUSE`, `404 RATE_PERIOD_NOT_FOUND`.
 - **Admin:** Houses tab, "Seasonal rates" per house: list, add, edit, delete (with confirmation), and "Apply to all houses at this property" with the preview and warning dialog. Houses with a clash are skipped, never overwritten.
 - **Guest UI:** the checkout shows the per-rate breakdown from the API. Cards and the house header say "Standard rate", because individual nights can cost more.
-- **Known gaps:** the staff calendar falls back to `nights x standard rate` for a stay that has no stored `total_cents` (seeded demo stays have one; new holds do). `GET /holds/:id` re-quotes with today's periods rather than reading the stored snapshot, so a hold shown after a rate edit can display the new price. Both should read the snapshot when reservations are built.
+- **Known gap:** the staff calendar falls back to `nights x standard rate` for a stay that has no stored `total_cents` (seeded demo stays have one; every new hold and paid reservation does). `GET /holds/:id` now shows the price saved with the hold; only holds made before snapshots existed fall back to a live quote.
 
 ### Apply to all houses (warning required)
 
@@ -227,6 +227,19 @@ Typical presets staff can create from the same form: **long stay** (e.g. 7+ nigh
 9. **Scope:** property-wide by default, or limited to chosen houses. Property-wide "apply to all houses" discounts show the same confirmation warning as bulk rate periods.
 10. **Cancellation and refunds** use the amount actually paid (after discount). See `docs/07-cancellation-policy.md`.
 11. **No N+1:** active discounts for the property are loaded once per quote or search request.
+
+### Implemented (discounts)
+
+- **Tables:** `discounts` (effect, `conditions` JSON, `always_on`, optional `house_ids`, `combinable`, `priority`, `active`, `max_redemptions`; the database refuses a percent over 100 and a discount with no conditions unless `always_on`) and `discount_redemptions` (one row per paid stay that used it).
+- **Condition meanings (exact):** `min_nights` = the stay has at least N nights. `booking_lead_days` = whole days from booking day (property timezone) to check-in, inclusive at both ends, either end optional. `stay_dates` = **every** night of the stay is inside the window. `booking_window` = the booking day is inside the window. `weekday` = **every** night is one of the listed weekdays (0 = Sunday). `promo_code` = the typed code matches, ignoring case and spaces. All conditions on a discount must match.
+- **Stacking:** the guest gets whichever saves more of (a) the single best non-combinable discount or (b) the stack of all matching combinable discounts, applied in priority order, each on what is left. They never mix, and ties go to the single discount. The total never goes below zero.
+- **Quote:** `GET /quotes` (optional `promoCode`) and `GET /search` return `subtotalCents`, `discounts[]`, `discountCents`, `totalCents`, and `promoCode { code, applied, message }`. A wrong or unusable code only returns a message ("That code is not valid", "This code does not apply to these dates", "A better offer is already applied to this stay") and never blocks the booking. Search loads discounts for all candidate houses in one query.
+- **Promo-code guessing:** at most 20 quote or hold requests carrying a code per minute per IP (`429 PROMO_RATE_LIMITED`). Requests without a code are never counted.
+- **Snapshot and use limits:** the hold stores the full quoted price including discount lines. A discount counts toward `max_redemptions` only when a stay is **paid and confirmed**, not when it is merely held.
+- **Staff API** (`StaffGuard`): `GET|POST /staff/properties/:propertyId/discounts`, `PATCH|DELETE /staff/discounts/:discountId`. Errors: `400 INVALID_DISCOUNT` (with a readable message), `400 UNKNOWN_HOUSE`, `404 DISCOUNT_NOT_FOUND`.
+- **Admin:** property workspace tab "5. Discounts": list, add, edit, delete (with confirmation). Saving a **new** discount that applies to all houses shows a warning dialog first.
+- **Guest UI:** a promo code field with an explicit Apply (no request per keystroke), and each discount as its own line in the price breakdown.
+- **Not built:** the organization-wide "warn when a stack exceeds a maximum total discount %" guardrail (rule 8 above). Each discount is already limited to 100%.
 
 **Still not decided (do not build until the client confirms):** minimum-night rules per season, weekend rates as a separate price (weekday *discounts* above are covered), taxes and city-tax lines, gift cards.
 

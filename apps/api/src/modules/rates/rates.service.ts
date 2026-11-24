@@ -65,6 +65,13 @@ export class RatesService {
   }
 
   /**
+   * Each night of a stay (check-in through the night before check-out); empty if invalid.
+   */
+  public nightsOf(checkIn: string, checkOut: string): string[] {
+    return stayNights(checkIn, checkOut);
+  }
+
+  /**
    * Prices one stay for a house from already-loaded periods (no query).
    */
   public priceHouseStay(

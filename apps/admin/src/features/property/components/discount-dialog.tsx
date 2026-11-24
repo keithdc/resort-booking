@@ -1,0 +1,378 @@
+/**
+ * @file apps/admin/src/features/property/components/discount-dialog.tsx
+ * @feature property
+ * @dependencies discount-draft
+ */
+
+'use client';
+
+import type { HouseSummary } from '@resort-booking/shared-types';
+import {
+  Alert,
+  Button,
+  Checkbox,
+  Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  FormControlLabel,
+  FormGroup,
+  FormHelperText,
+  MenuItem,
+  Stack,
+  Switch,
+  TextField,
+  Typography,
+} from '@mui/material';
+import type { ReactNode } from 'react';
+import { validateDraft, WEEKDAY_NAMES, type DiscountDraft, type DraftProblems } from '../utils/discount-draft';
+
+interface DiscountDialogProps {
+  open: boolean;
+  /** True when editing a saved discount. */
+  editing: boolean;
+  draft: DiscountDraft;
+  houses: readonly HouseSummary[];
+  currencyCode: string;
+  error: string | null;
+  saving: boolean;
+  onChange: (patch: Partial<DiscountDraft>) => void;
+  onSave: () => void;
+  onClose: () => void;
+}
+
+interface ConditionSectionProps {
+  label: string;
+  checked: boolean;
+  disabled: boolean;
+  onToggle: (checked: boolean) => void;
+  problem: string | undefined;
+  children: ReactNode;
+}
+
+/**
+ * One kind of condition: a checkbox, and its fields once ticked.
+ */
+function ConditionSection({ label, checked, disabled, onToggle, problem, children }: ConditionSectionProps): React.JSX.Element {
+  return (
+    <Stack spacing={1}>
+      <FormControlLabel
+        control={<Checkbox checked={checked} disabled={disabled} onChange={(event): void => onToggle(event.target.checked)} />}
+        label={label}
+      />
+      {checked && !disabled ? (
+        <Stack spacing={0.5} sx={{ pl: 4 }}>
+          {children}
+          {problem === undefined ? null : <FormHelperText error>{problem}</FormHelperText>}
+        </Stack>
+      ) : null}
+    </Stack>
+  );
+}
+
+/**
+ * Add or edit a discount: an amount off, plus the conditions that must all be true. Past dates are
+ * allowed because staff can correct history. The API stays the final judge of the rules.
+ */
+export function DiscountDialog({
+  open,
+  editing,
+  draft,
+  houses,
+  currencyCode,
+  error,
+  saving,
+  onChange,
+  onSave,
+  onClose,
+}: DiscountDialogProps): React.JSX.Element {
+  const problems: DraftProblems = validateDraft(draft);
+  const valid = Object.keys(problems).length === 0;
+  const conditionsOff = draft.alwaysOn;
+  const currencyLabel = currencyCode === 'EUR' ? '€' : currencyCode;
+
+  const toggleHouse = (houseId: string, checked: boolean): void => {
+    onChange({
+      houseIds: checked ? [...draft.houseIds, houseId] : draft.houseIds.filter((id): boolean => id !== houseId),
+    });
+  };
+
+  const toggleWeekday = (day: number): void => {
+    onChange({
+      weekdays: draft.weekdays.includes(day) ? draft.weekdays.filter((d): boolean => d !== day) : [...draft.weekdays, day],
+    });
+  };
+
+  return (
+    <Dialog open={open} onClose={onClose} fullWidth maxWidth="md" aria-labelledby="discount-dialog-title">
+      <DialogTitle id="discount-dialog-title">{editing ? 'Edit discount' : 'Add a discount'}</DialogTitle>
+      <DialogContent>
+        <Stack spacing={2.5} sx={{ mt: 1 }}>
+          {error === null ? null : <Alert severity="error">{error}</Alert>}
+          <TextField
+            label="Name"
+            required
+            placeholder="Long stay"
+            helperText={problems.label ?? 'Shown to guests on their price'}
+            error={problems.label !== undefined && draft.label !== ''}
+            value={draft.label}
+            onChange={(event): void => onChange({ label: event.target.value })}
+          />
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
+            <TextField
+              select
+              label="Type"
+              value={draft.effectKind}
+              onChange={(event): void => onChange({ effectKind: event.target.value === 'fixed' ? 'fixed' : 'percent' })}
+              sx={{ minWidth: 200 }}
+            >
+              <MenuItem value="percent">Percentage off</MenuItem>
+              <MenuItem value="fixed">Fixed amount off</MenuItem>
+            </TextField>
+            <TextField
+              label={draft.effectKind === 'percent' ? 'Percentage (%)' : `Amount (${currencyLabel})`}
+              required
+              fullWidth
+              helperText={problems.value}
+              error={problems.value !== undefined && draft.value !== ''}
+              value={draft.value}
+              onChange={(event): void => onChange({ value: event.target.value })}
+              slotProps={{ htmlInput: { inputMode: 'decimal' } }}
+            />
+          </Stack>
+
+          <Stack spacing={0.5}>
+            <TextField
+              select
+              label="Applies to"
+              value={draft.scope}
+              onChange={(event): void => onChange({ scope: event.target.value === 'chosen' ? 'chosen' : 'all' })}
+            >
+              <MenuItem value="all">All houses at this property</MenuItem>
+              <MenuItem value="chosen">Only the houses I choose</MenuItem>
+            </TextField>
+            {draft.scope === 'chosen' ? (
+              <FormGroup aria-label="Houses this discount applies to" sx={{ pl: 1 }}>
+                {houses.map((house): React.JSX.Element => (
+                  <FormControlLabel
+                    key={house.id}
+                    label={house.name}
+                    control={
+                      <Checkbox
+                        checked={draft.houseIds.includes(house.id)}
+                        onChange={(event): void => toggleHouse(house.id, event.target.checked)}
+                      />
+                    }
+                  />
+                ))}
+                {problems.houses === undefined ? null : <FormHelperText error>{problems.houses}</FormHelperText>}
+              </FormGroup>
+            ) : null}
+          </Stack>
+
+          <Stack spacing={1}>
+            <Typography variant="h6" component="h3">
+              When does it apply?
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Every condition you tick must be true for the discount to apply.
+            </Typography>
+            <FormControlLabel
+              control={<Checkbox checked={draft.alwaysOn} onChange={(event): void => onChange({ alwaysOn: event.target.checked })} />}
+              label="Always on (applies to every stay)"
+            />
+            {problems.conditions === undefined ? null : <FormHelperText error>{problems.conditions}</FormHelperText>}
+
+            <ConditionSection
+              label="Long stay: minimum nights"
+              checked={draft.minNightsOn}
+              disabled={conditionsOff}
+              onToggle={(minNightsOn): void => onChange({ minNightsOn })}
+              problem={problems.minNights}
+            >
+              <TextField
+                label="Minimum nights"
+                size="small"
+                value={draft.minNights}
+                onChange={(event): void => onChange({ minNights: event.target.value })}
+                slotProps={{ htmlInput: { inputMode: 'numeric' } }}
+              />
+            </ConditionSection>
+
+            <ConditionSection
+              label="Booked ahead (early bird / last minute)"
+              checked={draft.leadOn}
+              disabled={conditionsOff}
+              onToggle={(leadOn): void => onChange({ leadOn })}
+              problem={problems.lead}
+            >
+              <Stack direction="row" spacing={1.5}>
+                <TextField
+                  label="At least this many days ahead"
+                  size="small"
+                  fullWidth
+                  value={draft.leadMin}
+                  onChange={(event): void => onChange({ leadMin: event.target.value })}
+                  slotProps={{ htmlInput: { inputMode: 'numeric' } }}
+                />
+                <TextField
+                  label="At most this many days ahead"
+                  size="small"
+                  fullWidth
+                  value={draft.leadMax}
+                  onChange={(event): void => onChange({ leadMax: event.target.value })}
+                  slotProps={{ htmlInput: { inputMode: 'numeric' } }}
+                />
+              </Stack>
+            </ConditionSection>
+
+            <ConditionSection
+              label="Stay dates: the whole stay falls inside a window"
+              checked={draft.stayOn}
+              disabled={conditionsOff}
+              onToggle={(stayOn): void => onChange({ stayOn })}
+              problem={problems.stay}
+            >
+              <Stack direction="row" spacing={1.5}>
+                <TextField
+                  label="Stay from"
+                  type="date"
+                  size="small"
+                  fullWidth
+                  value={draft.stayStart}
+                  onChange={(event): void => onChange({ stayStart: event.target.value })}
+                  slotProps={{ inputLabel: { shrink: true } }}
+                />
+                <TextField
+                  label="Stay until"
+                  type="date"
+                  size="small"
+                  fullWidth
+                  value={draft.stayEnd}
+                  onChange={(event): void => onChange({ stayEnd: event.target.value })}
+                  slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: draft.stayStart } }}
+                />
+              </Stack>
+            </ConditionSection>
+
+            <ConditionSection
+              label="Sale window: guest books during these dates"
+              checked={draft.windowOn}
+              disabled={conditionsOff}
+              onToggle={(windowOn): void => onChange({ windowOn })}
+              problem={problems.window}
+            >
+              <Stack direction="row" spacing={1.5}>
+                <TextField
+                  label="Sale starts"
+                  type="date"
+                  size="small"
+                  fullWidth
+                  value={draft.windowStart}
+                  onChange={(event): void => onChange({ windowStart: event.target.value })}
+                  slotProps={{ inputLabel: { shrink: true } }}
+                />
+                <TextField
+                  label="Sale ends"
+                  type="date"
+                  size="small"
+                  fullWidth
+                  value={draft.windowEnd}
+                  onChange={(event): void => onChange({ windowEnd: event.target.value })}
+                  slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: draft.windowStart } }}
+                />
+              </Stack>
+            </ConditionSection>
+
+            <ConditionSection
+              label="Weekdays: every night of the stay is one of these days"
+              checked={draft.weekdayOn}
+              disabled={conditionsOff}
+              onToggle={(weekdayOn): void => onChange({ weekdayOn })}
+              problem={problems.weekdays}
+            >
+              <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                {WEEKDAY_NAMES.map((name, day): React.JSX.Element => {
+                  const selected = draft.weekdays.includes(day);
+                  return (
+                    <Chip
+                      key={name}
+                      label={name}
+                      aria-pressed={selected}
+                      color={selected ? 'primary' : 'default'}
+                      variant={selected ? 'filled' : 'outlined'}
+                      onClick={(): void => toggleWeekday(day)}
+                    />
+                  );
+                })}
+              </Stack>
+            </ConditionSection>
+
+            <ConditionSection
+              label="Promo code: the guest types a code"
+              checked={draft.promoOn}
+              disabled={conditionsOff}
+              onToggle={(promoOn): void => onChange({ promoOn })}
+              problem={problems.promo}
+            >
+              <TextField
+                label="Promo code"
+                size="small"
+                value={draft.promoCode}
+                helperText="Not case-sensitive for guests"
+                onChange={(event): void => onChange({ promoCode: event.target.value })}
+              />
+            </ConditionSection>
+          </Stack>
+
+          <Stack spacing={1}>
+            <FormControlLabel
+              control={<Switch checked={draft.combinable} onChange={(event): void => onChange({ combinable: event.target.checked })} />}
+              label="Can combine with other discounts"
+            />
+            <FormHelperText>
+              Otherwise the guest gets the single best discount. Combinable ones stack, lowest priority number first.
+            </FormHelperText>
+            <TextField
+              label="Priority"
+              size="small"
+              sx={{ maxWidth: 200 }}
+              helperText={problems.priority ?? 'Lower runs first when stacking'}
+              error={problems.priority !== undefined && draft.priority !== ''}
+              value={draft.priority}
+              onChange={(event): void => onChange({ priority: event.target.value })}
+              slotProps={{ htmlInput: { inputMode: 'numeric' } }}
+            />
+            <FormControlLabel
+              control={<Switch checked={draft.active} onChange={(event): void => onChange({ active: event.target.checked })} />}
+              label="Switched on"
+            />
+            <FormControlLabel
+              control={<Checkbox checked={draft.limitOn} onChange={(event): void => onChange({ limitOn: event.target.checked })} />}
+              label="Limit number of uses"
+            />
+            {draft.limitOn ? (
+              <TextField
+                label="Maximum uses"
+                size="small"
+                sx={{ maxWidth: 200 }}
+                helperText={problems.limit}
+                error={problems.limit !== undefined && draft.maxRedemptions !== ''}
+                value={draft.maxRedemptions}
+                onChange={(event): void => onChange({ maxRedemptions: event.target.value })}
+                slotProps={{ htmlInput: { inputMode: 'numeric' } }}
+              />
+            ) : null}
+          </Stack>
+        </Stack>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>Cancel</Button>
+        <Button variant="contained" disabled={!valid || saving} onClick={onSave}>
+          {saving ? 'Saving…' : editing ? 'Save changes' : 'Add discount'}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}

@@ -4,7 +4,7 @@
  * @dependencies InventoryService
  */
 
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Req } from '@nestjs/common';
 import type {
   ApiOkBody,
   Hold,
@@ -13,6 +13,7 @@ import type {
   PropertyAvailability,
   Quote,
 } from '@resort-booking/shared-types';
+import type { Request } from 'express';
 import { AvailabilityService } from './availability.service';
 import {
   HouseAvailabilityQueryDto,
@@ -22,19 +23,22 @@ import { CreateHoldDto } from './dto/create-hold.dto';
 import { QuoteQueryDto } from './dto/quote-query.dto';
 import { SearchQueryDto } from './dto/search-query.dto';
 import { InventoryService } from './inventory.service';
+import { PromoRateLimiter } from './promo-rate-limiter';
 
 @Controller()
 export class InventoryController {
   public constructor(
     private readonly inventory: InventoryService,
     private readonly availability: AvailabilityService,
+    private readonly promoLimiter: PromoRateLimiter,
   ) {}
 
   /**
    * Guest quote: API owns nights, total, and availability.
    */
   @Get('quotes')
-  public async getQuote(@Query() query: QuoteQueryDto): Promise<ApiOkBody<Quote>> {
+  public async getQuote(@Query() query: QuoteQueryDto, @Req() request: Request): Promise<ApiOkBody<Quote>> {
+    await this.promoLimiter.check(request.ip, query.promoCode);
     return { status: 'ok', data: await this.inventory.getQuote(query, true) };
   }
 
@@ -73,7 +77,8 @@ export class InventoryController {
    * Starts a house freeze. TTL depends on payment method.
    */
   @Post('holds')
-  public async createHold(@Body() body: CreateHoldDto): Promise<ApiOkBody<Hold>> {
+  public async createHold(@Body() body: CreateHoldDto, @Req() request: Request): Promise<ApiOkBody<Hold>> {
+    await this.promoLimiter.check(request.ip, body.promoCode);
     return { status: 'ok', data: await this.inventory.createHold(body, true) };
   }
 

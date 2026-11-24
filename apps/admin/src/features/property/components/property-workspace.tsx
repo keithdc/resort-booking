@@ -17,6 +17,7 @@ import { Box, Button, Chip, Stack, Tab, Tabs, Typography } from '@mui/material';
 import Link from 'next/link';
 import { useState } from 'react';
 import { PropertyGuestExtrasPanel } from './property-guest-extras-panel';
+import { PropertyDiscountsPanel } from './property-discounts-panel';
 import { PropertyHousesForm } from './property-houses-form';
 import { PropertyListingForm } from './property-listing-form';
 import { PropertyRefundsForm } from './property-refunds-form';
@@ -29,7 +30,7 @@ interface PropertyWorkspaceProps {
   requestOptions: HouseRequestOption[];
 }
 
-type WorkspaceTab = 'place' | 'houses' | 'extras' | 'cancel';
+type WorkspaceTab = 'place' | 'houses' | 'extras' | 'cancel' | 'discounts';
 
 /**
  * Per-property staff workspace in everyday language.
@@ -55,7 +56,7 @@ export function PropertyWorkspace({
         <Chip size="small" label={property.published ? 'On the website' : 'Hidden from guests'} />
       </Stack>
       <Typography color="text.secondary" sx={{ mb: 2 }}>
-        Work through the tabs in order: pin the place, add houses, then extras, then cancellation.
+        Work through the tabs in order: pin the place, add houses, then extras, cancellation, and discounts.
       </Typography>
       <Tabs
         value={tab}
@@ -69,6 +70,7 @@ export function PropertyWorkspace({
         <Tab value="houses" label="2. Houses" />
         <Tab value="extras" label="3. Guest extras" />
         <Tab value="cancel" label="4. If they cancel" />
+        <Tab value="discounts" label="5. Discounts" />
       </Tabs>
       {tab === 'place' ? <PropertyListingForm property={property} /> : null}
       {tab === 'houses' ? <PropertyHousesForm propertyId={property.id} initial={houses} /> : null}
@@ -76,6 +78,7 @@ export function PropertyWorkspace({
         <PropertyGuestExtrasPanel property={property} extras={extras} requestOptions={requestOptions} />
       ) : null}
       {tab === 'cancel' ? <PropertyRefundsForm propertyId={property.id} initial={config} /> : null}
+      {tab === 'discounts' ? <PropertyDiscountsPanel propertyId={property.id} houses={houses} /> : null}
     </Box>
   );
 }

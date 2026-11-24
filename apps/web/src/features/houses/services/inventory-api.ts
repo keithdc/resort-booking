@@ -15,6 +15,7 @@ export function fetchQuote(
   checkIn: string,
   checkOut: string,
   guestCount: number,
+  promoCode = '',
 ): Promise<Quote> {
   const params = new URLSearchParams({
     houseId,
@@ -22,6 +23,9 @@ export function fetchQuote(
     checkOut,
     guestCount: String(guestCount),
   });
+  if (promoCode.trim() !== '') {
+    params.set('promoCode', promoCode.trim());
+  }
   return getApiOk<Quote>(`/quotes?${params.toString()}`);
 }
 

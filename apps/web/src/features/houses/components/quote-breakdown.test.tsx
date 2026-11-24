@@ -18,9 +18,13 @@ function quote(overrides: Partial<Quote>): Quote {
     nights: 4,
     nightlyRateCents: 18000,
     lines: [],
+    subtotalCents: 0,
+    discounts: [],
+    discountCents: 0,
     totalCents: 0,
     currencyCode: 'EUR',
     available: true,
+    promoCode: null,
     ...overrides,
   };
 }
@@ -93,5 +97,43 @@ describe('QuoteBreakdown', () => {
     );
 
     expect(text(screen.getByLabelText('Price breakdown').textContent)).toContain('123,45 €');
+  });
+
+  it('shows each discount as its own line between the subtotal and the total', () => {
+    render(
+      <QuoteBreakdown
+        quote={quote({
+          nights: 8,
+          lines: [{ label: 'Standard rate', nights: 8, nightlyRateCents: 14000, subtotalCents: 112000 }],
+          subtotalCents: 112000,
+          discounts: [
+            { discountId: 'a', label: 'Long stay: 7+ nights', amountCents: 11200 },
+            { discountId: 'b', label: 'Welcome code', amountCents: 5000 },
+          ],
+          discountCents: 16200,
+          totalCents: 95800,
+        })}
+      />,
+    );
+
+    const rows = text(screen.getByLabelText('Price breakdown').textContent);
+    expect(rows).toContain('Subtotal1 120,00 €');
+    expect(rows).toContain('Long stay: 7+ nights−112,00 €');
+    expect(rows).toContain('Welcome code−50,00 €');
+    expect(rows).toContain('Total958,00 €');
+  });
+
+  it('hides the subtotal row when there is no discount', () => {
+    render(
+      <QuoteBreakdown
+        quote={quote({
+          lines: [{ label: 'Standard rate', nights: 1, nightlyRateCents: 18000, subtotalCents: 18000 }],
+          subtotalCents: 18000,
+          totalCents: 18000,
+        })}
+      />,
+    );
+
+    expect(text(screen.getByLabelText('Price breakdown').textContent)).not.toContain('Subtotal');
   });
 });

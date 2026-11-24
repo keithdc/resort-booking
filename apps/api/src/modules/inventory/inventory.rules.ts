@@ -4,7 +4,10 @@
  * @dependencies shared-types
  */
 
-import type { PaymentMethod } from '@resort-booking/shared-types';
+import type { PaymentMethod, PromoCodeResult, QuoteDiscountLine, QuoteLine } from '@resort-booking/shared-types';
+import { isoDateInTimeZone } from '../../shared/dates/iso-date';
+
+export { isoDateInTimeZone };
 
 export const CARD_HOLD_TTL_SECONDS = 900;
 export const BANK_HOLD_TTL_SECONDS = 172800;
@@ -44,25 +47,6 @@ export function isCheckInBeforeToday(checkIn: string, todayIsoDate: string): boo
   return checkIn < todayIsoDate;
 }
 
-/**
- * Formats an instant in a timezone as YYYY-MM-DD.
- */
-export function isoDateInTimeZone(now: Date, timeZone: string): string {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(now);
-  const year = parts.find((part) => part.type === 'year')?.value;
-  const month = parts.find((part) => part.type === 'month')?.value;
-  const day = parts.find((part) => part.type === 'day')?.value;
-  if (year === undefined || month === undefined || day === undefined) {
-    throw new Error('Could not format timezone date');
-  }
-  return `${year}-${month}-${day}`;
-}
-
 function parseUtcDate(isoDate: string): Date | null {
   const [yearRaw, monthRaw, dayRaw] = isoDate.split('-');
   const year = Number.parseInt(yearRaw ?? '', 10);
@@ -76,4 +60,43 @@ function parseUtcDate(isoDate: string): Date | null {
     return null;
   }
   return date;
+}
+
+/** The price a guest was quoted, saved with the hold so later rate or discount edits never change it. */
+export interface PriceSnapshot {
+  lines: QuoteLine[];
+  subtotalCents: number;
+  discounts: QuoteDiscountLine[];
+  discountCents: number;
+  totalCents: number;
+  currencyCode: string;
+  promoCode: PromoCodeResult | null;
+}
+
+/**
+ * True when stored JSON is a complete price snapshot. Older holds (saved before discounts existed)
+ * fail this on purpose and fall back to a live quote.
+ */
+export function isPriceSnapshot(value: unknown): value is PriceSnapshot {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return (
+    Array.isArray(record.lines) &&
+    Array.isArray(record.discounts) &&
+    typeof record.subtotalCents === 'number' &&
+    typeof record.discountCents === 'number' &&
+    typeof record.totalCents === 'number' &&
+    typeof record.currencyCode === 'string' &&
+    'promoCode' in record
+  );
+}
+
+/**
+ * Short code the guest quotes to the operator, derived from the stay id (no extra column to keep
+ * in sync): "BK-" plus 10 hex characters, e.g. BK-1A2B3C4D5E.
+ */
+export function referenceFor(stayId: string): string {
+  return `BK-${stayId.replace(/-/g, '').slice(0, 10).toUpperCase()}`;
 }

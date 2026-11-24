@@ -117,7 +117,7 @@ describe('PhoneField', () => {
     await userEvent.tab();
     fireEvent.blur(input());
 
-    expect(await screen.findByText('Enter a valid phone number for France')).toBeTruthy();
+    expect(await screen.findByText('Enter a valid phone number')).toBeTruthy();
   });
 
   it('shows no error for a valid number', async () => {

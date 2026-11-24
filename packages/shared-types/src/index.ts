@@ -273,11 +273,33 @@ export interface Quote {
   nights: number;
   /** The house standard rate. Individual nights can cost more or less; see `lines`. */
   nightlyRateCents: number;
-  /** Priced nights grouped by rate. Sum of `subtotalCents` equals `totalCents`. */
+  /** Priced nights grouped by rate. Sum of the line subtotals equals `subtotalCents`. */
   lines: QuoteLine[];
+  /** Sum of the nights before any discount. */
+  subtotalCents: number;
+  /** Discounts that applied, each its own line. Empty when none. */
+  discounts: QuoteDiscountLine[];
+  /** Sum of the discount lines. `totalCents` = `subtotalCents` - `discountCents`. */
+  discountCents: number;
   totalCents: number;
   currencyCode: string;
   available: boolean;
+  /** What happened to the promo code the guest typed. Null when none was sent. */
+  promoCode: PromoCodeResult | null;
+}
+
+/** One applied discount on a quote. */
+export interface QuoteDiscountLine {
+  discountId: string;
+  label: string;
+  amountCents: number;
+}
+
+/** Outcome of a typed promo code. A bad code never blocks a booking. */
+export interface PromoCodeResult {
+  code: string;
+  applied: boolean;
+  message: string;
 }
 
 /** Half-open night range [startDate, endDate): endDate is the check-out day. */
@@ -315,6 +337,8 @@ export interface CreateHoldRequest {
   bookerPhone: string;
   guestNote: string;
   requestOptionIds: string[];
+  /** A promo code the guest typed. Optional; a bad code never blocks the booking. */
+  promoCode?: string;
 }
 
 export interface Hold {
@@ -522,4 +546,133 @@ export interface BulkRatePeriodResult {
   propertyId: string;
   addedHouseIds: string[];
   skippedHouseIds: string[];
+}
+
+// --- Discounts ---
+
+export interface PercentDiscountEffect {
+  kind: 'percent';
+  /** Whole percent, 0-100. */
+  percent: number;
+}
+
+export interface FixedDiscountEffect {
+  kind: 'fixed';
+  amountCents: number;
+}
+
+export type DiscountEffect = PercentDiscountEffect | FixedDiscountEffect;
+
+/** Long stay: the stay has at least this many nights. */
+export interface MinNightsCondition {
+  kind: 'min_nights';
+  nights: number;
+}
+
+/** Early bird / last minute: whole days between booking day and check-in. */
+export interface BookingLeadDaysCondition {
+  kind: 'booking_lead_days';
+  minDays: number | null;
+  maxDays: number | null;
+}
+
+/** Every night of the stay falls inside the window (inclusive nights). */
+export interface StayDatesCondition {
+  kind: 'stay_dates';
+  startDate: string;
+  endDate: string;
+}
+
+/** The guest books on a day inside the sale window (inclusive). */
+export interface BookingWindowCondition {
+  kind: 'booking_window';
+  startDate: string;
+  endDate: string;
+}
+
+/** Every night of the stay is one of these weekdays (0 = Sunday ... 6 = Saturday). */
+export interface WeekdayCondition {
+  kind: 'weekday';
+  days: number[];
+}
+
+/** The guest typed this code (case-insensitive). */
+export interface PromoCodeCondition {
+  kind: 'promo_code';
+  code: string;
+}
+
+export type DiscountCondition =
+  | MinNightsCondition
+  | BookingLeadDaysCondition
+  | StayDatesCondition
+  | BookingWindowCondition
+  | WeekdayCondition
+  | PromoCodeCondition;
+
+export interface DiscountWrite {
+  label: string;
+  effect: DiscountEffect;
+  /** All must match. Empty is only allowed with `alwaysOn`. */
+  conditions: DiscountCondition[];
+  /** Explicit "applies to every stay" so an empty condition list is never an accident. */
+  alwaysOn: boolean;
+  /** Null means every house at the property. */
+  houseIds: string[] | null;
+  /** May stack with other combinable discounts. Otherwise it competes for "best single". */
+  combinable: boolean;
+  /** Lower runs first when stacking. */
+  priority: number;
+  active: boolean;
+  maxRedemptions: number | null;
+}
+
+export interface Discount extends DiscountWrite {
+  id: string;
+  propertyId: string;
+  /** Confirmed stays that used this discount. */
+  redemptions: number;
+}
+
+// --- Payments ---
+
+export type PaymentStatus = 'requires_payment' | 'succeeded' | 'failed' | 'cancelled';
+
+export interface PaymentSummary {
+  id: string;
+  holdId: string;
+  provider: string;
+  status: PaymentStatus;
+  amountCents: number;
+  currencyCode: string;
+  /** True when no real money moves (the mock provider). The guest UI says so plainly. */
+  simulated: boolean;
+}
+
+export type MockPaymentOutcome = 'success' | 'failure';
+
+export interface MockPaymentRequest {
+  outcome: MockPaymentOutcome;
+}
+
+/** What the guest gets when a paid hold becomes a confirmed stay. */
+export interface ReservationConfirmation {
+  reservationId: string;
+  /** Short code the guest quotes to the operator, e.g. BK-1A2B3C4D5E. */
+  reference: string;
+  houseId: string;
+  propertyId: string;
+  checkIn: string;
+  checkOut: string;
+  guestCount: number;
+  totalCents: number;
+  currencyCode: string;
+  bookerName: string;
+  bookerEmail: string;
+}
+
+export interface MockPaymentResult {
+  payment: PaymentSummary;
+  /** Set when the payment succeeded and the stay is confirmed. */
+  confirmation: ReservationConfirmation | null;
 }

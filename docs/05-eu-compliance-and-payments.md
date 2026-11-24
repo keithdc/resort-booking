@@ -80,6 +80,22 @@ Instant extras are included in the transfer amount. On-request extras stay pendi
 
 Organization stores bank details (IBAN, BIC, account name) in admin. Do not hardcode IBANs in the frontend.
 
+## Payment provider and test mode (built)
+
+No payment provider has been chosen yet, so payments run through a **provider interface** with a **mock** behind it. The booking flow (hold, pay, confirm) is real; only the money is simulated.
+
+- **Interface:** `PaymentProvider` (`apps/api/src/modules/payments/payment-provider.ts`) with `name`, `simulated`, and `createIntent`. The booking logic only talks to this. Replacing the mock with Stripe means one new class and one line in `payments.module.ts`; the reservation flow does not change.
+- **Selection:** `PAYMENT_PROVIDER` (default `mock`). **The app refuses to start in production on `mock`**, and an unknown provider name is an error, never a silent fallback.
+- **Guest flow (card):** after the hold, `POST /holds/:holdId/payment` opens one payment (repeating the call returns the same open payment; a unique index allows only one open attempt per hold). In test mode the guest sees "no real money moves" and two buttons: pay, or simulate a declined card.
+- **Settling (test mode only):** `POST /payments/:paymentId/mock/complete` with `outcome: success | failure`. With a real provider this route answers 404.
+  - **Success:** in **one transaction** the hold becomes a confirmed reservation (`kind = reservation`, `status = confirmed`, appears in the staff calendar and reports), the payment is marked succeeded, and discount use is recorded. Repeating a success returns the same confirmation.
+  - **Failure:** the payment is marked failed and the dates are released.
+  - **Never charged after expiry:** a hold that timed out cannot be paid. The attempt is cancelled with `hold_expired`, nothing is confirmed, and the guest is told to hold the dates again.
+- **Confirmation:** the guest gets a short reference derived from the stay id (for example `BK-1A2B3C4D5E`).
+- **Tables:** `payments` (provider, provider ref, amount, status) with unique indexes for one open and one successful payment per stay.
+- **Not built yet:** Stripe itself and its webhook (`event_id` idempotency, SCA), bank-transfer receipt upload and staff verification (a bank hold shows an explanation and waits), refunds, and confirmation emails.
+- **Safety:** the mock settle route is unauthenticated by design in test mode, so anyone who knows a payment id could confirm that stay. That is acceptable for a prototype and is exactly why production refuses to start on the mock.
+
 ## Freeze by payment method (no double booking)
 
 The freeze is **per house**, not per resort. Other houses at the same property stay bookable.

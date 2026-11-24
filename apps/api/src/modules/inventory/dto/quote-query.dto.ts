@@ -4,7 +4,7 @@
  * @dependencies class-validator
  */
 
-import { IsInt, Matches, Max, Min } from 'class-validator';
+import { IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import { UUID_LIKE } from '../../../shared/validation/uuid-like';
 
@@ -23,4 +23,9 @@ export class QuoteQueryDto {
   @Min(1)
   @Max(50)
   public guestCount!: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  public promoCode?: string;
 }

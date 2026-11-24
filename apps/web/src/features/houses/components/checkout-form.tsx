@@ -6,7 +6,15 @@
 
 'use client';
 
-import type { ExtraService, Hold, HouseDetail, HouseRequestOption, PaymentMethod, Quote } from '@resort-booking/shared-types';
+import type {
+  ExtraService,
+  Hold,
+  HouseDetail,
+  HouseRequestOption,
+  PaymentMethod,
+  Quote,
+  ReservationConfirmation,
+} from '@resort-booking/shared-types';
 import {
   Alert,
   Box,
@@ -33,6 +41,9 @@ import { formatCents } from '@/shared/utils/money';
 import { addDaysIsoDate, clampStayNights, todayIsoDate } from '@/shared/utils/today-iso';
 import { withDefaultStay, type StayQuery } from '@/shared/utils/stay-query';
 import { createHold, fetchQuote } from '../services/inventory-api';
+import { BookingConfirmed } from './booking-confirmed';
+import { MockPaymentPanel } from './mock-payment-panel';
+import { PromoCodeField } from './promo-code-field';
 import { QuoteBreakdown } from './quote-breakdown';
 
 interface CheckoutFormProps {
@@ -79,7 +90,11 @@ export function CheckoutForm({
   const [requestIds, setRequestIds] = useState<string[]>([]);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [quoteError, setQuoteError] = useState<string | null>(null);
+  // What the guest typed vs the code the quote was priced with (applied only on request).
+  const [promoInput, setPromoInput] = useState('');
+  const [appliedPromo, setAppliedPromo] = useState('');
   const [hold, setHold] = useState<Hold | null>(null);
+  const [confirmation, setConfirmation] = useState<ReservationConfirmation | null>(null);
   const [holdError, setHoldError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [nowMs, setNowMs] = useState(Date.now());
@@ -121,13 +136,13 @@ export function CheckoutForm({
     }
     try {
       setQuoteError(null);
-      const next = await fetchQuote(house.id, fields.checkIn, checkOut, guestCount);
+      const next = await fetchQuote(house.id, fields.checkIn, checkOut, guestCount, appliedPromo);
       setQuote(next);
     } catch (error: unknown) {
       setQuote(null);
       setQuoteError(error instanceof ApiRequestError ? error.message : 'Could not load quote');
     }
-  }, [checkOut, fields.checkIn, guestCount, house.id]);
+  }, [appliedPromo, checkOut, fields.checkIn, guestCount, house.id]);
 
   useEffect((): void => {
     void loadQuote();
@@ -160,6 +175,7 @@ export function CheckoutForm({
         bookerPhone: fields.bookerPhone.trim(),
         guestNote: fields.guestNote.trim(),
         requestOptionIds: requestIds,
+        ...(appliedPromo === '' ? {} : { promoCode: appliedPromo }),
       });
       setHold(next);
     } catch (error: unknown) {
@@ -168,6 +184,14 @@ export function CheckoutForm({
       setPending(false);
     }
   };
+
+  if (confirmation !== null) {
+    return (
+      <BorderBeam>
+        <BookingConfirmed confirmation={confirmation} houseName={house.name} />
+      </BorderBeam>
+    );
+  }
 
   return (
     <BorderBeam>
@@ -363,6 +387,18 @@ export function CheckoutForm({
             </Button>
           </Alert>
         ) : null}
+        <PromoCodeField
+          value={promoInput}
+          onChange={setPromoInput}
+          appliedCode={appliedPromo}
+          result={quote?.promoCode ?? null}
+          onApply={(): void => setAppliedPromo(promoInput.trim())}
+          onRemove={(): void => {
+            setPromoInput('');
+            setAppliedPromo('');
+          }}
+          disabled={hold !== null && !expired}
+        />
         {quote === null ? (
           <Typography color="text.secondary">Choose dates to see the price.</Typography>
         ) : (
@@ -379,9 +415,18 @@ export function CheckoutForm({
         <ShimmerButton disabled={checkoutDisabled || (hold !== null && !expired)} onClick={(): void => void onHold()}>
           {pending ? 'Holding dates…' : 'Hold these dates'}
         </ShimmerButton>
-        <Typography variant="body2" color="text.secondary">
-          Stripe capture is next. This step only freezes the property on the API.
-        </Typography>
+        {hold !== null && hold.status === 'active' && !expired && hold.paymentMethod === 'card' ? (
+          <MockPaymentPanel
+            holdId={hold.id}
+            onConfirmed={setConfirmation}
+            onDeclined={(): void => setHold(null)}
+          />
+        ) : null}
+        {hold !== null && !expired && hold.paymentMethod === 'bank_transfer' ? (
+          <Typography variant="body2" color="text.secondary">
+            Bank transfer: the dates are held for 48 hours. The operator confirms your stay once the payment arrives.
+          </Typography>
+        ) : null}
       </Stack>
       <Snackbar open={warnOpen} onClose={(): void => setWarnOpen(false)}>
         <Alert severity="warning" onClose={(): void => setWarnOpen(false)}>

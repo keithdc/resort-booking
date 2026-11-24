@@ -42,6 +42,11 @@ export class CreateHoldDto implements CreateHoldRequest {
 
   @IsOptional()
   @IsString()
+  @MaxLength(40)
+  public promoCode?: string;
+
+  @IsOptional()
+  @IsString()
   @MaxLength(2000)
   public guestNote: string = '';
 

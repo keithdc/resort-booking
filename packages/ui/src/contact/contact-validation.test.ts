@@ -88,13 +88,13 @@ describe('isValidPhone', () => {
 
 describe('phoneError', () => {
   it('asks for a number when required and empty, and allows an empty optional one', () => {
-    expect(phoneError('', true, 'France')).toBe('Enter a phone number');
-    expect(phoneError('', false, 'France')).toBeNull();
+    expect(phoneError('', true)).toBe('Enter a phone number');
+    expect(phoneError('', false)).toBeNull();
   });
 
   it('names the country for an invalid number', () => {
-    expect(phoneError('+33400000002', true, 'France')).toBe('Enter a valid phone number for France');
-    expect(phoneError('+33612345678', true, 'France')).toBeNull();
+    expect(phoneError('+33400000002', true)).toBe('Enter a valid phone number');
+    expect(phoneError('+33612345678', true)).toBeNull();
   });
 });
 

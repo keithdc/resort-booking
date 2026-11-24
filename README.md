@@ -77,7 +77,7 @@ Migrations publish two destinations (Alpine Lake and Pine Coast) with houses, ph
 
 ## Typical workflow
 
-1. Guest: pick dates on http://localhost:3000, search, open a property, hold dates (Stripe capture is not wired in this prototype).
+1. Guest: pick dates on http://localhost:3000, search, open a property, optionally apply a promo code (try `WELCOME15`), hold dates, then pay in **test mode** (no real money moves). A paid stay becomes a confirmed reservation with a booking reference.
 2. Admin: calendar (click a guest for the full stay), properties, account, reports (filter by property; click a tile or bar for the stays behind it).
 
 ## Scripts
@@ -96,7 +96,7 @@ Migrations publish two destinations (Alpine Lake and Pine Coast) with houses, ph
 
 Do not commit filled `.env` files. Examples:
 
-- `apps/api/.env.example` — `DATABASE_URL`, `REDIS_URL`, `PORT`, `CORS_ORIGINS`, staff owner email/password, `STAFF_TOKEN`
+- `apps/api/.env.example` — `DATABASE_URL`, `REDIS_URL`, `PORT`, `CORS_ORIGINS`, staff owner email/password, `STAFF_TOKEN`, `PAYMENT_PROVIDER` (`mock` until the client picks a provider; the API refuses `mock` in production)
 - `apps/web/.env.example` — `NEXT_PUBLIC_API_URL=http://localhost:3002`
 - `apps/admin/.env.example` — `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_STAFF_TOKEN`
 

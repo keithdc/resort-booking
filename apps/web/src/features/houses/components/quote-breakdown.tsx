@@ -13,7 +13,7 @@ interface QuoteBreakdownProps {
 }
 
 /**
- * Price by rate ("2 nights × 180 €, 2 nights × 300 €") then the total. Shows exactly the lines
+ * Price by rate ("2 nights × 180 €, 2 nights × 300 €"), each discount as its own line, then the total. Shows exactly the lines
  * and total the API returned, so a stay that crosses into peak season is never a surprise.
  */
 export function QuoteBreakdown({ quote }: QuoteBreakdownProps): React.JSX.Element {
@@ -29,6 +29,26 @@ export function QuoteBreakdown({ quote }: QuoteBreakdownProps): React.JSX.Elemen
           <Typography variant="body2">{formatCents(line.subtotalCents, quote.currencyCode)}</Typography>
         </Stack>
       ))}
+      {quote.discounts.length > 0 ? (
+        <>
+          <Stack direction="row" justifyContent="space-between" spacing={2}>
+            <Typography variant="body2" color="text.secondary">
+              Subtotal
+            </Typography>
+            <Typography variant="body2">{formatCents(quote.subtotalCents, quote.currencyCode)}</Typography>
+          </Stack>
+          {quote.discounts.map((discount): React.JSX.Element => (
+            <Stack key={discount.discountId} direction="row" justifyContent="space-between" spacing={2}>
+              <Typography variant="body2" color="success.main">
+                {discount.label}
+              </Typography>
+              <Typography variant="body2" color="success.main">
+                −{formatCents(discount.amountCents, quote.currencyCode)}
+              </Typography>
+            </Stack>
+          ))}
+        </>
+      ) : null}
       <Stack direction="row" justifyContent="space-between" spacing={2}>
         <Typography sx={{ fontWeight: 600 }}>Total</Typography>
         <Typography sx={{ fontWeight: 600 }}>{formatCents(quote.totalCents, quote.currencyCode)}</Typography>

@@ -8,6 +8,7 @@ import {
   holdTtlSeconds,
   isCheckInBeforeToday,
   nightsBetween,
+  referenceFor,
 } from './inventory.rules';
 
 describe('inventory.rules', () => {
@@ -38,5 +39,13 @@ describe('inventory.rules', () => {
 
   it('counts a month-end crossing', (): void => {
     expect(nightsBetween('2026-09-30', '2026-10-02')).toBe(2);
+  });
+
+  it('derives a short readable booking reference from the stay id', () => {
+    expect(referenceFor('1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d')).toBe('BK-1A2B3C4D5E');
+  });
+
+  it('gives different stays different references', () => {
+    expect(referenceFor('11111111-1111-4111-8111-111111111111')).not.toBe(referenceFor('22222222-2222-4222-8222-222222222222'));
   });
 });

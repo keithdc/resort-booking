@@ -10,23 +10,59 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { Hold, HouseSearchResult, Quote } from '@resort-booking/shared-types';
+import type {
+  Discount,
+  Hold,
+  HouseSearchResult,
+  PaymentMethod,
+  Quote,
+  QuoteDiscountLine,
+  ReservationConfirmation,
+} from '@resort-booking/shared-types';
+import type { PoolClient } from 'pg';
 import { DatabaseService } from '../../shared/database/database.service';
 import { RedisService } from '../../shared/redis/redis.service';
+import { DiscountsService } from '../discounts/discounts.service';
 import { PropertyRepository } from '../property/property.repository';
 import { RatesService, type PeriodsByHouse } from '../rates/rates.service';
 import type { CreateHoldDto } from './dto/create-hold.dto';
 import type { QuoteQueryDto } from './dto/quote-query.dto';
 import type { SearchQueryDto } from './dto/search-query.dto';
-import type { HoldRow } from './inventory.repository';
+import type { HoldRow, StayRow } from './inventory.repository';
 import { InventoryRepository } from './inventory.repository';
 import {
   HOLD_WARNING_REMAINING_SECONDS,
   holdTtlSeconds,
   isCheckInBeforeToday,
   isoDateInTimeZone,
+  isPriceSnapshot,
   nightsBetween,
+  referenceFor,
+  type PriceSnapshot,
 } from './inventory.rules';
+
+/** A hold that can be paid right now: still active, not timed out, with the price it was quoted. */
+export interface PayableHold {
+  id: string;
+  organizationId: string;
+  propertyId: string;
+  houseId: string;
+  paymentMethod: PaymentMethod;
+  totalCents: number;
+  currencyCode: string;
+  /** Discounts applied when it was quoted, so they can be counted once it is paid. */
+  discounts: QuoteDiscountLine[];
+}
+
+/** Optional inputs that let search price many houses without a query per house. */
+export interface QuoteOptions {
+  /** A hold to ignore when checking the calendar (the hold being viewed). */
+  excludeHoldId?: string | null;
+  /** Seasonal periods already loaded for the houses being priced. */
+  periods?: PeriodsByHouse;
+  /** Active discounts already loaded for the properties being priced. */
+  discounts?: readonly Discount[];
+}
 
 @Injectable()
 export class InventoryService {
@@ -36,17 +72,18 @@ export class InventoryService {
     private readonly database: DatabaseService,
     private readonly redis: RedisService,
     private readonly rates: RatesService,
+    private readonly discounts: DiscountsService,
   ) {}
 
   /**
-   * Prices a stay and reports whether the house is free.
+   * Prices a stay (seasonal rates, then discounts) and reports whether the house is free.
    */
   public async getQuote(
     query: QuoteQueryDto,
     rejectPastCheckIn: boolean,
-    excludeHoldId: string | null = null,
-    preloadedPeriods: PeriodsByHouse | null = null,
+    options: QuoteOptions = {},
   ): Promise<Quote> {
+    const excludeHoldId = options.excludeHoldId ?? null;
     const house = await this.houses.getHouseById(query.houseId);
     if (house === null || (rejectPastCheckIn && !house.published)) {
       throw new NotFoundException({ message: 'House not found', code: 'HOUSE_NOT_FOUND' });
@@ -82,10 +119,18 @@ export class InventoryService {
       excludeHoldId,
     );
 
-    // Search preloads periods for all houses in one query; a single quote loads its own.
+    // Search preloads periods and discounts for every house in one query each; a single quote loads its own.
     const periods =
-      preloadedPeriods ?? (await this.rates.loadPeriods([house.id], query.checkIn, query.checkOut));
+      options.periods ?? (await this.rates.loadPeriods([house.id], query.checkIn, query.checkOut));
     const price = this.rates.priceHouseStay(house, query.checkIn, query.checkOut, periods);
+    const discounts = options.discounts ?? (await this.discounts.loadActive([house.propertyId]));
+    const discounted = this.discounts.evaluate({
+      house,
+      nights: this.rates.nightsOf(query.checkIn, query.checkOut),
+      subtotalCents: price.totalCents,
+      promoCode: query.promoCode ?? null,
+      discounts,
+    });
 
     return {
       houseId: house.id,
@@ -95,9 +140,13 @@ export class InventoryService {
       nights,
       nightlyRateCents: house.nightlyRateCents,
       lines: price.lines,
-      totalCents: price.totalCents,
+      subtotalCents: price.totalCents,
+      discounts: discounted.lines,
+      discountCents: discounted.discountCents,
+      totalCents: price.totalCents - discounted.discountCents,
       currencyCode: house.currencyCode,
       available: !overlapping,
+      promoCode: discounted.promoCode,
     };
   }
 
@@ -112,12 +161,13 @@ export class InventoryService {
     const houses = await this.houses.listHousesByPropertySlug(propertySlug, true);
     const matches: HouseSearchResult[] = [];
     const fitting = houses.filter((house): boolean => query.guestCount <= house.capacity);
-    // One query for every candidate house's seasonal periods instead of one per house.
+    // One query each for every candidate house's seasonal periods and discounts, not one per house.
     const periods = await this.rates.loadPeriods(
       fitting.map((house): string => house.id),
       query.checkIn,
       query.checkOut,
     );
+    const discounts = await this.discounts.loadActive([...new Set(fitting.map((house): string => house.propertyId))]);
 
     for (const house of fitting) {
       const quote = await this.getQuote(
@@ -128,8 +178,7 @@ export class InventoryService {
           guestCount: query.guestCount,
         },
         true,
-        null,
-        periods,
+        { periods, discounts },
       );
       if (quote.available) {
         matches.push({ house, quote });
@@ -190,12 +239,8 @@ export class InventoryService {
             guestNote: (dto.guestNote ?? '').trim(),
             totalCents: quote.totalCents,
             currencyCode: quote.currencyCode,
-            // The quoted price travels with the hold so later rate edits never change it.
-            priceSnapshot: JSON.stringify({
-              lines: quote.lines,
-              totalCents: quote.totalCents,
-              currencyCode: quote.currencyCode,
-            }),
+            // The quoted price travels with the hold so later rate or discount edits never change it.
+            priceSnapshot: JSON.stringify(snapshotOf(quote)),
           });
           const optionIds = dto.requestOptionIds ?? [];
           const allowed = await this.houses.listRequestOptions(house.propertyId, true);
@@ -254,9 +299,9 @@ export class InventoryService {
           guestCount: expired.guest_count,
         },
         false,
-        expired.id,
+        { excludeHoldId: expired.id },
       );
-      return this.toHold(expired, quote, holdTtlSeconds(expired.payment_method));
+      return this.toHold(expired, withSnapshotPrice(quote, expired.price_snapshot), holdTtlSeconds(expired.payment_method));
     }
 
     const quote = await this.getQuote(
@@ -267,9 +312,80 @@ export class InventoryService {
         guestCount: row.guest_count,
       },
       false,
-      row.id,
+      { excludeHoldId: row.id },
     );
-    return this.toHold(row, quote, holdTtlSeconds(row.payment_method));
+    return this.toHold(row, withSnapshotPrice(quote, row.price_snapshot), holdTtlSeconds(row.payment_method));
+  }
+
+  /**
+   * The hold to charge for. Throws 404 if it does not exist, 409 if it already ended or timed out
+   * (nobody is ever charged for dates they no longer hold). The amount is the quoted price.
+   */
+  public async getPayableHold(holdId: string): Promise<PayableHold> {
+    const row = await this.inventory.getHoldById(holdId);
+    if (row === null) {
+      throw new NotFoundException({ message: 'Hold not found', code: 'HOLD_NOT_FOUND' });
+    }
+    if (row.status !== 'active') {
+      throw new ConflictException({ message: 'This hold is no longer active', code: 'HOLD_NOT_ACTIVE' });
+    }
+    if (row.expires_at.getTime() <= Date.now()) {
+      throw new ConflictException({
+        message: 'Time ran out before payment. Hold the dates again to continue.',
+        code: 'HOLD_EXPIRED',
+      });
+    }
+    const stored = row.price_snapshot;
+    const priced = isPriceSnapshot(stored)
+      ? stored
+      : snapshotOf(
+          await this.getQuote(
+            { houseId: row.house_id, checkIn: row.check_in, checkOut: row.check_out, guestCount: row.guest_count },
+            false,
+            { excludeHoldId: row.id },
+          ),
+        );
+    return {
+      id: row.id,
+      organizationId: row.organization_id,
+      propertyId: row.property_id,
+      houseId: row.house_id,
+      paymentMethod: row.payment_method,
+      totalCents: priced.totalCents,
+      currencyCode: priced.currencyCode,
+      discounts: priced.discounts,
+    };
+  }
+
+  /**
+   * Turns a paid hold into a confirmed reservation inside the caller's transaction. Throws 409 if
+   * the hold timed out in the meantime, so a late payment never confirms dates that are gone.
+   */
+  public async confirmPaidHold(client: PoolClient, holdId: string): Promise<ReservationConfirmation> {
+    const stay = await this.inventory.confirmPaidHold(client, holdId);
+    if (stay === null) {
+      throw new ConflictException({
+        message: 'Time ran out before payment. Hold the dates again to continue.',
+        code: 'HOLD_EXPIRED',
+      });
+    }
+    return toConfirmation(stay);
+  }
+
+  /**
+   * The confirmation for an already-confirmed stay, or null.
+   */
+  public async getConfirmation(stayId: string): Promise<ReservationConfirmation | null> {
+    const stay = await this.inventory.getConfirmedStay(stayId);
+    return stay === null ? null : toConfirmation(stay);
+  }
+
+  /**
+   * Gives the dates back (for example after a declined payment).
+   */
+  public async releaseHold(holdId: string): Promise<void> {
+    await this.inventory.releaseHold(holdId);
+    await this.redis.deleteHoldTtl(holdId);
   }
 
   private toHold(row: HoldRow, quote: Quote, ttlSeconds: number): Hold {
@@ -297,6 +413,57 @@ export class InventoryService {
       quote,
     };
   }
+}
+
+function toConfirmation(stay: StayRow): ReservationConfirmation {
+  return {
+    reservationId: stay.id,
+    reference: referenceFor(stay.id),
+    houseId: stay.house_id,
+    propertyId: stay.property_id,
+    checkIn: stay.check_in,
+    checkOut: stay.check_out,
+    guestCount: stay.guest_count,
+    totalCents: stay.total_cents ?? 0,
+    currencyCode: stay.currency_code ?? 'EUR',
+    bookerName: stay.booker_name ?? '',
+    bookerEmail: stay.booker_email ?? '',
+  };
+}
+
+/**
+ * The price fields of a quote, as saved with the hold.
+ */
+function snapshotOf(quote: Quote): PriceSnapshot {
+  return {
+    lines: quote.lines,
+    subtotalCents: quote.subtotalCents,
+    discounts: quote.discounts,
+    discountCents: quote.discountCents,
+    totalCents: quote.totalCents,
+    currencyCode: quote.currencyCode,
+    promoCode: quote.promoCode,
+  };
+}
+
+/**
+ * A hold shows the price the guest was quoted, not today's. Availability stays live (it tells the
+ * guest whether the dates are still free). Holds saved before snapshots existed keep the live price.
+ */
+function withSnapshotPrice(live: Quote, stored: unknown): Quote {
+  if (!isPriceSnapshot(stored)) {
+    return live;
+  }
+  return {
+    ...live,
+    lines: stored.lines,
+    subtotalCents: stored.subtotalCents,
+    discounts: stored.discounts,
+    discountCents: stored.discountCents,
+    totalCents: stored.totalCents,
+    currencyCode: stored.currencyCode,
+    promoCode: stored.promoCode,
+  };
 }
 
 interface PgErrorLike {

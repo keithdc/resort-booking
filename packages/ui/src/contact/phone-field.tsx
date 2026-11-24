@@ -9,7 +9,6 @@
 import { InputAdornment, MenuItem, Select, TextField } from '@mui/material';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  countryName,
   countryOptions,
   DEFAULT_PHONE_COUNTRY,
   flagEmoji,
@@ -99,7 +98,7 @@ export function PhoneField({
     emit(next, reformatted);
   };
 
-  const message = touched ? phoneError(value, required, countryName(country)) : null;
+  const message = touched ? phoneError(value, required) : null;
   const invalid = touched && value !== '' && !isValidPhone(value);
 
   return (

@@ -24,6 +24,23 @@ export interface HoldRow {
   booker_email: string;
   booker_phone: string;
   guest_note: string;
+  /** JSON of the quoted price, or null for holds made before snapshots existed. */
+  price_snapshot: unknown;
+}
+
+/** A confirmed stay, as the guest confirmation needs it. */
+export interface StayRow {
+  id: string;
+  organization_id: string;
+  property_id: string;
+  house_id: string;
+  check_in: string;
+  check_out: string;
+  guest_count: number;
+  total_cents: number | null;
+  currency_code: string | null;
+  booker_name: string | null;
+  booker_email: string | null;
 }
 
 export interface OccupiedRangeRow {
@@ -164,7 +181,7 @@ export class InventoryRepository {
       )
       RETURNING id, organization_id, property_id, house_id, status,
         check_in::text, check_out::text, guest_count, payment_method, expires_at,
-        booker_name, booker_email, booker_phone, guest_note
+        booker_name, booker_email, booker_phone, guest_note, price_snapshot
       `,
       [
         input.organizationId,
@@ -218,11 +235,45 @@ export class InventoryRepository {
       `
       SELECT id, organization_id, property_id, house_id, status,
         check_in::text, check_out::text, guest_count, payment_method, expires_at,
-        booker_name, booker_email, booker_phone, guest_note
+        booker_name, booker_email, booker_phone, guest_note, price_snapshot
       FROM inventory_blocks
       WHERE id = $1 AND kind = 'hold'
       `,
       [holdId],
+    );
+    return result.rows[0] ?? null;
+  }
+
+  /**
+   * Turns a still-valid hold into a confirmed reservation, inside the caller's transaction.
+   * Returns null when the hold is no longer active or has timed out: nothing is confirmed.
+   */
+  public async confirmPaidHold(client: PoolClient, holdId: string): Promise<StayRow | null> {
+    const result = await client.query<StayRow>(
+      `
+      UPDATE inventory_blocks
+      SET kind = 'reservation', status = 'confirmed', expires_at = NULL
+      WHERE id = $1 AND kind = 'hold' AND status = 'active' AND expires_at > now()
+      RETURNING id, organization_id, property_id, house_id, check_in::text, check_out::text, guest_count,
+        total_cents, currency_code, booker_name, booker_email
+      `,
+      [holdId],
+    );
+    return result.rows[0] ?? null;
+  }
+
+  /**
+   * A confirmed stay by id, or null.
+   */
+  public async getConfirmedStay(stayId: string): Promise<StayRow | null> {
+    const result = await this.database.query<StayRow>(
+      `
+      SELECT id, organization_id, property_id, house_id, check_in::text, check_out::text, guest_count,
+        total_cents, currency_code, booker_name, booker_email
+      FROM inventory_blocks
+      WHERE id = $1 AND kind = 'reservation' AND status = 'confirmed'
+      `,
+      [stayId],
     );
     return result.rows[0] ?? null;
   }

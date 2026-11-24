@@ -5,6 +5,7 @@
  */
 
 import { Module } from '@nestjs/common';
+import { DiscountsModule } from '../discounts/discounts.module';
 import { PropertyModule } from '../property/property.module';
 import { RatesModule } from '../rates/rates.module';
 import { AvailabilityService } from './availability.service';
@@ -12,10 +13,12 @@ import { HoldSweeperService } from './hold-sweeper.service';
 import { InventoryController } from './inventory.controller';
 import { InventoryRepository } from './inventory.repository';
 import { InventoryService } from './inventory.service';
+import { PromoRateLimiter } from './promo-rate-limiter';
 
 @Module({
-  imports: [PropertyModule, RatesModule],
+  imports: [PropertyModule, RatesModule, DiscountsModule],
   controllers: [InventoryController],
-  providers: [InventoryService, AvailabilityService, HoldSweeperService, InventoryRepository],
+  providers: [InventoryService, AvailabilityService, HoldSweeperService, InventoryRepository, PromoRateLimiter],
+  exports: [InventoryService],
 })
 export class InventoryModule {}

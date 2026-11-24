@@ -38,6 +38,25 @@ export function addMonthsIso(isoDate: string, months: number): string {
   return formatIso(date);
 }
 
+/**
+ * Formats an instant in a timezone as YYYY-MM-DD.
+ */
+export function isoDateInTimeZone(now: Date, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now);
+  const year = parts.find((part) => part.type === 'year')?.value;
+  const month = parts.find((part) => part.type === 'month')?.value;
+  const day = parts.find((part) => part.type === 'day')?.value;
+  if (year === undefined || month === undefined || day === undefined) {
+    throw new Error('Could not format timezone date');
+  }
+  return `${year}-${month}-${day}`;
+}
+
 function parseIso(isoDate: string): Date {
   const [year, month, day] = isoDate.split('-').map((part): number => Number.parseInt(part, 10));
   return new Date(Date.UTC(year ?? 0, (month ?? 1) - 1, day ?? 1));

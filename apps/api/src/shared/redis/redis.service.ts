@@ -38,6 +38,19 @@ export class RedisService implements OnModuleDestroy {
   }
 
   /**
+   * Counts a hit in a fixed window and returns the count so far (the window starts at the first hit).
+   * Used for rate limits; nothing durable lives here.
+   */
+  public async hitWindow(key: string, windowSeconds: number): Promise<number> {
+    await this.ensureConnected();
+    const count = await this.client.incr(key);
+    if (count === 1) {
+      await this.client.expire(key, windowSeconds);
+    }
+    return count;
+  }
+
+  /**
    * Drops the ephemeral hold key.
    */
   public async deleteHoldTtl(holdId: string): Promise<void> {
