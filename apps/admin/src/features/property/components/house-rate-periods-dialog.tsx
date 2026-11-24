@@ -66,8 +66,7 @@ export function HouseRatePeriodsDialog({
         <Stack spacing={2} sx={{ mt: 1 }}>
           <Typography color="text.secondary">
             {house === null ? '' : `Standard rate: ${formatCents(house.nightlyRateCents, currency)} per night. `}
-            It applies to every night that is not inside a season below. Guests are charged night by night, so a stay
-            that crosses into peak season pays each night at its own rate.
+            It applies to every night that is not inside a season below. Guests are charged night by night, so a booking that crosses into peak season pays each night at its own rate.
           </Typography>
           {state.error !== null ? <Alert severity="error">{state.error}</Alert> : null}
           {state.periods.length === 0 && !state.loading ? (
@@ -152,7 +151,7 @@ export function HouseRatePeriodsDialog({
                   onChange={(event): void => state.updateDraft({ applyToAll: event.target.checked })}
                 />
               }
-              label="Apply to all houses at this property"
+              label="Apply to all stays at this property"
             />
           )}
         </Stack>
@@ -178,7 +177,7 @@ export function HouseRatePeriodsDialog({
         <DialogTitle id="delete-rate-title">Remove this seasonal rate?</DialogTitle>
         <DialogContent>
           <Typography>
-            Nights in this season go back to the standard rate. Stays already booked keep the price the guest was quoted.
+            Nights in this season go back to the standard rate. Bookings already made keep the price the guest was quoted.
           </Typography>
         </DialogContent>
         <DialogActions>

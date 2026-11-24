@@ -6,7 +6,14 @@
 
 import { Box, Container, Link as MuiLink, Stack, Typography } from '@mui/material';
 import NextLink from 'next/link';
-import { fetchExtras, fetchHouse, fetchProperty, fetchRequestOptions } from '@/features/property/services/property-api';
+import {
+  fetchCancellationPolicyOrNull,
+  fetchExtras,
+  fetchHouse,
+  fetchProperty,
+  fetchRequestOptions,
+} from '@/features/property/services/property-api';
+import { CancellationPolicySection } from '@/shared/components/cancellation-policy';
 import { PhotoGallery } from '@/shared/components/photo-gallery';
 import { PropertyMap } from '@/shared/components/property-map';
 import { formatAddress } from '@/shared/utils/format-address';
@@ -29,11 +36,12 @@ export async function HouseDetailPage({
   houseSlug,
   stay,
 }: HouseDetailPageProps): Promise<React.JSX.Element> {
-  const [house, requestOptions, extras, property] = await Promise.all([
+  const [house, requestOptions, extras, property, policy] = await Promise.all([
     fetchHouse(propertySlug, houseSlug),
     fetchRequestOptions(propertySlug),
     fetchExtras(propertySlug),
     fetchProperty(propertySlug),
+    fetchCancellationPolicyOrNull(propertySlug),
   ]);
   const lat = house.latitude ?? house.propertyLatitude;
   const lng = house.longitude ?? house.propertyLongitude;
@@ -66,7 +74,7 @@ export async function HouseDetailPage({
           {house.description.trim() !== '' ? (
             <>
               <Typography variant="h6" component="h2" gutterBottom>
-                About this property
+                About this stay
               </Typography>
               <Typography color="text.secondary" sx={{ mb: 3, maxWidth: 720 }}>
                 {house.description}
@@ -102,6 +110,7 @@ export async function HouseDetailPage({
               </Stack>
             </Box>
           ) : null}
+          <CancellationPolicySection policy={policy} currencyCode={house.currencyCode} />
           <Typography variant="h6" component="h2" gutterBottom>
             Location and contact
           </Typography>

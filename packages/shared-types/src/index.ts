@@ -183,6 +183,9 @@ export interface HouseSummary {
   nightlyRateCents: number;
   currencyCode: string;
   coverPhotoUrl: string | null;
+  /** Where to pin this stay on a map: its own coordinates, else the property's. Never half and half. */
+  mapLatitude: number;
+  mapLongitude: number;
 }
 
 export interface HouseAmenity {
@@ -337,6 +340,8 @@ export interface CreateHoldRequest {
   bookerPhone: string;
   guestNote: string;
   requestOptionIds: string[];
+  /** The guest ticked "I have read the cancellation terms". Must be true; the API refuses a hold without it. */
+  termsAccepted: boolean;
   /** A promo code the guest typed. Optional; a bad code never blocks the booking. */
   promoCode?: string;
 }
@@ -675,4 +680,79 @@ export interface MockPaymentResult {
   payment: PaymentSummary;
   /** Set when the payment succeeded and the stay is confirmed. */
   confirmation: ReservationConfirmation | null;
+}
+
+// --- Guest-facing cancellation policy ---
+
+export interface CancellationPolicyTier {
+  /** Whole days before check-in (property timezone) from which this refund applies. */
+  minDaysBeforeCheckIn: number;
+  refundPercent: number;
+}
+
+/** What a guest may read about cancelling and changing dates. Never includes internal ids or staff data. */
+export interface CancellationPolicy {
+  propertyId: string;
+  /** Highest minimum days first. */
+  tiers: CancellationPolicyTier[];
+  rebookable: boolean;
+  rebookFeeType: RebookFeeType;
+  /** Euros for `fixed`, 0 to 100 for `percent`, ignored for `none`. */
+  rebookFeeValue: number;
+}
+
+// --- Guest self-service: manage and cancel a booking ---
+
+export type GuestBookingStatus = 'confirmed' | 'cancelled';
+
+/** What cancelling right now would refund, from the policy saved with the booking. */
+export interface RefundQuote {
+  /** What the guest actually paid for the booking. */
+  paidCents: number;
+  refundPercent: number;
+  refundCents: number;
+  currencyCode: string;
+  /** Whole days from today to check-in in the property's timezone (0 on the day itself). */
+  daysBeforeCheckIn: number;
+}
+
+export type RefundStatus = 'pending' | 'succeeded' | 'failed';
+
+/** The refund that was issued when a booking was cancelled. */
+export interface RefundSummary {
+  amountCents: number;
+  percent: number;
+  currencyCode: string;
+  status: RefundStatus;
+  /** True when no real money moves (the mock provider). */
+  simulated: boolean;
+}
+
+/** A booking as its guest may see it. Never includes phone, staff notes, or internal ids beyond the booking id. */
+export interface GuestBooking {
+  reference: string;
+  reservationId: string;
+  stayName: string;
+  propertyName: string;
+  checkIn: string;
+  checkOut: string;
+  guestCount: number;
+  bookerName: string;
+  totalCents: number;
+  currencyCode: string;
+  status: GuestBookingStatus;
+  canCancel: boolean;
+  /** Why cancelling is not possible online (for example the booking already started), else null. */
+  cancelBlockedReason: string | null;
+  /** Set when `canCancel`. */
+  refundQuote: RefundQuote | null;
+  /** Set once cancelled. */
+  refund: RefundSummary | null;
+  rebookable: boolean;
+}
+
+/** The reference and email the guest booked with. Both must match. */
+export interface GuestBookingLookupRequest {
+  reference: string;
+  email: string;
 }

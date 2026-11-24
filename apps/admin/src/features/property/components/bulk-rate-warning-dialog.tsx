@@ -36,24 +36,24 @@ export function BulkRateWarningDialog({
   return (
     <Dialog open onClose={onCancel} fullWidth maxWidth="sm" aria-labelledby="bulk-rate-title">
       <DialogTitle id="bulk-rate-title">
-        Change the price of {String(total)} house{total === 1 ? '' : 's'} at once?
+        Change the price of {String(total)} stay{total === 1 ? '' : 's'} at once?
       </DialogTitle>
       <DialogContent>
         <Alert severity="warning" sx={{ mb: 2 }}>
           This applies &quot;{write.label}&quot; ({write.startDate} to {write.endDate}) at{' '}
           {formatCents(write.nightlyRateCents, currencyCode)} per night to{' '}
           <strong>
-            {String(preview.addCount)} house{preview.addCount === 1 ? '' : 's'}
+            {String(preview.addCount)} stay{preview.addCount === 1 ? '' : 's'}
           </strong>
           . Guests will see the new price on those nights straight away.
         </Alert>
         {clashing.length > 0 ? (
           <>
             <Typography sx={{ fontWeight: 600 }}>
-              {String(clashing.length)} house{clashing.length === 1 ? '' : 's'} already {clashing.length === 1 ? 'has' : 'have'} a
+              {String(clashing.length)} stay{clashing.length === 1 ? '' : 's'} already {clashing.length === 1 ? 'has' : 'have'} a
               rate on these dates and will be skipped:
             </Typography>
-            <List dense aria-label="Houses that will be skipped">
+            <List dense aria-label="Stays that will be skipped">
               {clashing.map((result): React.JSX.Element => (
                 <ListItem key={result.houseId}>
                   {result.houseName}
@@ -64,12 +64,12 @@ export function BulkRateWarningDialog({
               ))}
             </List>
             <Typography color="text.secondary" variant="body2">
-              Nothing is overwritten. To change one of those houses, edit its own seasonal rates.
+              Nothing is overwritten. To change one of those stays, edit its own seasonal rates.
             </Typography>
           </>
         ) : null}
         <Typography color="text.secondary" variant="body2" sx={{ mt: 2 }}>
-          Stays that are already booked keep the price the guest was quoted.
+          Bookings that are already made keep the price the guest was quoted.
         </Typography>
       </DialogContent>
       <DialogActions>
@@ -77,7 +77,7 @@ export function BulkRateWarningDialog({
           Cancel
         </Button>
         <Button variant="contained" onClick={onConfirm} disabled={pending || preview.addCount === 0}>
-          {pending ? 'Applying…' : `Add to ${String(preview.addCount)} house${preview.addCount === 1 ? '' : 's'}`}
+          {pending ? 'Applying…' : `Add to ${String(preview.addCount)} stay${preview.addCount === 1 ? '' : 's'}`}
         </Button>
       </DialogActions>
     </Dialog>

@@ -6,7 +6,9 @@
 
 'use client';
 
+import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { DesktopDatePicker } from '@mui/x-date-pickers/DesktopDatePicker';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import type { DateRange } from '@resort-booking/shared-types';
 import dayjs, { type Dayjs } from 'dayjs';
 import { useMemo } from 'react';
@@ -32,7 +34,7 @@ const BOOKED_DAY_SX = {
   },
 } as const;
 
-interface StayDatePickerProps {
+export interface StayDatePickerProps {
   label: string;
   /** YYYY-MM-DD, or empty when nothing is chosen. */
   value: string;
@@ -47,7 +49,9 @@ interface StayDatePickerProps {
 }
 
 /**
- * Check-in date field. The API supplies the booked ranges; Nest still validates every quote.
+ * Check-in date field. It brings its own date-library setup so nothing global has to load it.
+ * Pages use `StayDateField` (the on-demand version) rather than importing this directly.
+ * The API supplies the booked ranges; Nest still validates every quote.
  */
 export function StayDatePicker({
   label,
@@ -62,6 +66,7 @@ export function StayDatePicker({
   const selected = useMemo((): Dayjs | null => (value === '' ? null : dayjs(value)), [value]);
   const minDate = useMemo((): Dayjs => dayjs(todayIso), [todayIso]);
   return (
+    <LocalizationProvider dateAdapter={AdapterDayjs}>
     <DesktopDatePicker
       label={label}
       value={selected}
@@ -95,5 +100,6 @@ export function StayDatePicker({
             : {},
       }}
     />
+    </LocalizationProvider>
   );
 }

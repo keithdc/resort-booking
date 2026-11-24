@@ -66,6 +66,10 @@ interface InsertHoldInput {
   currencyCode: string;
   /** JSON text of the quoted price lines. */
   priceSnapshot: string;
+  /** When the guest accepted the cancellation terms (the server clock). */
+  termsAcceptedAt: Date;
+  /** JSON text of the cancellation policy in force when the guest booked. */
+  policySnapshot: string;
 }
 
 @Injectable()
@@ -172,12 +176,12 @@ export class InventoryRepository {
         organization_id, property_id, house_id, kind, status,
         check_in, check_out, guest_count, payment_method, expires_at,
         booker_name, booker_email, booker_phone, guest_note,
-        total_cents, currency_code, price_snapshot
+        total_cents, currency_code, price_snapshot, policy_snapshot, terms_accepted_at
       ) VALUES (
         $1, $2, $3, 'hold', 'active',
         $4, $5, $6, $7, $8,
         $9, $10, $11, $12,
-        $13, $14, $15::jsonb
+        $13, $14, $15::jsonb, $16::jsonb, $17
       )
       RETURNING id, organization_id, property_id, house_id, status,
         check_in::text, check_out::text, guest_count, payment_method, expires_at,
@@ -199,6 +203,8 @@ export class InventoryRepository {
         input.totalCents,
         input.currencyCode,
         input.priceSnapshot,
+        input.policySnapshot,
+        input.termsAcceptedAt,
       ],
     );
     const row = result.rows[0];

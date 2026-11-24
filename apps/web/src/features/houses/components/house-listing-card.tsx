@@ -68,7 +68,7 @@ export function HouseListingCard({ house, quote, stay }: HouseListingCardProps):
               Standard rate {formatCents(house.nightlyRateCents, house.currencyCode)} / night
             </Typography>
           )}
-          <Box sx={{ mt: 1.5, color: 'primary.main', fontWeight: 600 }}>Book this property →</Box>
+          <Box sx={{ mt: 1.5, color: 'primary.main', fontWeight: 600 }}>Book this stay →</Box>
         </CardContent>
       </CardActionArea>
     </MagicCard>

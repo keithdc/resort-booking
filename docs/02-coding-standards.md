@@ -133,10 +133,10 @@ Prisma/Stripe client types: wrap in our interfaces at the module boundary. Do no
 - Search fields always show a clear (×) control when populated.
 - Date range **To** must not allow a date before **From** (`min` constraint).
 - Checkout / end date cannot be before check-in / start date in any picker.
-- Guest search must treat stay dates as the primary filter (nights, not a single calendar day). Guest **count** is a number up to house capacity — not a list of names.
+- Guest search must treat booking dates as the primary filter (nights, not a single calendar day). Guest **count** is a number up to stay capacity — not a list of names.
 - **Guest calendars** (`apps/web`): **disable all days before today** (property timezone). Guests cannot pick a past check-in. Also disable **already-booked dates** using the unavailable ranges and `maxCheckOutDate` from the availability API (`docs/04-product-domain.md`). The UI renders what the API returns and never works out overlaps itself. The API still rejects a taken range with `DATES_UNAVAILABLE`.
-- **Admin calendars** (`apps/admin`): **do not disable past days or booked days** (booked stays are shown with details instead). Staff have full rights (history, blocks, corrections). Guest `minDate` logic must not be reused on admin pickers.
-- Search and admin lists are property-aware: guests can search one resort or all resorts; staff always work inside a selected property unless the screen is the property list.
+- **Admin calendars** (`apps/admin`): **do not disable past days or booked days** (bookings are shown with details instead). Staff have full rights (history, blocks, corrections). Guest `minDate` logic must not be reused on admin pickers.
+- Search and admin lists are property-aware: guests can search one property or all properties; staff always work inside a selected property unless the screen is the property list.
 
 ## API / NestJS
 
@@ -146,15 +146,16 @@ Prisma/Stripe client types: wrap in our interfaces at the module boundary. Do no
 - Error body shape: `{ status: "error", message: string, code?: string }`.
 - Success mutations may return `{ status: "ok", data: T }`.
 - Group HTTP routes by feature module, not by verb.
+- **Booleans that gate something important use `@KeepRawValue()`** (`shared/validation/keep-raw-value.ts`) with `@IsBoolean()` and `@Equals(true)`. The global ValidationPipe converts values to the declared type, so a plain `@IsBoolean()` field accepts "yes" and even "false" as `true`. Used for the checkout `termsAccepted` and the staff bulk-rate `confirmed`. DTO tests must use `enableImplicitConversion: true` to match the app.
 - Redis is allowed for holds, locks, cache, and queues — never as the source of truth for reservations.
 
 ### No N+1 queries (strict)
 
-The API must never run one query per row of a parent result. This is a hard rule, not a performance nicety: list screens (calendar, reports, search, property and house lists) grow with every resort and house added.
+The API must never run one query per row of a parent result. This is a hard rule, not a performance nicety: list screens (calendar, reports, search, property and stay lists) grow with every property and stay added.
 
 - **Never query inside a loop.** No `await repo.find…()` inside `for`, `map`, `forEach`, or `Promise.all(rows.map(...))` when the query depends on the row. Fetch all children for all parents in one query, then group in memory.
 - **Batch by ids.** Load related rows with `WHERE parent_id = ANY($1)` (parameterized array), or a `JOIN`, then index the result in a `Map` keyed by id.
-- **Use SQL for aggregation.** Counts, sums, occupancy, and revenue per property or per house are computed with `GROUP BY` / joins / `json_agg` in the repository, never by fetching rows and looping with extra lookups.
+- **Use SQL for aggregation.** Counts, sums, occupancy, and revenue per property or per stay are computed with `GROUP BY` / joins / `json_agg` in the repository, never by fetching rows and looping with extra lookups.
 - **Repositories expose set-based methods.** Prefer `findByIds(ids)`, `listHousesForProperties(propertyIds)`, `listPhotosForHouses(houseIds)` over single-row `findById` used repeatedly. A single-row method is for single-row endpoints.
 - **Services compose, repositories fetch.** A service may call several repository methods, but each is called once per request with the full id set, never once per item.
 - **Cross-module reads follow the same rule.** If module A needs data for N rows owned by module B, it calls B's batch method through B's public exports.
@@ -199,9 +200,19 @@ const byHouse = groupBy(photos, (p) => p.houseId);
 - **UserAvatar** (`shared/components/user-avatar.tsx`) — all staff/guest avatars. Deterministic color from initials. Never a raw MUI `Avatar` with a hardcoded `bgcolor` for people.
 - **getAvatarColor / getInitials** (`shared/utils/avatar-color.ts`) — same person, same color in web and admin.
 - **PropertyMap** (`shared/components/property-map.tsx`) — MapLibre + OpenFreeMap pin from `lat`/`lng`. Directions links to Google Maps and Apple Maps. Never paste a raw iframe with hardcoded coordinates.
-- **PhoneField / EmailField** (`packages/ui`, `import { PhoneField, EmailField } from '@resort-booking/ui'`) — every phone and email input in web and admin. `PhoneField` shows a country flag + calling code, takes the national number, and reports clean E.164 (`+33612345678`). Both validate with `isValidPhone` / `isValidEmail` (from the same package), show the message after the field is left, and the form disables submit while invalid. Never a plain `TextField type="tel"` or `type="email"`. The API re-checks with `@IsEmail()` and `@IsPhoneNumber()` (international format); phone numbers are stored as E.164.
-- **PhotoGallery** (`shared/components/photo-gallery.tsx`) — all property and house galleries.
+- **PhoneField / EmailField** (`packages/ui`, `import { PhoneField, EmailField } from '@resort-booking/ui/contact'` (a separate entry on purpose: it carries the phone-number library, which must not load on pages without a phone field)) — every phone and email input in web and admin. `PhoneField` shows a country flag + calling code, takes the national number, and reports clean E.164 (`+33612345678`). Both validate with `isValidPhone` / `isValidEmail` (from the same package), show the message after the field is left, and the form disables submit while invalid. Never a plain `TextField type="tel"` or `type="email"`. The API re-checks with `@IsEmail()` and `@IsPhoneNumber()` (international format); phone numbers are stored as E.164.
+- **PhotoGallery** (`shared/components/photo-gallery.tsx`) — all property and stay galleries.
 - Do not port CRM-only editors (mention chips, workflow localStorage) unless a story explicitly needs them.
+
+## Performance and lazy loading (guest app)
+
+- **Each route is split automatically** by Next.js: a guest only downloads the code of the page they open. Nothing to configure.
+- **Heavy libraries must not ride along on pages that do not use them.** Load them on demand or give them their own entry:
+  - **Map** (MapLibre): loaded on demand after the page appears (`PropertyMap`, `SearchResultsMap`).
+  - **Date picker** (MUI X + dayjs): `StayDateField` loads it on demand and holds the space with a placeholder showing the chosen date. Pages import `StayDateField`, never `StayDatePicker` directly.
+  - **Phone and email fields** (phone-number library, ~100 kB): import from `@resort-booking/ui/contact`, **not** the main `@resort-booking/ui` barrel, so only pages with a phone field download it.
+- **Measure before and after any dependency change.** A normal build would overwrite a running dev server's folder, so build elsewhere: `cd apps/web && NEXT_DIST_DIR=.next-measure npx next build`, then `git checkout -- tsconfig.json` (Next rewrites it) and read the "First Load JS" column.
+- **Measured (production build, first-load JS):** home 247 kB, property 247 kB, search 236 kB, stay page 312 kB (it carries the phone library on purpose). Before the split these were 370, 370, 361 and 373 kB. Treat a jump of more than about 20 kB on a page as something to explain.
 
 ## Testing
 

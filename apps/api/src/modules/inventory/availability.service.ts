@@ -41,7 +41,7 @@ export class AvailabilityService {
   ): Promise<HouseAvailability> {
     const house = await this.properties.getHouseBySlugs(propertySlug, houseSlug, true);
     if (house === null) {
-      throw new NotFoundException({ message: 'House not found', code: 'HOUSE_NOT_FOUND' });
+      throw new NotFoundException({ message: 'Stay not found', code: 'HOUSE_NOT_FOUND' });
     }
 
     const window = this.resolveWindow(query, house.propertyTimezone);

@@ -8,7 +8,7 @@
 
 import type { StaffProfile } from '@resort-booking/shared-types';
 import { Alert, Button, Snackbar, Stack, TextField, Typography } from '@mui/material';
-import { EmailField, isValidEmail } from '@resort-booking/ui';
+import { EmailField, isValidEmail } from '@resort-booking/ui/contact';
 import { useState } from 'react';
 import { changeStaffPassword, saveStaffProfile } from '@/features/identity/services/staff-identity-api';
 import { ApiRequestError } from '@/shared/services/api-client';

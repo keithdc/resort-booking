@@ -24,6 +24,7 @@ import {
   FormControlLabel,
   FormGroup,
   FormLabel,
+  Link as MuiLink,
   Radio,
   RadioGroup,
   Snackbar,
@@ -31,9 +32,10 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import { BorderBeam, EmailField, isValidEmail, isValidPhone, PhoneField, ShimmerButton } from '@resort-booking/ui';
+import { BorderBeam, ShimmerButton } from '@resort-booking/ui';
+import { EmailField, isValidEmail, isValidPhone, PhoneField } from '@resort-booking/ui/contact';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { StayDatePicker } from '@/shared/components/stay-date-picker';
+import { StayDateField } from '@/shared/components/stay-date-field';
 import { useHouseAvailability } from '@/shared/hooks/use-availability';
 import { ApiRequestError } from '@/shared/services/api-client';
 import { maxNightsFor } from '@/shared/utils/disabled-dates';
@@ -93,6 +95,8 @@ export function CheckoutForm({
   // What the guest typed vs the code the quote was priced with (applied only on request).
   const [promoInput, setPromoInput] = useState('');
   const [appliedPromo, setAppliedPromo] = useState('');
+  // Must be ticked before the dates can be held; the API refuses a hold without it.
+  const [termsAccepted, setTermsAccepted] = useState(false);
   const [hold, setHold] = useState<Hold | null>(null);
   const [confirmation, setConfirmation] = useState<ReservationConfirmation | null>(null);
   const [holdError, setHoldError] = useState<string | null>(null);
@@ -152,13 +156,14 @@ export function CheckoutForm({
     return (
       pending ||
       overMaxNights ||
+      !termsAccepted ||
       quote === null ||
       !quote.available ||
       fields.bookerName.trim() === '' ||
       !isValidEmail(fields.bookerEmail) ||
       !isValidPhone(fields.bookerPhone)
     );
-  }, [fields.bookerEmail, fields.bookerName, fields.bookerPhone, overMaxNights, pending, quote]);
+  }, [fields.bookerEmail, fields.bookerName, fields.bookerPhone, overMaxNights, pending, quote, termsAccepted]);
 
   const onHold = async (): Promise<void> => {
     setPending(true);
@@ -175,6 +180,7 @@ export function CheckoutForm({
         bookerPhone: fields.bookerPhone.trim(),
         guestNote: fields.guestNote.trim(),
         requestOptionIds: requestIds,
+        termsAccepted,
         ...(appliedPromo === '' ? {} : { promoCode: appliedPromo }),
       });
       setHold(next);
@@ -198,13 +204,13 @@ export function CheckoutForm({
     <Box sx={{ p: 2 }}>
       <Stack spacing={2} component="form" onSubmit={(event): void => event.preventDefault()}>
         <Typography variant="h5" component="h2">
-          Book this property
+          Book this stay
         </Typography>
         <Typography variant="body2" color="text.secondary">
           Check-in starts today. Choose how many nights — checkout is calculated for you.
         </Typography>
         <Stack spacing={1.5}>
-        <StayDatePicker
+        <StayDateField
           label="Check-in"
           value={fields.checkIn}
           unavailable={availability.unavailable}
@@ -230,7 +236,7 @@ export function CheckoutForm({
           error={overMaxNights}
           helperText={
             overMaxNights && availability.maxCheckOutDate !== null
-              ? `Another stay starts on ${availability.maxCheckOutDate}. Max ${String(maxNights)} night${maxNights === 1 ? '' : 's'}.`
+              ? `Another booking starts on ${availability.maxCheckOutDate}. Max ${String(maxNights)} night${maxNights === 1 ? '' : 's'}.`
               : undefined
           }
           slotProps={{
@@ -328,7 +334,7 @@ export function CheckoutForm({
         ) : null}
         {customRequestsEnabled ? (
         <TextField
-          label="Ask us anything for this stay"
+          label="Ask us anything for this booking"
           multiline
           minRows={3}
           helperText="We read this after you hold the dates. We will tell you if we can provide it."
@@ -412,6 +418,22 @@ export function CheckoutForm({
         {hold !== null && hold.status === 'active' && !expired ? (
           <Typography>Dates held for {formatCountdown(remainingSeconds)}.</Typography>
         ) : null}
+        <FormControlLabel
+          control={
+            <Checkbox
+              checked={termsAccepted}
+              disabled={hold !== null && !expired}
+              onChange={(event): void => setTermsAccepted(event.target.checked)}
+            />
+          }
+          label={
+            <Typography variant="body2">
+              I have read the{' '}
+              <MuiLink href="#cancellation-policy">cancellation terms</MuiLink> and understand that I have no 14-day
+              right of withdrawal for a booking on specific dates.
+            </Typography>
+          }
+        />
         <ShimmerButton disabled={checkoutDisabled || (hold !== null && !expired)} onClick={(): void => void onHold()}>
           {pending ? 'Holding dates…' : 'Hold these dates'}
         </ShimmerButton>
@@ -424,7 +446,7 @@ export function CheckoutForm({
         ) : null}
         {hold !== null && !expired && hold.paymentMethod === 'bank_transfer' ? (
           <Typography variant="body2" color="text.secondary">
-            Bank transfer: the dates are held for 48 hours. The operator confirms your stay once the payment arrives.
+            Bank transfer: the dates are held for 48 hours. The operator confirms your booking once the payment arrives.
           </Typography>
         ) : null}
       </Stack>

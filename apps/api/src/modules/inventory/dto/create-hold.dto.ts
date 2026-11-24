@@ -4,9 +4,24 @@
  * @dependencies class-validator
  */
 
-import { IsArray, IsEmail, IsIn, IsInt, IsOptional, IsPhoneNumber, IsString, Matches, Max, MaxLength, Min } from 'class-validator';
+import {
+  Equals,
+  IsArray,
+  IsBoolean,
+  IsEmail,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsPhoneNumber,
+  IsString,
+  Matches,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import type { CreateHoldRequest, PaymentMethod } from '@resort-booking/shared-types';
+import { KeepRawValue } from '../../../shared/validation/keep-raw-value';
 import { UUID_LIKE } from '../../../shared/validation/uuid-like';
 
 export class CreateHoldDto implements CreateHoldRequest {
@@ -39,6 +54,12 @@ export class CreateHoldDto implements CreateHoldRequest {
   @IsPhoneNumber(undefined, { message: 'bookerPhone must be a valid international phone number, like +33612345678' })
   @MaxLength(40)
   public bookerPhone!: string;
+
+  // A legal acceptance must be a real boolean true, not "yes" converted to one.
+  @KeepRawValue()
+  @IsBoolean()
+  @Equals(true, { message: 'You must confirm you have read the cancellation terms before booking' })
+  public termsAccepted!: boolean;
 
   @IsOptional()
   @IsString()

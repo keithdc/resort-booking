@@ -305,7 +305,7 @@ describe('applyDiscounts', () => {
       expect(result.promoCode).toEqual({
         code: 'WELCOME15',
         applied: false,
-        message: 'A better offer is already applied to this stay',
+        message: 'A better offer is already applied to this booking',
       });
       expect(result.lines.map((line) => line.discountId)).toEqual(['better']);
     });
@@ -374,7 +374,7 @@ describe('validateDiscountWrite', () => {
   });
 
   it('rejects an empty house list (use null for every house)', () => {
-    expect(validateDiscountWrite(write({ houseIds: [] }))).toContain('at least one house');
+    expect(validateDiscountWrite(write({ houseIds: [] }))).toContain('at least one stay');
     expect(validateDiscountWrite(write({ houseIds: null }))).toBeNull();
   });
 

@@ -56,7 +56,7 @@ export function PropertyWorkspace({
         <Chip size="small" label={property.published ? 'On the website' : 'Hidden from guests'} />
       </Stack>
       <Typography color="text.secondary" sx={{ mb: 2 }}>
-        Work through the tabs in order: pin the place, add houses, then extras, cancellation, and discounts.
+        Work through the tabs in order: pin the place, add stays, then extras, cancellation, and discounts.
       </Typography>
       <Tabs
         value={tab}
@@ -67,7 +67,7 @@ export function PropertyWorkspace({
         sx={{ mb: 3 }}
       >
         <Tab value="place" label="1. Place & map" />
-        <Tab value="houses" label="2. Houses" />
+        <Tab value="houses" label="2. Stays" />
         <Tab value="extras" label="3. Guest extras" />
         <Tab value="cancel" label="4. If they cancel" />
         <Tab value="discounts" label="5. Discounts" />

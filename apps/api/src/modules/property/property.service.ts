@@ -87,7 +87,7 @@ export class PropertyService {
   public async getPublishedHouse(propertySlug: string, houseSlug: string): Promise<HouseDetail> {
     const house = await this.properties.getHouseBySlugs(propertySlug, houseSlug, true);
     if (house === null) {
-      throw new NotFoundException({ message: 'House not found', code: 'HOUSE_NOT_FOUND' });
+      throw new NotFoundException({ message: 'Stay not found', code: 'HOUSE_NOT_FOUND' });
     }
     return house;
   }
@@ -152,7 +152,7 @@ export class PropertyService {
   public async getStaffHouse(houseId: string): Promise<HouseDetail> {
     const house = await this.properties.getHouseById(houseId);
     if (house === null) {
-      throw new NotFoundException({ message: 'House not found', code: 'HOUSE_NOT_FOUND' });
+      throw new NotFoundException({ message: 'Stay not found', code: 'HOUSE_NOT_FOUND' });
     }
     return house;
   }
@@ -178,7 +178,7 @@ export class PropertyService {
     );
     const updated = await this.properties.updateHouse(houseId, { ...input, slug });
     if (updated === null) {
-      throw new NotFoundException({ message: 'House not found', code: 'HOUSE_NOT_FOUND' });
+      throw new NotFoundException({ message: 'Stay not found', code: 'HOUSE_NOT_FOUND' });
     }
     return updated;
   }

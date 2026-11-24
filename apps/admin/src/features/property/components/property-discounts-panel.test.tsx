@@ -40,6 +40,8 @@ function house(id: string, name: string): HouseSummary {
     nightlyRateCents: 10000,
     currencyCode: 'EUR',
     coverPhotoUrl: null,
+    mapLatitude: 45.9,
+    mapLongitude: 6.1,
   };
 }
 
@@ -101,7 +103,7 @@ describe('PropertyDiscountsPanel', () => {
     const longStay = plain(row('Long stay').textContent);
     expect(longStay).toContain('10%');
     expect(longStay).toContain('7+ nights');
-    expect(longStay).toContain('All houses');
+    expect(longStay).toContain('All stays');
     expect(longStay).toContain('Best single · priority 100');
     expect(longStay).toContain('3 of 10 used');
     expect(longStay).toContain('On');
@@ -193,7 +195,7 @@ describe('PropertyDiscountsPanel', () => {
 
       await userEvent.click(screen.getByRole('button', { name: 'Add discount' }));
 
-      const warning = await screen.findByRole('dialog', { name: 'Apply this discount to every house?' });
+      const warning = await screen.findByRole('dialog', { name: 'Apply this discount to every stay?' });
       expect(warning.textContent).toContain('Early bird');
       expect(api.createDiscount).not.toHaveBeenCalled();
       expect(document.activeElement).toBe(within(warning).getByRole('button', { name: 'Cancel' }));
@@ -206,7 +208,7 @@ describe('PropertyDiscountsPanel', () => {
       await fillNew();
       await userEvent.click(screen.getByRole('button', { name: 'Add discount' }));
 
-      await userEvent.click(await screen.findByRole('button', { name: 'Apply to all houses' }));
+      await userEvent.click(await screen.findByRole('button', { name: 'Apply to all stays' }));
 
       await waitFor(() =>
         expect(api.createDiscount).toHaveBeenCalledWith(
@@ -227,7 +229,7 @@ describe('PropertyDiscountsPanel', () => {
       await userEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
 
       expect(api.createDiscount).not.toHaveBeenCalled();
-      expect(screen.queryByRole('dialog', { name: 'Apply this discount to every house?' })).toBeNull();
+      expect(screen.queryByRole('dialog', { name: 'Apply this discount to every stay?' })).toBeNull();
       expect((screen.getByLabelText(/^Name/) as HTMLInputElement).value).toBe('Early bird');
     });
 
@@ -238,7 +240,7 @@ describe('PropertyDiscountsPanel', () => {
       await fillNew();
       await userEvent.click(screen.getByRole('button', { name: 'Add discount' }));
 
-      await userEvent.click(await screen.findByRole('button', { name: 'Apply to all houses' }));
+      await userEvent.click(await screen.findByRole('button', { name: 'Apply to all stays' }));
 
       expect((await screen.findByRole('alert')).textContent).toContain('The discount rules are not valid');
       expect((screen.getByLabelText(/^Name/) as HTMLInputElement).value).toBe('Early bird');
@@ -254,7 +256,7 @@ describe('PropertyDiscountsPanel', () => {
       await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
 
       await waitFor(() => expect(api.updateDiscount).toHaveBeenCalledWith('long', expect.objectContaining({ label: 'Long stay plus' })));
-      expect(screen.queryByRole('dialog', { name: 'Apply this discount to every house?' })).toBeNull();
+      expect(screen.queryByRole('dialog', { name: 'Apply this discount to every stay?' })).toBeNull();
     });
   });
 });

@@ -14,6 +14,7 @@ import {
   isInHouseNow,
   isUpcomingArrival,
   overlapNights,
+  parsePolicySnapshot,
   reportAsOfDate,
   sortCalendarDayStays,
   stayOccupiesDate,
@@ -247,3 +248,46 @@ function stubStay(propertyId: string): StaffReservation {
     requestNames: [],
   };
 }
+
+describe('parsePolicySnapshot', (): void => {
+  const GOOD = {
+    tiers: [
+      { minDaysBeforeCheckIn: 7, refundPercent: 100 },
+      { minDaysBeforeCheckIn: 0, refundPercent: 0 },
+    ],
+    rebookable: true,
+    rebookFeeType: 'percent',
+    rebookFeeValue: 10,
+  };
+
+  it('reads a complete saved policy', (): void => {
+    expect(parsePolicySnapshot(GOOD)).toEqual(GOOD);
+  });
+
+  it('keeps an empty ladder, which is a real (if unhelpful) policy', (): void => {
+    expect(parsePolicySnapshot({ ...GOOD, tiers: [] })?.tiers).toEqual([]);
+  });
+
+  it('drops unknown fields instead of carrying them', (): void => {
+    const parsed = parsePolicySnapshot({ ...GOOD, extra: 'x', tiers: [{ minDaysBeforeCheckIn: 1, refundPercent: 5, id: 'secret' }] });
+
+    expect(parsed?.tiers).toEqual([{ minDaysBeforeCheckIn: 1, refundPercent: 5 }]);
+    expect(parsed).not.toHaveProperty('extra');
+  });
+
+  it.each([
+    ['null', null],
+    ['a string', 'nope'],
+    ['an empty object', {}],
+    ['tiers that are not a list', { ...GOOD, tiers: 'x' }],
+    ['a tier that is not an object', { ...GOOD, tiers: [5] }],
+    ['a tier with a text percentage', { ...GOOD, tiers: [{ minDaysBeforeCheckIn: 1, refundPercent: '50' }] }],
+    ['a tier with no days', { ...GOOD, tiers: [{ refundPercent: 50 }] }],
+    ['a missing rebookable flag', { ...GOOD, rebookable: undefined }],
+    ['an unknown fee type', { ...GOOD, rebookFeeType: 'free' }],
+    ['a text fee value', { ...GOOD, rebookFeeValue: '10' }],
+  ])('returns null for %s so the caller falls back to the current policy', (_name, raw): void => {
+    expect(parsePolicySnapshot(raw)).toBeNull();
+  });
+});
+

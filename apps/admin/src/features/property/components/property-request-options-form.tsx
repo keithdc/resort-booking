@@ -112,7 +112,7 @@ export function PropertyRequestOptionsForm({
   return (
     <Stack spacing={2}>
       <Typography variant="h6" component="h2">
-        House items guests can tick
+        Stay items guests can tick
       </Typography>
       <Typography color="text.secondary">
         Extra pillows, a spare mattress, a travel cot — guests tick these at checkout. They are not charged
@@ -232,7 +232,7 @@ export function PropertyRequestOptionsForm({
       </Dialog>
       <Snackbar open={saved} autoHideDuration={3000} onClose={(): void => setSaved(false)}>
         <Alert severity="success" onClose={(): void => setSaved(false)}>
-          House requests updated
+          Stay requests updated
         </Alert>
       </Snackbar>
     </Stack>

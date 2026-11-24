@@ -101,12 +101,12 @@ export function StayDetailDialog({ stay, onClose, onUpdated }: StayDetailDialogP
                   pt: 1,
                 }}
               >
-                <StayBlock title="Stay">
+                <StayBlock title="Booking">
                   <StayFact label="Check-in" value={stay.checkIn} />
                   <StayFact label="Check-out" value={stay.checkOut} />
                   <StayFact label="Arrival" value={arrivalLabel(stay.arrivalStatus)} />
                   <StayFact label="Guests on the booking" value={String(stay.guestCount)} />
-                  <StayFact label="House" value={stay.houseName} />
+                  <StayFact label="Stay" value={stay.houseName} />
                   <StayFact label="Destination" value={stay.propertyName} />
                 </StayBlock>
                 <StayBlock title="Guest">
@@ -127,7 +127,7 @@ export function StayDetailDialog({ stay, onClose, onUpdated }: StayDetailDialogP
                 <StayBlock title="Payment">
                   <StayFact label="Method" value={paymentLabel(stay)} />
                   <StayFact label="Total" value={formatCents(stay.totalCents, stay.currencyCode)} />
-                  <StayFact label="Record" value={stay.kind === 'hold' ? 'Hold (not yet a stay)' : 'Reservation'} />
+                  <StayFact label="Record" value={stay.kind === 'hold' ? 'Hold (not yet a booking)' : 'Reservation'} />
                 </StayBlock>
                 <StayBlock title="Requests and note">
                   <Box>

@@ -24,11 +24,11 @@ describe('AllHousesDiscountWarningDialog', () => {
   it('warns that the discount will apply to every house, naming it and its size', () => {
     renderDialog();
 
-    expect(screen.getByRole('dialog').textContent).toContain('Apply this discount to every house?');
+    expect(screen.getByRole('dialog').textContent).toContain('Apply this discount to every stay?');
     const alert = screen.getByRole('alert').textContent ?? '';
     expect(alert).toContain('Long stay');
     expect(alert).toContain('10% off');
-    expect(alert).toContain('every house at this property');
+    expect(alert).toContain('every stay at this property');
   });
 
   it('puts the focus on Cancel, not on the risky action', () => {
@@ -40,7 +40,7 @@ describe('AllHousesDiscountWarningDialog', () => {
   it('confirms only when the person presses the confirm button', async () => {
     const { onCancel, onConfirm } = renderDialog();
 
-    await userEvent.click(screen.getByRole('button', { name: 'Apply to all houses' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Apply to all stays' }));
 
     expect(onConfirm).toHaveBeenCalledTimes(1);
     expect(onCancel).not.toHaveBeenCalled();

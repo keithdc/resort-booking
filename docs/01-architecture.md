@@ -4,14 +4,14 @@ This document is the source of truth for how the resort booking product is struc
 
 ## Product surfaces
 
-The product is **not a CRM** and **not an Airbnb clone**. It is a **direct-booking** platform for one operator who is leaving Airbnb: many properties (resorts), many houses per property. Product rules: `docs/04-product-domain.md`.
+The product is **not a CRM** and **not an Airbnb clone**. It is a **direct-booking** platform for one operator who is leaving Airbnb: many properties, many stays per property. Product rules: `docs/04-product-domain.md`.
 
 Two applications share one API and one database.
 
 | Surface | App | Audience | Purpose |
 | --- | --- | --- | --- |
-| Guest | `apps/web` | Public visitors and booked guests | Discover properties and houses, search dates, book, pay, manage a stay |
-| Admin | `apps/admin` | Operator staff | Add properties and houses, calendars, rates, reservations, publish listings |
+| Guest | `apps/web` | Public visitors and booked guests | Discover properties and stays, search dates, book, pay, manage a booking |
+| Admin | `apps/admin` | Operator staff | Add properties and stays, calendars, rates, reservations, publish listings |
 | API | `apps/api` | Both frontends | Auth, booking rules, persistence, jobs, integrations |
 
 Guest and admin **must not** share a single SPA with role-toggled screens. Auth models, SEO needs, and UX density are different. They may share a design-system package and TypeScript types.
@@ -46,8 +46,8 @@ Rails is an excellent booking backend and a good way to learn Ruby. It is **not*
 
 ### Why PostgreSQL + Redis together
 
-- **PostgreSQL:** organizations, properties, houses, calendars, rates, reservations, guests, payments, audit. Use transactions and constraints. Never treat Redis as the booking ledger.
-- **Redis:** short-lived booking holds, distributed locks **per house**, cache of availability windows, BullMQ jobs (confirmation email, payment webhook retry), rate limiting.
+- **PostgreSQL:** organizations, properties, stays, calendars, rates, reservations, guests, payments, audit. Use transactions and constraints. Never treat Redis as the booking ledger.
+- **Redis:** short-lived booking holds, distributed locks **per stay**, cache of availability windows, BullMQ jobs (confirmation email, payment webhook retry), rate limiting.
 
 ## Monorepo layout
 
@@ -122,41 +122,41 @@ src/
 Implement in this order unless a story requires otherwise:
 
 1. `identity` — organization, staff users, guest accounts, auth, roles
-2. `property` — properties (resorts); add-property flow; address, lat/lng, phone, email, galleries
-3. `houses` — houses per property (listings), amenities, photos, publish state, capacity
+2. `property` — properties; add-property flow; address, lat/lng, phone, email, galleries
+3. `houses` — stays per property (listings), amenities, photos, publish state, capacity
 4. `inventory` — per-house calendars, blocked dates, holds
 5. `extras` — property service catalog; instant vs on-request; reservation extra lines
-6. `rates` — per-house standard rate plus an array of **date-range rate periods** (peak season etc., overlap rejected in PostgreSQL and the service, priced per night and summed), **discounts** (effect + conditions, admin-configured), bulk apply with preview, taxes, extras pricing for instant services. Quote and search call it with all house ids at once. Product rules: `docs/04-product-domain.md` (Pricing by date range, Discounts).
+6. `rates` — per-house standard rate plus an array of **date-range rate periods** (peak season etc., overlap rejected in PostgreSQL and the service, priced per night and summed), **discounts** (effect + conditions, admin-configured), bulk apply with preview, taxes, extras pricing for instant services. Quote and search call it with all stay ids at once. Product rules: `docs/04-product-domain.md` (Pricing by date range, Discounts).
 7. `reservations` — search, quote, hold, confirm, cancel (tier snapshot), rebook if `rebookable`
 8. `guests` — booker contact + **guest count**; check-in verifies party size on arrival
 9. `payments` — intents, captures, refunds, webhook idempotency; later charge for approved extras
-10. `content` — public copy/media per property and house for `apps/web`
-11. `reviews` — optional post-stay rating + text; staff publish/hide
-12. `reporting` — occupancy and revenue **by property and by house** (read models)
+10. `content` — public copy/media per property and stay for `apps/web`
+11. `reviews` — optional post-visit rating + text; staff publish/hide
+12. `reporting` — occupancy and revenue **by property and by stay** (read models)
 
-Do not model “one global resort.” Launch with two properties in data, but the code path is always `organization → properties[] → houses[]`.
+Do not model “one global property.” Launch with two properties in data, but the code path is always `organization → properties[] → houses[]`.
 
 ## Booking consistency
 
 Concurrent booking is the core risk. Freeze length follows the pay method.
 
 0. The availability endpoints return occupied dates (reservations, active holds, blocks) so guest pickers can disable them. That is a read for UX only; steps 1-2 below remain the rule.
-1. Search availability in PostgreSQL (date-range overlap on the house) and price each free house for the stay from its rate periods.
+1. Search availability in PostgreSQL (date-range overlap on the stay) and price each free stay for the requested dates from its rate periods.
 2. On checkout start: persist a `holds` row. Redis TTL **900 seconds** (card) or **172800 seconds** (bank transfer).
 3. Card: on successful Stripe payment, convert hold → confirmed reservation in one transaction. Instant extras settle in that payment.
-4. Bank: reservation is `pending_payment` until staff verify the transfer (receipt + reference). Then convert hold → confirmed. Reject/expiry releases the house.
-5. Failed card payment or expired hold: release the house. Do not capture a card charge without a valid hold.
-6. On-request extras stay `pending` after the stay is **paid**; staff approve/decline without touching the house calendar.
+4. Bank: reservation is `pending_payment` until staff verify the transfer (receipt + reference). Then convert hold → confirmed. Reject/expiry releases the stay.
+5. Failed card payment or expired hold: release the stay. Do not capture a card charge without a valid hold.
+6. On-request extras stay `pending` after the booking is **paid**; staff approve/decline without touching the stay calendar.
 7. Never decrement inventory only in Redis.
 8. Stripe webhooks are idempotent (`event_id` unique in PostgreSQL).
 
 ### Hold expiry (nobody has to be watching)
 
-Guests close tabs, lose signal, and walk away mid-checkout. **Nothing may depend on the browser or on a Redis event to release a house.** Expiry works in three layers, and only the first is required for correctness:
+Guests close tabs, lose signal, and walk away mid-checkout. **Nothing may depend on the browser or on a Redis event to release a stay.** Expiry works in three layers, and only the first is required for correctness:
 
-1. **The clock is the rule (required).** A hold is dead the moment `expires_at < now()`. Every read treats it that way without writing anything: the availability endpoints skip overdue holds, and quotes and new holds mark overdue holds `expired` before checking overlap. A house is therefore bookable again exactly on time even if no job ran and no one touched that house.
-2. **Sweeper (housekeeping).** `HoldSweeperService` (`apps/api/src/modules/inventory/`) runs every minute and expires all overdue holds across all houses in **one** `UPDATE`. It keeps stored statuses honest for reports and staff views and is where expiry side effects belong (e.g. the bank-transfer "your hold expired" email). It is idempotent, never throws (a failed run is logged and retried the next minute), and skips a run that starts while the previous one is still going. Safe on several API instances: each hold is expired once.
-3. **Redis TTL (ephemeral hint only).** The `hold:<id>` key mirrors the TTL for fast checks. We **do not** use Redis keyspace expiry notifications: delivery is not guaranteed, and a missed event must never leave a house stuck.
+1. **The clock is the rule (required).** A hold is dead the moment `expires_at < now()`. Every read treats it that way without writing anything: the availability endpoints skip overdue holds, and quotes and new holds mark overdue holds `expired` before checking overlap. A stay is therefore bookable again exactly on time even if no job ran and no one touched that stay.
+2. **Sweeper (housekeeping).** `HoldSweeperService` (`apps/api/src/modules/inventory/`) runs every minute and expires all overdue holds across all stays in **one** `UPDATE`. It keeps stored statuses honest for reports and staff views and is where expiry side effects belong (e.g. the bank-transfer "your hold expired" email). It is idempotent, never throws (a failed run is logged and retried the next minute), and skips a run that starts while the previous one is still going. Safe on several API instances: each hold is expired once.
+3. **Redis TTL (ephemeral hint only).** The `hold:<id>` key mirrors the TTL for fast checks. We **do not** use Redis keyspace expiry notifications: delivery is not guaranteed, and a missed event must never leave a stay stuck.
 
 Rules for new code that touches holds:
 
@@ -182,7 +182,7 @@ Details: `docs/05-eu-compliance-and-payments.md`.
 
 - No Express API in this repo.
 - No Rails/Ruby service in this repo.
-- No in-memory fake hotels, and no single hardcoded resort.
+- No in-memory fake hotels, and no single hardcoded property.
 - Complex booking flows (request-to-book, host approval, multi-house carts). Straight-through only.
 - No single frontend for both guest and admin.
 - No `any` in TypeScript (`as any`, `Record<string, any>`, `any[]` included). Object shapes use `interface`.

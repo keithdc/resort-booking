@@ -7,11 +7,12 @@
 import { Box, Container, Link as MuiLink, Stack, Typography } from '@mui/material';
 import { BlurFade, Highlighter } from '@resort-booking/ui';
 import { HouseListingCard } from '@/features/houses/components/house-listing-card';
+import { CancellationPolicySection } from '@/shared/components/cancellation-policy';
 import { PhotoGallery } from '@/shared/components/photo-gallery';
 import { PropertyMap } from '@/shared/components/property-map';
 import { formatAddress } from '@/shared/utils/format-address';
 import { withDefaultStay, type StayQuery } from '@/shared/utils/stay-query';
-import { fetchHouses, fetchProperty } from '../services/property-api';
+import { fetchCancellationPolicyOrNull, fetchHouses, fetchProperty } from '../services/property-api';
 import { StaySearchBar } from './stay-search-bar';
 
 interface PropertyDetailPageProps {
@@ -22,7 +23,11 @@ interface PropertyDetailPageProps {
  * Property listing: short header, photos, houses to book, map.
  */
 export async function PropertyDetailPage({ slug }: PropertyDetailPageProps): Promise<React.JSX.Element> {
-  const [property, houses] = await Promise.all([fetchProperty(slug), fetchHouses(slug)]);
+  const [property, houses, policy] = await Promise.all([
+    fetchProperty(slug),
+    fetchHouses(slug),
+    fetchCancellationPolicyOrNull(slug),
+  ]);
   const stay: StayQuery = withDefaultStay({
     checkIn: '',
     checkOut: '',
@@ -54,13 +59,13 @@ export async function PropertyDetailPage({ slug }: PropertyDetailPageProps): Pro
       </Container>
       <Container maxWidth="lg" sx={{ pb: 8 }}>
         <Typography variant="h4" component="h2" gutterBottom sx={{ mt: 2 }}>
-          Choose a property
+          Choose a stay
         </Typography>
         <Typography color="text.secondary" sx={{ mb: 3 }}>
-          Open a property to hold the dates and pay. The map below is this destination.
+          Open a stay to hold the dates and pay. The map below is this destination.
         </Typography>
         {houses.length === 0 ? (
-          <Typography>No published properties here yet.</Typography>
+          <Typography>No published stays here yet.</Typography>
         ) : (
           <Box
             sx={{
@@ -77,6 +82,7 @@ export async function PropertyDetailPage({ slug }: PropertyDetailPageProps): Pro
             ))}
           </Box>
         )}
+        <CancellationPolicySection policy={policy} currencyCode={houses[0]?.currencyCode ?? 'EUR'} />
         <Typography variant="h5" component="h2" gutterBottom>
           Where you will stay
         </Typography>

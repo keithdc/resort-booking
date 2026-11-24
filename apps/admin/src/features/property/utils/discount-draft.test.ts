@@ -60,6 +60,8 @@ function house(id: string, name: string): HouseSummary {
     nightlyRateCents: 10000,
     currencyCode: 'EUR',
     coverPhotoUrl: null,
+    mapLatitude: 45.9,
+    mapLongitude: 6.1,
   };
 }
 
@@ -289,7 +291,7 @@ describe('summaries', () => {
     expect(summarizeCondition({ kind: 'booking_lead_days', minDays: null, maxDays: 3 })).toBe('booked up to 3 days ahead');
     expect(summarizeCondition({ kind: 'booking_lead_days', minDays: null, maxDays: 1 })).toBe('booked up to 1 day ahead');
     expect(summarizeCondition({ kind: 'booking_lead_days', minDays: 14, maxDays: 30 })).toBe('booked 14 to 30 days ahead');
-    expect(summarizeCondition({ kind: 'stay_dates', startDate: '2027-07-01', endDate: '2027-08-31' })).toBe('stays 1 Jul 2027 to 31 Aug 2027');
+    expect(summarizeCondition({ kind: 'stay_dates', startDate: '2027-07-01', endDate: '2027-08-31' })).toBe('booking dates 1 Jul 2027 to 31 Aug 2027');
     expect(summarizeCondition({ kind: 'booking_window', startDate: '2027-05-01', endDate: '2027-05-31' })).toBe('booked 1 May 2027 to 31 May 2027');
     expect(summarizeCondition({ kind: 'promo_code', code: 'WELCOME15' })).toBe('code WELCOME15');
   });
@@ -303,15 +305,15 @@ describe('summaries', () => {
     expect(
       summarizeConditions({ alwaysOn: false, conditions: [{ kind: 'min_nights', nights: 7 }, { kind: 'promo_code', code: 'ABC' }] }),
     ).toBe('7+ nights; code ABC');
-    expect(summarizeConditions({ alwaysOn: true, conditions: [] })).toBe('Every stay');
+    expect(summarizeConditions({ alwaysOn: true, conditions: [] })).toBe('Every booking');
     expect(summarizeConditions({ alwaysOn: false, conditions: [] })).toBe('No conditions');
   });
 
   it('names the scope', () => {
     const houses = [house('h1', 'Dune'), house('h2', 'Cedar')];
-    expect(summarizeScope(null, houses)).toBe('All houses');
+    expect(summarizeScope(null, houses)).toBe('All stays');
     expect(summarizeScope(['h2', 'h1'], houses)).toBe('Dune, Cedar');
-    expect(summarizeScope(['gone'], houses)).toBe('No houses');
+    expect(summarizeScope(['gone'], houses)).toBe('No stays');
   });
 
   it('describes uses', () => {

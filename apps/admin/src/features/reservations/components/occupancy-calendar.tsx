@@ -246,12 +246,12 @@ export function OccupancyCalendar({ properties }: OccupancyCalendarProps): React
         ) : (
           <>
             <Typography variant="h5" component="h2" gutterBottom>
-              Stays on {selectedDate}
+              Bookings on {selectedDate}
             </Typography>
             {dayLoading ? (
               <CircularProgress />
             ) : dayGuests.length === 0 ? (
-              <Typography color="text.secondary">No stays on this date.</Typography>
+              <Typography color="text.secondary">No bookings on this date.</Typography>
             ) : (
               <>
               <Table>
@@ -259,7 +259,7 @@ export function OccupancyCalendar({ properties }: OccupancyCalendarProps): React
                   <TableRow>
                     <TableCell>Guest</TableCell>
                     <TableCell>Status</TableCell>
-                    <TableCell>House</TableCell>
+                    <TableCell>Stay</TableCell>
                     <TableCell>Property</TableCell>
                     <TableCell>Dates</TableCell>
                     <TableCell>Guests</TableCell>

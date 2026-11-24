@@ -45,7 +45,7 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { href: '/', label: 'Calendar', hint: 'Who is staying', icon: CalendarMonthOutlinedIcon },
-  { href: '/properties', label: 'Properties', hint: 'Places and houses', icon: HolidayVillageOutlinedIcon },
+  { href: '/properties', label: 'Properties', hint: 'Places and stays', icon: HolidayVillageOutlinedIcon },
   { href: '/configuration', label: 'Account', hint: 'Owner, emails, bank', icon: AccountCircleOutlinedIcon },
   { href: '/reports', label: 'Reports', hint: 'Nights and revenue', icon: AssessmentOutlinedIcon },
 ];

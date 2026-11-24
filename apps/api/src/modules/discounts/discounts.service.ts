@@ -139,7 +139,7 @@ export class DiscountsService {
     const inProperty = new Set((await this.houses.listHousesByPropertyId(propertyId)).map((house): string => house.id));
     if (houseIds.some((id): boolean => !inProperty.has(id))) {
       throw new BadRequestException({
-        message: 'One of the houses does not belong to this property',
+        message: 'One of the stays does not belong to this property',
         code: 'UNKNOWN_HOUSE',
       });
     }

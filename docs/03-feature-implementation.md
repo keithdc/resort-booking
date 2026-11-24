@@ -9,7 +9,7 @@ Use a kebab-case domain name that matches a bounded context, for example:
 - `identity`, `property`, `houses`, `inventory`, `extras`, `rates`, `reservations`, `guests`, `payments`, `content`, `reviews`, `reporting`
 
 Do not name features after UI widgets (`calendar-widget`) or HTTP verbs (`get-rooms`).
-Property-scoped features must accept `propertyId` (and house-scoped features `houseId`). Never assume a single resort.
+Property-scoped features must accept `propertyId` (and stay-scoped features `houseId`). Never assume a single property.
 
 ## 2. Types first
 

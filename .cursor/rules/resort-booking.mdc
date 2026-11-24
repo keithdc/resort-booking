@@ -5,7 +5,8 @@ alwaysApply: true
 
 # Resort booking
 
-- Product: Airbnb-replacement direct booking. One organization, many properties, many houses. Guest `apps/web`, admin `apps/admin`, API `apps/api`. Not a CRM or marketplace.
+- Product: Airbnb-replacement direct booking. One organization, many properties, many stays. Guest `apps/web`, admin `apps/admin`, API `apps/api`. Not a CRM or marketplace.
+- Words vs code: in text and docs say **Property** (the whole site; code `property`) and **Stay** (one bookable unit; code `house`). Keep the code names. "Stay" never means a booking: use booking or reservation.
 - Stack: Next.js + MUI (both UIs), NestJS + PostgreSQL + Redis. No Express. No Rails in this repo.
 - Strict TypeScript: **no `any`** (including `as any` / `Record<string, any>`). Object shapes: **`interface`**. Unions: `type`. Explicit return types, `import type`. Theme tokens not hardcoded colors.
 - Feature modules with barrels. Matching API + SQL migration for every screen. Redis is not the source of truth.

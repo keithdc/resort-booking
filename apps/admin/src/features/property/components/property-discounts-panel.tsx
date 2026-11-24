@@ -48,8 +48,8 @@ export function PropertyDiscountsPanel({ propertyId, houses }: PropertyDiscounts
   return (
     <Stack spacing={2}>
       <Typography color="text.secondary">
-        Discounts come off the price of the nights. Guests get the single best discount that fits their stay; discounts
-        marked &quot;can combine&quot; stack instead. Stays already booked keep the price the guest was quoted.
+        Discounts come off the price of the nights. Guests get the single best discount that fits their booking; discounts
+        marked &quot;can combine&quot; stack instead. Bookings already made keep the price the guest was quoted.
       </Typography>
       {state.error !== null && !state.formOpen ? (
         <Alert severity="error" onClose={state.clearError}>
@@ -58,7 +58,7 @@ export function PropertyDiscountsPanel({ propertyId, houses }: PropertyDiscounts
       ) : null}
       {state.loading ? <Skeleton variant="rounded" height={96} /> : null}
       {!state.loading && state.discounts.length === 0 ? (
-        <Typography>No discounts yet. Add one, for example 10% off stays of 7 nights or more.</Typography>
+        <Typography>No discounts yet. Add one, for example 10% off bookings of 7 nights or more.</Typography>
       ) : null}
       {state.discounts.length > 0 ? (
         <Table size="small" aria-label="Discounts">
@@ -148,7 +148,7 @@ export function PropertyDiscountsPanel({ propertyId, houses }: PropertyDiscounts
         <DialogTitle id="delete-discount-title">Remove this discount?</DialogTitle>
         <DialogContent>
           <Typography>
-            Guests will stop getting it right away. Stays already booked keep the price the guest was quoted. To pause it
+            Guests will stop getting it right away. Bookings already made keep the price the guest was quoted. To pause it
             instead, edit it and switch it off.
           </Typography>
         </DialogContent>

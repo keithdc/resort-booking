@@ -49,10 +49,20 @@ export function SiteHeader(): React.JSX.Element {
             </Typography>
           </MuiLink>
           <Box sx={{ flexGrow: 1 }} />
-          <GuestAnchorLink hash="places">
+          <MuiLink
+            component={NextLink}
+            href="/properties"
+            underline="hover"
+            color="text.secondary"
+            sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75 }}
+          >
             <HolidayVillageOutlinedIcon fontSize="small" />
             Properties
-          </GuestAnchorLink>
+          </MuiLink>
+          <Box sx={{ width: 24 }} />
+          <MuiLink component={NextLink} href="/manage" underline="hover" color="text.secondary">
+            Manage booking
+          </MuiLink>
           <Box sx={{ width: 24 }} />
           <GuestAnchorLink hash="search" color="primary.main" fontWeight={600}>
             <SearchOutlinedIcon fontSize="small" />

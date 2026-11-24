@@ -5,7 +5,8 @@
  */
 
 import type { ReservationConfirmation } from '@resort-booking/shared-types';
-import { Alert, Stack, Typography } from '@mui/material';
+import { Alert, Link as MuiLink, Stack, Typography } from '@mui/material';
+import NextLink from 'next/link';
 import { formatCents } from '@/shared/utils/money';
 
 interface BookingConfirmedProps {
@@ -19,7 +20,7 @@ interface BookingConfirmedProps {
 export function BookingConfirmed({ confirmation, houseName }: BookingConfirmedProps): React.JSX.Element {
   return (
     <Stack spacing={2} sx={{ p: 2 }} aria-label="Booking confirmed">
-      <Alert severity="success">Your stay is confirmed.</Alert>
+      <Alert severity="success">Your booking is confirmed.</Alert>
       <Typography color="text.secondary">Booking reference</Typography>
       <Typography variant="h4" component="p" sx={{ letterSpacing: 1 }}>
         {confirmation.reference}
@@ -30,8 +31,11 @@ export function BookingConfirmed({ confirmation, houseName }: BookingConfirmedPr
       </Typography>
       <Typography>Total paid: {formatCents(confirmation.totalCents, confirmation.currencyCode)}</Typography>
       <Typography variant="body2" color="text.secondary">
-        Keep this reference. Quote it if you contact the property about your stay.
+        Keep this reference. You need it, with your email, to manage or cancel your booking.
       </Typography>
+      <MuiLink component={NextLink} href={`/manage?reference=${encodeURIComponent(confirmation.reference)}`}>
+        Manage or cancel this booking
+      </MuiLink>
     </Stack>
   );
 }

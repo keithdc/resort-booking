@@ -5,21 +5,20 @@
  */
 
 import type { PropertySummary } from '@resort-booking/shared-types';
-import { Box, CardActionArea, CardContent, CardMedia, Container, Typography } from '@mui/material';
+import { Box, CardMedia, Container, Typography } from '@mui/material';
 import {
   AnimatedGradientBadge,
   AuroraText,
   BlurFade,
   DotPattern,
   LightRays,
-  MagicCard,
   Marquee,
   SparklesText,
 } from '@resort-booking/ui';
 import Link from 'next/link';
-import { formatAddress } from '@/shared/utils/format-address';
 import { withDefaultStay } from '@/shared/utils/stay-query';
 import { fetchProperties } from '../services/property-api';
+import { PropertyCardGrid } from './property-card-grid';
 import { StaySearchBar } from './stay-search-bar';
 
 /**
@@ -66,7 +65,7 @@ export async function PropertyHomePage(): Promise<React.JSX.Element> {
               <AuroraText variant="inherit">Pay once. Arrive.</AuroraText>
             </Typography>
             <Typography color="text.secondary" sx={{ mb: 4, maxWidth: 560, fontSize: { md: '1.15rem' } }}>
-              Pick dates and guests. See which properties are free. Hold the stay and pay — card, Apple Pay,
+              Pick dates and guests. See which stays are free. Hold the dates and pay — card, Apple Pay,
               Google Pay, or bank transfer.
             </Typography>
           </BlurFade>
@@ -110,55 +109,9 @@ export async function PropertyHomePage(): Promise<React.JSX.Element> {
           Our properties
         </Typography>
         <Typography color="text.secondary" sx={{ mb: 4, maxWidth: 520 }}>
-          One operator, several coasts and lakes. Each property has its own calendar.
+          One operator, several coasts and lakes. Each stay has its own calendar.
         </Typography>
-        {properties.length === 0 ? (
-          <Typography>No published properties yet.</Typography>
-        ) : (
-          <Box
-            sx={{
-              display: 'grid',
-              gap: 3,
-              gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
-            }}
-          >
-            {properties.map((property, index) => (
-              <BlurFade key={property.id} delay={index * 0.08}>
-                <MagicCard>
-                  <CardActionArea component={Link} href={`/properties/${property.slug}`}>
-                    <Box sx={{ position: 'relative' }}>
-                      {property.coverPhotoUrl !== null ? (
-                        <CardMedia
-                          component="img"
-                          height="280"
-                          image={property.coverPhotoUrl}
-                          alt={property.name}
-                          sx={{ objectFit: 'cover' }}
-                        />
-                      ) : (
-                        <Box sx={{ height: 160, bgcolor: 'action.hover' }} />
-                      )}
-                    </Box>
-                    <CardContent>
-                      <Typography variant="h5">{property.name}</Typography>
-                      <Typography color="text.secondary" sx={{ mt: 0.5 }}>
-                        {formatAddress(
-                          property.addressLine,
-                          property.postalCode,
-                          property.city,
-                          property.countryCode,
-                        )}
-                      </Typography>
-                      <Typography color="primary" sx={{ mt: 1.5, fontWeight: 600 }}>
-                        See properties →
-                      </Typography>
-                    </CardContent>
-                  </CardActionArea>
-                </MagicCard>
-              </BlurFade>
-            ))}
-          </Box>
-        )}
+        <PropertyCardGrid properties={properties} />
       </Container>
     </Box>
   );

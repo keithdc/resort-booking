@@ -35,6 +35,14 @@ describe('BookingConfirmed', () => {
     expect(text).toContain('Total paid: 952,00 €');
   });
 
+  it('links to the manage page with the reference filled in, never the email', () => {
+    render(<BookingConfirmed confirmation={CONFIRMATION} houseName="Spruce Studio" />);
+
+    const link = screen.getByRole('link', { name: 'Manage or cancel this booking' });
+    expect(link.getAttribute('href')).toBe('/manage?reference=BK-ABC123');
+    expect(link.getAttribute('href')).not.toContain('@');
+  });
+
   it('says one guest in the singular', () => {
     render(<BookingConfirmed confirmation={{ ...CONFIRMATION, guestCount: 1 }} houseName="Spruce Studio" />);
 

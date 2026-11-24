@@ -125,7 +125,7 @@ export function PropertyExtrasForm({ propertyId, initial }: PropertyExtrasFormPr
       </Typography>
       <Typography color="text.secondary">
         Breakfast or a transfer you sell at a set price. Or mark it as “ask us” so the guest can request
-        it and you confirm later — the house is still booked.
+        it and you confirm later — the booking is still confirmed.
       </Typography>
       {error !== null ? <Alert severity="error">{error}</Alert> : null}
       {extras.length === 0 ? <Typography>No extras on this property yet.</Typography> : null}
@@ -227,7 +227,7 @@ export function PropertyExtrasForm({ propertyId, initial }: PropertyExtrasFormPr
               <TextField
                 label="Price (€)"
                 type="number"
-                helperText="Shown at checkout once the stay is paid."
+                helperText="Shown at checkout once the booking is paid."
                 value={draft.priceEuros}
                 onChange={(event): void => {
                   setDraft((current): Draft => ({ ...current, priceEuros: event.target.value }));

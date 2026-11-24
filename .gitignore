@@ -13,3 +13,5 @@ coverage/
 *.tsbuildinfo
 apps/api/.env
 
+
+.next-measure

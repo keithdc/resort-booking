@@ -16,6 +16,7 @@ import type {
   StaffReservation,
 } from '@resort-booking/shared-types';
 import { DatabaseService } from '../../shared/database/database.service';
+import type { PolicySnapshot } from './reservations.rules';
 
 interface ReservationRow {
   id: string;
@@ -222,6 +223,50 @@ export class ReservationsRepository {
       [propertyId],
     );
     return Number.parseInt(result.rows[0]?.n ?? '0', 10);
+  }
+
+  /**
+   * One property's current policy, for saving with a new booking. Two queries, both filtered to the
+   * property (unlike listBookingConfig, which reads every property for the staff screen).
+   */
+  public async getPolicySnapshot(propertyId: string): Promise<PolicySnapshot | null> {
+    const settings = await this.database.query<{
+      rebookable: boolean;
+      rebook_fee_type: RebookFeeType;
+      rebook_fee_value: string;
+    }>(
+      `
+      SELECT COALESCE(r.rebookable, false) AS rebookable,
+        COALESCE(r.rebook_fee_type, 'none') AS rebook_fee_type,
+        COALESCE(r.rebook_fee_value, 0) AS rebook_fee_value
+      FROM properties p
+      LEFT JOIN property_rebook_settings r ON r.property_id = p.id
+      WHERE p.id = $1
+      `,
+      [propertyId],
+    );
+    const row = settings.rows[0];
+    if (row === undefined) {
+      return null;
+    }
+    const tiers = await this.database.query<{ min_days_before_check_in: number; refund_percent: number }>(
+      `
+      SELECT min_days_before_check_in, refund_percent
+      FROM cancellation_tiers
+      WHERE property_id = $1
+      ORDER BY min_days_before_check_in DESC
+      `,
+      [propertyId],
+    );
+    return {
+      tiers: tiers.rows.map((tier) => ({
+        minDaysBeforeCheckIn: tier.min_days_before_check_in,
+        refundPercent: tier.refund_percent,
+      })),
+      rebookable: row.rebookable,
+      rebookFeeType: row.rebook_fee_type,
+      rebookFeeValue: Number.parseFloat(row.rebook_fee_value),
+    };
   }
 
   /**

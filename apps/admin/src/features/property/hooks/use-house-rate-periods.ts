@@ -179,7 +179,7 @@ export function useHouseRatePeriods({
       });
       const skipped = result.skippedHouseIds.length;
       setNotice(
-        `Added to ${String(result.addedHouseIds.length)} house${result.addedHouseIds.length === 1 ? '' : 's'}` +
+        `Added to ${String(result.addedHouseIds.length)} stay${result.addedHouseIds.length === 1 ? '' : 's'}` +
           (skipped > 0 ? `, skipped ${String(skipped)} with a date clash` : ''),
       );
       setBulkWarning(null);
@@ -187,7 +187,7 @@ export function useHouseRatePeriods({
       await reload();
     } catch (failure: unknown) {
       setBulkWarning(null);
-      setError(messageOf(failure, 'Could not apply the seasonal rate to every house'));
+      setError(messageOf(failure, 'Could not apply the seasonal rate to every stay'));
     } finally {
       setSaving(false);
     }

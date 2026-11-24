@@ -21,14 +21,14 @@ Pick a domain the client can register and brand (often `.fr` or `.com` plus a `.
 
 Guest path:
 
-1. Choose property / house and dates  
+1. Choose property / stay and dates  
 2. Optional extras on the same page  
 3. Choose payment: **card / Apple Pay / Google Pay** or **bank transfer**  
-4. Freeze the house (duration depends on method)  
+4. Freeze the stay (duration depends on method)  
 5. Pay  
 6. Email: confirmed (card) or pending payment (bank)
 
-No request-to-book for the guest’s identity. No split stays. No complex packages.
+No request-to-book for the guest’s identity. No split bookings. No complex packages.
 
 ## Payment methods
 
@@ -36,7 +36,7 @@ No request-to-book for the guest’s identity. No split stays. No complex packag
 
 ### What we ship (low-fee set)
 
-| Method | How | Operator fee (typical) | Stay confirmed |
+| Method | How | Operator fee (typical) | Booking confirmed |
 | --- | --- | --- | --- |
 | **Bank transfer** | IBAN + reference + receipt | ~**€0** SEPA | Staff verify (48-hour hold) |
 | **Card** | Stripe Payment Element | ~**1.4%–3%** + small fixed (EU vs extra-EEA) | Stripe succeeds (15-minute hold) |
@@ -55,7 +55,7 @@ Apple Pay and Google Pay are **in the first checkout**, not a later experiment. 
 
 iDEAL / Bancontact can be cheap in NL/BE. Add later **only** via Stripe if those guests show up — still one processor.
 
-**Checkout order on the page:** wallets (Apple Pay / Google Pay) → card fields → “Pay by bank transfer” as the low-fee alternative (with the 48-hour wait explained). Do not hide bank transfer; it is how the operator keeps almost 100% of the stay.
+**Checkout order on the page:** wallets (Apple Pay / Google Pay) → card fields → “Pay by bank transfer” as the low-fee alternative (with the 48-hour wait explained). Do not hide bank transfer; it is how the operator keeps almost 100% of the booking.
 
 ### Stripe payouts (what we tell the client)
 
@@ -67,16 +67,16 @@ We never store cards. SCA/3-D Secure still applies on the card path.
 
 When the guest chooses bank transfer:
 
-1. Create reservation status `pending_payment` and a **48-hour** house hold.  
+1. Create reservation status `pending_payment` and a **48-hour** stay hold.  
 2. Show IBAN, beneficiary name, amount, and a **unique payment reference** (e.g. `BK-8F2K`). Guest must put that reference on the transfer.  
 3. Guest uploads a receipt (PDF/JPG). Store the file; do not treat the upload as proof by itself.  
 4. Email staff: “awaiting verification.”  
-5. Staff in admin: match amount + reference on their bank, then **Confirm payment** (house stays occupied) or **Reject** (hold released, guest emailed).  
-6. If 48 hours pass with no confirmation, auto-expire the hold and set the reservation `expired`. Guest can start again. The house is released by the clock at exactly 48 hours; the minute-by-minute sweeper then records the status and sends the guest email (`docs/01-architecture.md`, Hold expiry).
+5. Staff in admin: match amount + reference on their bank, then **Confirm payment** (the stay stays occupied) or **Reject** (hold released, guest emailed).  
+6. If 48 hours pass with no confirmation, auto-expire the hold and set the reservation `expired`. Guest can start again. The stay is released by the clock at exactly 48 hours; the minute-by-minute sweeper then records the status and sends the guest email (`docs/01-architecture.md`, Hold expiry).
 
 This is **payment verification**, not Airbnb-style “accept this guest.” Staff are only saying “the money arrived.”
 
-Instant extras are included in the transfer amount. On-request extras stay pending after the stay is paid, same as the card path.
+Instant extras are included in the transfer amount. On-request extras stay pending after the booking is paid, same as the card path.
 
 Organization stores bank details (IBAN, BIC, account name) in admin. Do not hardcode IBANs in the frontend.
 
@@ -91,28 +91,29 @@ No payment provider has been chosen yet, so payments run through a **provider in
   - **Success:** in **one transaction** the hold becomes a confirmed reservation (`kind = reservation`, `status = confirmed`, appears in the staff calendar and reports), the payment is marked succeeded, and discount use is recorded. Repeating a success returns the same confirmation.
   - **Failure:** the payment is marked failed and the dates are released.
   - **Never charged after expiry:** a hold that timed out cannot be paid. The attempt is cancelled with `hold_expired`, nothing is confirmed, and the guest is told to hold the dates again.
-- **Confirmation:** the guest gets a short reference derived from the stay id (for example `BK-1A2B3C4D5E`).
-- **Tables:** `payments` (provider, provider ref, amount, status) with unique indexes for one open and one successful payment per stay.
-- **Not built yet:** Stripe itself and its webhook (`event_id` idempotency, SCA), bank-transfer receipt upload and staff verification (a bank hold shows an explanation and waits), refunds, and confirmation emails.
-- **Safety:** the mock settle route is unauthenticated by design in test mode, so anyone who knows a payment id could confirm that stay. That is acceptable for a prototype and is exactly why production refuses to start on the mock.
+- **Confirmation:** the guest gets a short reference derived from the booking id (for example `BK-1A2B3C4D5E`).
+- **Tables:** `payments` (provider, provider ref, amount, status) with unique indexes for one open and one successful payment per booking.
+- **Refunds:** the interface also has `refund({ providerRef, amountCents, currencyCode, reason })`, which returns `{ providerRef, status: "succeeded" }` or throws. `providerRef` is the id of the ORIGINAL payment (what `createIntent` returned). The mock always succeeds (it still rejects a zero, negative or fractional amount, as a real provider would). The booking logic calls it only after the cancellation has committed, never for a zero refund, and records a failure instead of losing it: see "Guest cancellation (built)" in `docs/07-cancellation-policy.md`. `PaymentsService.describeProvider()` says which provider is active and whether it is simulated.
+- **Not built yet:** Stripe itself and its webhook (`event_id` idempotency, SCA), bank-transfer receipt upload and staff verification (a bank hold shows an explanation and waits), staff-initiated and force-majeure refunds, retrying a failed refund from admin, and confirmation emails.
+- **Safety:** the mock settle route is unauthenticated by design in test mode, so anyone who knows a payment id could confirm that booking. That is acceptable for a prototype and is exactly why production refuses to start on the mock.
 
 ## Freeze by payment method (no double booking)
 
-The freeze is **per house**, not per resort. Other houses at the same property stay bookable.
+The freeze is **per stay**, not per property. Other stays at the same property stay bookable.
 
 When **card or wallet** checkout starts:
 
 1. PostgreSQL: insert a `hold` row for `house_id` + date range if no overlapping reservation or active hold exists.  
-2. Redis: lock key for that house/dates with **TTL = 15 minutes**.  
+2. Redis: lock key for that stay/dates with **TTL = 15 minutes**.  
 3. Guest must complete Stripe payment before the hold expires.  
 4. On success: hold becomes a confirmed reservation; calendar is occupied. Instant extras are paid in that same payment.  
 5. On expiry, cancel, or failed payment: hold is released; another guest can book.  
 6. Countdown on checkout. At **5 minutes left**, a non-blocking prompt: wrap up name/contact/pay — **stay on this page**, do not jump to search.  
-7. If the hold **expires** mid-form: **keep all fields**. Do not force a new booking from scratch. Show “Time ran out — [Hold these dates again]”. That retries a 15-minute hold if the house is still free; if not, they pick other dates with the same name/email/phone still filled. Do not charge after expiry.
+7. If the hold **expires** mid-form: **keep all fields**. Do not force a new booking from scratch. Show “Time ran out — [Hold these dates again]”. That retries a 15-minute hold if the stay is still free; if not, they pick other dates with the same name/email/phone still filled. Do not charge after expiry.
 
 Bank transfer uses the same hold row with TTL **48 hours** until staff confirm or the hold expires.
 
-Never rely on Redis alone. Never confirm a stay without a unique overlap constraint in PostgreSQL on the house calendar. If the guest abandons checkout, nothing needs to run for the house to free up: an overdue hold is ignored by the clock, and a sweeper tidies the stored status (`docs/01-architecture.md`, Hold expiry).
+Never rely on Redis alone. Never confirm a booking without a unique overlap constraint in PostgreSQL on the stay calendar. If the guest abandons checkout, nothing needs to run for the stay to free up: an overdue hold is ignored by the clock, and a sweeper tidies the stored status (`docs/01-architecture.md`, Hold expiry).
 
 Card hold: `HOLD_TTL_SECONDS = 900`. Bank hold: `BANK_TRANSFER_HOLD_TTL_SECONDS = 172800`. Do not scatter magic numbers in components. Do not wait on extra-approval before converting a **card** hold.
 
@@ -143,7 +144,7 @@ These are the ones that actually keep a site out of trouble. They belong mainly 
 | Processors | Document Stripe, email, hosting, analytics as processors. Contracts/SCCs are the client’s job with those vendors. |
 | Cookies / ePrivacy | **Consent banner before** Google Ads, Meta Pixel, or the Google Maps JS SDK. Strictly necessary cookies (session, hold, checkout) can load without ads consent. Default map embed is MapLibre + OpenFreeMap (OSM data, no Google cookie). |
 | Company identity | Footer: legal name, address, contact (and VAT number if they have one). Required culture in several EU states. |
-| Terms + cancellation | Clear house rules, **cancellation ladder**, and **rebookable / fee** before pay. State that the 14-day withdrawal right **does not apply** to dated stays. See `docs/07-cancellation-policy.md`. |
+| Terms + cancellation | Clear house rules, **cancellation ladder**, and **rebookable / fee** before pay. State that the 14-day withdrawal right **does not apply** to dated bookings. See `docs/07-cancellation-policy.md`. |
 | Payments | SCA via Stripe for cards; no card data in our DB; bank transfer uses IBAN + receipt; receipts/emails. |
 | Minors | No accounts or bookings designed for children; standard age gate on terms. |
 | Accessibility | Aim for usable keyboard/forms (we already require this). EAA gets stricter over time; do not ship unusable contrast or mouse-only checkout. |

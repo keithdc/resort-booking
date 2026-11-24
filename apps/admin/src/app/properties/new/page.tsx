@@ -19,7 +19,7 @@ export default function NewPropertyRoute(): React.JSX.Element {
         Add a property
       </Typography>
       <Typography color="text.secondary" sx={{ mb: 3 }}>
-        Search the street to place it on the guest map. You can add houses after this step.
+        Search the street to place it on the guest map. You can add stays after this step.
       </Typography>
       <PropertyListingForm property={null} />
     </>

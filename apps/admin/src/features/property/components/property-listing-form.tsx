@@ -20,7 +20,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import { EmailField, isValidEmail, isValidPhone, PhoneField } from '@resort-booking/ui';
+import { EmailField, isValidEmail, isValidPhone, PhoneField } from '@resort-booking/ui/contact';
 import { useRouter } from 'next/navigation';
 import { useMemo, useEffect, useRef, useState } from 'react';
 import { PropertyMap } from '@/shared/components/property-map';
@@ -167,7 +167,7 @@ export function PropertyListingForm({ property }: PropertyListingFormProps): Rea
         {error !== null ? <Alert severity="error">{error}</Alert> : null}
         {isCreate ? (
           <Alert severity="info">
-            New places stay hidden from guests until you add houses and turn “Show on the website” on.
+            New places stay hidden from guests until you add stays and turn “Show on the website” on.
           </Alert>
         ) : null}
         <Card>

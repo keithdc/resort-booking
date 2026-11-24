@@ -20,14 +20,5 @@ export { LightRays } from './magicui/light-rays';
 export { AuroraText } from './magicui/aurora-text';
 export { Highlighter } from './magicui/highlighter';
 export type { HighlighterAction } from './magicui/highlighter';
-export { EmailField } from './contact/email-field';
-export type { EmailFieldProps } from './contact/email-field';
-export { PhoneField } from './contact/phone-field';
-export type { PhoneFieldProps } from './contact/phone-field';
-export {
-  emailError,
-  isValidEmail,
-  isValidPhone,
-  phoneError,
-  type CountryCode,
-} from './contact/contact-validation';
+
+// Phone/email fields live in "@resort-booking/ui/contact" so the phone library only loads where it is used.

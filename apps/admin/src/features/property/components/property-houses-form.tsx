@@ -107,7 +107,7 @@ export function PropertyHousesForm({ propertyId, initial }: PropertyHousesFormPr
       setOpen(false);
       setSaved(true);
     } catch (err: unknown) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not save house');
+      setError(err instanceof ApiRequestError ? err.message : 'Could not save stay');
     } finally {
       setPending(false);
     }
@@ -128,7 +128,7 @@ export function PropertyHousesForm({ propertyId, initial }: PropertyHousesFormPr
       setDraft(draftFromHouse(house));
       setOpen(true);
     } catch (err: unknown) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not load house');
+      setError(err instanceof ApiRequestError ? err.message : 'Could not load stay');
     } finally {
       setPending(false);
     }
@@ -137,16 +137,16 @@ export function PropertyHousesForm({ propertyId, initial }: PropertyHousesFormPr
   return (
     <Stack spacing={2}>
       <Typography color="text.secondary">
-        Each house has its own calendar. What is already in the house (mattress, pillows) is listed here.
+        Each stay has its own calendar. What is already in the stay (mattress, pillows) is listed here.
         Things guests can ask you to provide live under Guest extras.
       </Typography>
       {error !== null ? <Alert severity="error">{error}</Alert> : null}
-      {houses.length === 0 ? <Typography>No houses yet. Add the first one to take bookings.</Typography> : null}
+      {houses.length === 0 ? <Typography>No stays yet. Add the first one to take bookings.</Typography> : null}
       {houses.length > 0 ? (
         <Table size="small">
           <TableHead>
             <TableRow>
-              <TableCell>House</TableCell>
+              <TableCell>Stay</TableCell>
               <TableCell>Capacity</TableCell>
               <TableCell>Standard rate</TableCell>
               <TableCell>Published</TableCell>
@@ -191,7 +191,7 @@ export function PropertyHousesForm({ propertyId, initial }: PropertyHousesFormPr
         </Table>
       ) : null}
       <Button variant="contained" onClick={openCreate}>
-        Add a house
+        Add a stay
       </Button>
       <HouseRatePeriodsDialog
         open={ratesHouse !== null}
@@ -204,7 +204,7 @@ export function PropertyHousesForm({ propertyId, initial }: PropertyHousesFormPr
         }}
       />
       <Dialog open={open} onClose={(): void => setOpen(false)} fullWidth maxWidth="md">
-        <DialogTitle>{editingId === null ? 'Add a house' : 'Edit house'}</DialogTitle>
+        <DialogTitle>{editingId === null ? 'Add a stay' : 'Edit stay'}</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
             <TextField
@@ -266,7 +266,7 @@ export function PropertyHousesForm({ propertyId, initial }: PropertyHousesFormPr
                   }}
                 />
               }
-              label="Show this house on the website"
+              label="Show this stay on the website"
             />
             <Typography variant="subtitle2">Photos guests will see</Typography>
             <PhotoRankEditor
@@ -275,7 +275,7 @@ export function PropertyHousesForm({ propertyId, initial }: PropertyHousesFormPr
                 setDraft((current): HouseDraft => ({ ...current, photos }));
               }}
             />
-            <Typography variant="subtitle2">Already in the house</Typography>
+            <Typography variant="subtitle2">Already in the stay</Typography>
             {draft.amenities.map((amenity, index): React.JSX.Element => (
               <Stack key={`amenity-${index}`} spacing={1}>
                 <TextField
@@ -343,7 +343,7 @@ export function PropertyHousesForm({ propertyId, initial }: PropertyHousesFormPr
       </Dialog>
       <Snackbar open={saved} autoHideDuration={3000} onClose={(): void => setSaved(false)}>
         <Alert severity="success" onClose={(): void => setSaved(false)}>
-          House saved
+          Stay saved
         </Alert>
       </Snackbar>
     </Stack>

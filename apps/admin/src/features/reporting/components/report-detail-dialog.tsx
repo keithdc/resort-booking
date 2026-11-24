@@ -50,14 +50,14 @@ export function ReportDetailDialog({ detail, onClose }: ReportDetailDialogProps)
           </DialogTitle>
           <DialogContent>
             {detail.stays.length === 0 ? (
-              <Typography color="text.secondary">No stays in this slice.</Typography>
+              <Typography color="text.secondary">No bookings in this slice.</Typography>
             ) : (
               <Table size="small">
                 <TableHead>
                   <TableRow>
                     <TableCell>Guest</TableCell>
                     <TableCell>Property</TableCell>
-                    <TableCell>House</TableCell>
+                    <TableCell>Stay</TableCell>
                     <TableCell>Dates</TableCell>
                     <TableCell>Guests</TableCell>
                     <TableCell>Status</TableCell>

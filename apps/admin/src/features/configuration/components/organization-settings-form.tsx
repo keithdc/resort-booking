@@ -8,7 +8,7 @@
 
 import type { OrganizationSettings } from '@resort-booking/shared-types';
 import { Alert, Button, Card, CardContent, Snackbar, Stack, TextField, Typography } from '@mui/material';
-import { EmailField, isValidEmail, isValidPhone, PhoneField } from '@resort-booking/ui';
+import { EmailField, isValidEmail, isValidPhone, PhoneField } from '@resort-booking/ui/contact';
 import { useState } from 'react';
 import { ApiRequestError } from '@/shared/services/api-client';
 import { saveOrganizationSettings } from '@/features/property/services/staff-property-api';
@@ -93,7 +93,7 @@ export function OrganizationSettingsForm({ initial }: OrganizationSettingsFormPr
             <EmailField
               label="Booking notifications email"
               required
-              helperText="New stays and bank-transfer receipts."
+              helperText="New bookings and bank-transfer receipts."
               value={form.bookingEmail}
               onChange={(bookingEmail): void => {
                 setForm((current): OrganizationSettings => ({ ...current, bookingEmail }));

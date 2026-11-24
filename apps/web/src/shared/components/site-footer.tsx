@@ -49,7 +49,7 @@ export async function SiteFooter(): Promise<React.JSX.Element> {
               Atlantic
             </Typography>
             <Typography variant="body2" sx={{ mt: 1, maxWidth: 280, opacity: 0.9 }}>
-              Direct booking with the operator. One stay, one payment — card, Apple Pay, Google Pay, or bank
+              Direct booking with the operator. One booking, one payment — card, Apple Pay, Google Pay, or bank
               transfer.
             </Typography>
           </Box>
@@ -62,15 +62,20 @@ export async function SiteFooter(): Promise<React.JSX.Element> {
                 <SearchOutlinedIcon fontSize="small" />
                 Search dates
               </GuestAnchorLink>
-              <GuestAnchorLink hash="places" color="inherit">
+              <MuiLink
+                component={NextLink}
+                href="/properties"
+                underline="hover"
+                color="inherit"
+                sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75 }}
+              >
                 <PlaceOutlinedIcon fontSize="small" />
                 Our properties
-              </GuestAnchorLink>
+              </MuiLink>
             </Stack>
           </Box>
           <Box>
-            <Typography variant="overline" sx={{ opacity: 0.8 }}>
-              Destinations
+            <Typography variant="overline" sx={{ opacity: 0.8 }}>              Destinations
             </Typography>
             <Stack spacing={1.25} sx={{ mt: 1.5 }}>
               {properties.length === 0 ? (

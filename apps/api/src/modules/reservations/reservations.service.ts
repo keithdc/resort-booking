@@ -8,6 +8,8 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import type {
   ArrivalStatus,
   CalendarDayOccupancy,
+  CancellationPolicy,
+  CancellationPolicyTier,
   HouseReportRow,
   PaymentMethodSlice,
   PropertyBookingConfig,
@@ -36,6 +38,7 @@ import {
   stayOccupiesDate,
   uniquePropertyCount,
   validateCancellationTiers,
+  type PolicySnapshot,
 } from './reservations.rules';
 
 @Injectable()
@@ -242,6 +245,42 @@ export class ReservationsService {
   }
 
   /**
+   * The property's CURRENT policy, to save with a new booking. The booking keeps this copy, so later
+   * edits to the ladder never change what that guest was promised.
+   */
+  public async getPolicySnapshot(propertyId: string): Promise<PolicySnapshot> {
+    const snapshot = await this.reservations.getPolicySnapshot(propertyId);
+    if (snapshot === null) {
+      throw new NotFoundException({ message: 'Property not found', code: 'PROPERTY_NOT_FOUND' });
+    }
+    return snapshot;
+  }
+
+  /**
+   * What a guest may read about cancelling and changing dates for a published property.
+   * Unpublished properties are a 404, and nothing internal is exposed.
+   */
+  public async getPublicPolicy(slug: string): Promise<CancellationPolicy> {
+    const property = await this.properties.getPublishedProperty(slug);
+    const config = await this.reservations.getBookingConfig(property.id);
+    if (config === null) {
+      throw new NotFoundException({ message: 'Property not found', code: 'PROPERTY_NOT_FOUND' });
+    }
+    return {
+      propertyId: property.id,
+      tiers: config.tiers
+        .map((tier): CancellationPolicyTier => ({
+          minDaysBeforeCheckIn: tier.minDaysBeforeCheckIn,
+          refundPercent: tier.refundPercent,
+        }))
+        .sort((a, b): number => b.minDaysBeforeCheckIn - a.minDaysBeforeCheckIn),
+      rebookable: config.rebookable,
+      rebookFeeType: config.rebookFeeType,
+      rebookFeeValue: config.rebookFeeValue,
+    };
+  }
+
+  /**
    * One property's ladder (staff editor).
    */
   public async getConfig(propertyId: string): Promise<PropertyBookingConfig> {
@@ -281,17 +320,17 @@ export class ReservationsService {
   public async setArrival(id: string, arrivalStatus: ArrivalStatus): Promise<StaffReservation> {
     const existing = await this.reservations.getById(id);
     if (existing === null) {
-      throw new NotFoundException({ message: 'Stay not found', code: 'STAY_NOT_FOUND' });
+      throw new NotFoundException({ message: 'Booking not found', code: 'STAY_NOT_FOUND' });
     }
     if (existing.kind !== 'reservation' || existing.status !== 'confirmed') {
       throw new BadRequestException({
-        message: 'Check-in and check-out are only for confirmed stays',
+        message: 'Check-in and check-out are only for confirmed bookings',
         code: 'STAY_NOT_CONFIRMED',
       });
     }
     const updated = await this.reservations.updateArrivalStatus(id, arrivalStatus);
     if (updated === null) {
-      throw new NotFoundException({ message: 'Stay not found', code: 'STAY_NOT_FOUND' });
+      throw new NotFoundException({ message: 'Booking not found', code: 'STAY_NOT_FOUND' });
     }
     return updated;
   }

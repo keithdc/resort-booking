@@ -37,7 +37,7 @@ export function ReportTotals({
         onClick={onStays}
         label={
           <span>
-            <NumberTicker value={stays} /> stays
+            <NumberTicker value={stays} /> bookings
           </span>
         }
       />

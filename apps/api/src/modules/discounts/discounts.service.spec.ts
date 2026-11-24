@@ -95,6 +95,8 @@ function houseSummary(id: string): HouseSummary {
     nightlyRateCents: 10000,
     currencyCode: 'EUR',
     coverPhotoUrl: null,
+    mapLatitude: 45.9,
+    mapLongitude: 6.1,
   };
 }
 

@@ -5,6 +5,7 @@
  */
 
 import type {
+  CancellationPolicy,
   ExtraService,
   HouseDetail,
   HouseRequestOption,
@@ -58,4 +59,23 @@ export function fetchRequestOptions(propertySlug: string): Promise<HouseRequestO
  */
 export function fetchExtras(propertySlug: string): Promise<ExtraService[]> {
   return getApiOk<ExtraService[]>(`/properties/${encodeURIComponent(propertySlug)}/extras`);
+}
+
+/**
+ * The refund ladder and date-change rule guests may read before booking.
+ */
+export function fetchCancellationPolicy(propertySlug: string): Promise<CancellationPolicy> {
+  return getApiOk<CancellationPolicy>(`/properties/${encodeURIComponent(propertySlug)}/cancellation-policy`);
+}
+
+/**
+ * Same, but a failed load gives null so the page still renders (and says the terms could not load)
+ * instead of breaking over a secondary section.
+ */
+export async function fetchCancellationPolicyOrNull(propertySlug: string): Promise<CancellationPolicy | null> {
+  try {
+    return await fetchCancellationPolicy(propertySlug);
+  } catch {
+    return null;
+  }
 }

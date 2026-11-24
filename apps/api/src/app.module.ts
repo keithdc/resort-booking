@@ -10,6 +10,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { HealthModule } from './modules/health/health.module';
 import { IdentityModule } from './modules/identity/identity.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
+import { BookingsModule } from './modules/bookings/bookings.module';
 import { DiscountsModule } from './modules/discounts/discounts.module';
 import { ExtrasModule } from './modules/extras/extras.module';
 import { PaymentsModule } from './modules/payments/payments.module';
@@ -34,6 +35,7 @@ import { RedisModule } from './shared/redis/redis.module';
     RatesModule,
     DiscountsModule,
     PaymentsModule,
+    BookingsModule,
   ],
 })
 export class AppModule {}

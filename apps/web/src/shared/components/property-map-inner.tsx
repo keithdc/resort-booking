@@ -17,7 +17,8 @@ interface PropertyMapInnerProps {
   label: string;
 }
 
-const OSM_RASTER_STYLE: StyleSpecification = {
+/** OSM raster tiles through MapLibre: no Google SDK, no tile API key. Shared by every map in the guest app. */
+export const OSM_RASTER_STYLE: StyleSpecification = {
   version: 8,
   sources: {
     osm: {

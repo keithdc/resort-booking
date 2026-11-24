@@ -53,6 +53,8 @@ const HOUSE: HouseDetail = {
   nightlyRateCents: 18000,
   currencyCode: 'EUR',
   coverPhotoUrl: null,
+  mapLatitude: 45.9,
+  mapLongitude: 6.1,
   latitude: null,
   longitude: null,
   photos: [],
@@ -142,11 +144,90 @@ function holdButton(): HTMLElement {
   return screen.getByRole('button', { name: 'Hold these dates' });
 }
 
-function fill(email: string, phone: string): void {
+function termsBox(): HTMLInputElement {
+  return screen.getByLabelText(/I have read the/) as HTMLInputElement;
+}
+
+/** Fills the contact details and, unless told otherwise, ticks the cancellation terms. */
+function fill(email: string, phone: string, acceptTerms = true): void {
   fireEvent.change(screen.getByLabelText(/^Name/), { target: { value: 'Ada Lovelace' } });
   fireEvent.change(screen.getByLabelText(/^Email/), { target: { value: email } });
   fireEvent.change(screen.getByLabelText(/^Phone/), { target: { value: phone } });
+  if (acceptTerms && !termsBox().checked) {
+    fireEvent.click(termsBox());
+  }
 }
+
+describe('CheckoutForm cancellation terms', () => {
+  beforeEach(() => {
+    inventory.fetchQuote.mockReset();
+    inventory.fetchQuote.mockResolvedValue(QUOTE);
+    inventory.createHold.mockReset();
+    inventory.createHold.mockResolvedValue(HOLD);
+    payments.startPayment.mockReset();
+    payments.startPayment.mockResolvedValue(PAYMENT);
+  });
+
+  afterEach(cleanup);
+
+  it('starts unticked and keeps the hold off even when everything else is valid', async () => {
+    renderForm();
+    await screen.findByText('These dates are free.');
+
+    fill('ada@example.com', '0612345678', false);
+
+    expect(termsBox().checked).toBe(false);
+    expect(holdButton().hasAttribute('disabled')).toBe(true);
+  });
+
+  it('allows the hold once the terms are ticked, and blocks it again if they are unticked', async () => {
+    renderForm();
+    await screen.findByText('These dates are free.');
+    fill('ada@example.com', '0612345678', false);
+
+    await userEvent.click(termsBox());
+    expect(holdButton().hasAttribute('disabled')).toBe(false);
+
+    await userEvent.click(termsBox());
+    expect(holdButton().hasAttribute('disabled')).toBe(true);
+  });
+
+  it('says what is being accepted: the cancellation terms and the missing 14-day withdrawal right', async () => {
+    renderForm();
+    await screen.findByText('These dates are free.');
+
+    const label = (termsBox().closest('label')?.textContent ?? '').replace(/\s/g, ' ');
+    expect(label).toContain('I have read the cancellation terms');
+    expect(label).toContain('no 14-day right of withdrawal');
+  });
+
+  it('links the words "cancellation terms" to the terms on the page', async () => {
+    renderForm();
+    await screen.findByText('These dates are free.');
+
+    expect(screen.getByRole('link', { name: 'cancellation terms' }).getAttribute('href')).toBe('#cancellation-policy');
+  });
+
+  it('tells the API the terms were accepted when the dates are held', async () => {
+    renderForm();
+    await screen.findByText('These dates are free.');
+    fill('ada@example.com', '0612345678');
+
+    await userEvent.click(holdButton());
+
+    expect(inventory.createHold).toHaveBeenCalledWith(expect.objectContaining({ termsAccepted: true }));
+  });
+
+  it('cannot be unticked while the dates are being held', async () => {
+    renderForm();
+    await screen.findByText('These dates are free.');
+    fill('ada@example.com', '0612345678');
+    await userEvent.click(holdButton());
+    await screen.findByRole('button', { name: /^Pay / });
+
+    expect(termsBox().disabled).toBe(true);
+  });
+});
 
 describe('CheckoutForm contact details', () => {
   beforeEach(() => {
@@ -311,7 +392,7 @@ describe('CheckoutForm contact details', () => {
       await userEvent.click(await screen.findByRole('button', { name: /^Pay / }));
 
       expect(await screen.findByText('BK-ABC123')).toBeTruthy();
-      expect(screen.getByText('Your stay is confirmed.')).toBeTruthy();
+      expect(screen.getByText('Your booking is confirmed.')).toBeTruthy();
       expect(screen.queryByRole('button', { name: 'Hold these dates' })).toBeNull();
     });
 

@@ -6,3 +6,4 @@
 
 export { PropertyHomePage } from './components/property-home-page';
 export { PropertyDetailPage } from './components/property-detail-page';
+export { PropertiesPage } from './components/properties-page';

@@ -73,12 +73,12 @@ Change these in `apps/api/.env` before any shared or production use.
 
 ## Seed catalog
 
-Migrations publish two destinations (Alpine Lake and Pine Coast) with houses, photos, extras, and sample confirmed stays so calendar and reports have data.
+Migrations publish two destinations (Alpine Lake and Pine Coast) with stays, photos, extras, and sample confirmed bookings so calendar and reports have data.
 
 ## Typical workflow
 
-1. Guest: pick dates on http://localhost:3000, search, open a property, optionally apply a promo code (try `WELCOME15`), hold dates, then pay in **test mode** (no real money moves). A paid stay becomes a confirmed reservation with a booking reference.
-2. Admin: calendar (click a guest for the full stay), properties, account, reports (filter by property; click a tile or bar for the stays behind it).
+1. Guest: pick dates on http://localhost:3000, search, open a property, optionally apply a promo code (try `WELCOME15`), hold dates, then pay in **test mode** (no real money moves). A paid hold becomes a confirmed reservation with a booking reference.
+2. Admin: calendar (click a guest for the full booking), properties, account, reports (filter by property; click a tile or bar for the bookings behind it).
 
 ## Scripts
 
@@ -107,7 +107,7 @@ Do not commit filled `.env` files. Examples:
 | [docs/01-architecture.md](docs/01-architecture.md) | Stack, monorepo, booking consistency |
 | [docs/02-coding-standards.md](docs/02-coding-standards.md) | TypeScript, Nest, Next.js, UX |
 | [docs/03-feature-implementation.md](docs/03-feature-implementation.md) | Checklist for every new feature |
-| [docs/04-product-domain.md](docs/04-product-domain.md) | Organization → properties → houses |
+| [docs/04-product-domain.md](docs/04-product-domain.md) | Organization → properties → stays |
 | [docs/05-eu-compliance-and-payments.md](docs/05-eu-compliance-and-payments.md) | Holds, Stripe vs bank transfer, GDPR |
 | [docs/06-ui-theme.md](docs/06-ui-theme.md) | 8px buttons, hospitality look |
 | [docs/07-cancellation-policy.md](docs/07-cancellation-policy.md) | Refund ladder, rebookable + fee |

@@ -192,7 +192,7 @@ export class RatesService {
   ): Promise<BulkRatePeriodResult> {
     if (!request.confirmed) {
       throw new BadRequestException({
-        message: 'Confirm the change before applying it to several houses',
+        message: 'Confirm the change before applying it to several stays',
         code: 'CONFIRMATION_REQUIRED',
       });
     }
@@ -234,7 +234,7 @@ export class RatesService {
   private async requireHouse(houseId: string): Promise<HouseScopeSource> {
     const house = await this.houses.getHouseById(houseId);
     if (house === null) {
-      throw new NotFoundException({ message: 'House not found', code: 'HOUSE_NOT_FOUND' });
+      throw new NotFoundException({ message: 'Stay not found', code: 'HOUSE_NOT_FOUND' });
     }
     return house;
   }
@@ -248,7 +248,7 @@ export class RatesService {
     const targets = all.filter((house): boolean => wanted.has(house.id));
     if (targets.length !== wanted.size) {
       throw new BadRequestException({
-        message: 'One of the houses does not belong to this property',
+        message: 'One of the stays does not belong to this property',
         code: 'UNKNOWN_HOUSE',
       });
     }

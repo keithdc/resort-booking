@@ -40,17 +40,17 @@ describe('BulkRateWarningDialog', () => {
   it('warns how many houses change and names the period, dates and rate', () => {
     renderDialog();
 
-    expect(screen.getByRole('dialog').textContent).toContain('Change the price of 2 houses at once?');
+    expect(screen.getByRole('dialog').textContent).toContain('Change the price of 2 stays at once?');
     const alert = screen.getByRole('alert').textContent ?? '';
     expect(alert).toContain('Peak summer');
     expect(alert).toContain('2027-07-01 to 2027-08-31');
-    expect(alert).toContain('1 house');
+    expect(alert).toContain('1 stay');
   });
 
   it('lists every house that clashes and says it will be skipped, not overwritten', () => {
     renderDialog();
 
-    const list = screen.getByRole('list', { name: 'Houses that will be skipped' });
+    const list = screen.getByRole('list', { name: 'Stays that will be skipped' });
     expect(list.textContent).toContain('Cedar clashes with "Existing peak" (2027-07-15 to 2027-07-20)');
     expect(screen.getByRole('dialog').textContent).toContain('Nothing is overwritten');
   });
@@ -63,8 +63,8 @@ describe('BulkRateWarningDialog', () => {
       ] }),
     });
 
-    expect(screen.queryByRole('list', { name: 'Houses that will be skipped' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Add to 2 houses' })).toBeTruthy();
+    expect(screen.queryByRole('list', { name: 'Stays that will be skipped' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Add to 2 stays' })).toBeTruthy();
   });
 
   it('puts the focus on Cancel, not on the risky action', () => {
@@ -76,7 +76,7 @@ describe('BulkRateWarningDialog', () => {
   it('confirms only when the person presses the confirm button', async () => {
     const { onCancel, onConfirm } = renderDialog();
 
-    await userEvent.click(screen.getByRole('button', { name: 'Add to 1 house' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Add to 1 stay' }));
 
     expect(onConfirm).toHaveBeenCalledTimes(1);
     expect(onCancel).not.toHaveBeenCalled();
@@ -94,7 +94,7 @@ describe('BulkRateWarningDialog', () => {
   it('blocks confirming when every house clashes', () => {
     renderDialog({ preview: preview({ addCount: 0, conflictCount: 2 }) });
 
-    expect(screen.getByRole('button', { name: 'Add to 0 houses' }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: 'Add to 0 stays' }).hasAttribute('disabled')).toBe(true);
   });
 
   it('disables both buttons while applying', () => {

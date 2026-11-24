@@ -30,14 +30,14 @@ export function AllHousesDiscountWarningDialog({
 }: AllHousesDiscountWarningDialogProps): React.JSX.Element {
   return (
     <Dialog open onClose={onCancel} fullWidth maxWidth="sm" aria-labelledby="all-houses-discount-title">
-      <DialogTitle id="all-houses-discount-title">Apply this discount to every house?</DialogTitle>
+      <DialogTitle id="all-houses-discount-title">Apply this discount to every stay?</DialogTitle>
       <DialogContent>
         <Alert severity="warning" sx={{ mb: 2 }}>
-          &quot;{label}&quot; ({effectText} off) will apply to every house at this property from now on, including houses
+          &quot;{label}&quot; ({effectText} off) will apply to every stay at this property from now on, including stays
           you add later. Guests will see it on their price straight away.
         </Alert>
         <Typography color="text.secondary" variant="body2">
-          Stays that are already booked keep the price the guest was quoted. To limit it to some houses, go back and
+          Bookings that are already made keep the price the guest was quoted. To limit it to some stays, go back and
           choose them under &quot;Applies to&quot;.
         </Typography>
       </DialogContent>
@@ -46,7 +46,7 @@ export function AllHousesDiscountWarningDialog({
           Cancel
         </Button>
         <Button variant="contained" onClick={onConfirm} disabled={pending}>
-          {pending ? 'Applying…' : 'Apply to all houses'}
+          {pending ? 'Applying…' : 'Apply to all stays'}
         </Button>
       </DialogActions>
     </Dialog>

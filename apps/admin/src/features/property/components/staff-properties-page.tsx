@@ -33,7 +33,7 @@ export async function StaffPropertiesPage(): Promise<React.JSX.Element> {
             </Typography>
           </Stack>
           <Typography color="text.secondary">
-            Open a place to edit the map pin, houses, extras, and cancellations.
+            Open a place to edit the map pin, stays, extras, and cancellations.
           </Typography>
         </Box>
         <Button component={Link} href="/properties/new" variant="contained">

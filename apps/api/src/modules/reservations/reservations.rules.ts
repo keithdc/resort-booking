@@ -6,9 +6,11 @@
 
 import type {
   CalendarDayOccupancy,
+  CancellationPolicyTier,
   CancellationTierWrite,
   HoldStatus,
   InventoryKind,
+  RebookFeeType,
   StaffReservation,
 } from '@resort-booking/shared-types';
 import { nightsBetween } from '../inventory/inventory.rules';
@@ -284,4 +286,51 @@ function isoFromUtcMs(ms: number): string {
   const month = String(date.getUTCMonth() + 1).padStart(2, '0');
   const day = String(date.getUTCDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+/** The cancellation policy a booking was made under. Saved with the booking so later admin edits never change it. */
+export interface PolicySnapshot {
+  tiers: CancellationPolicyTier[];
+  rebookable: boolean;
+  rebookFeeType: RebookFeeType;
+  rebookFeeValue: number;
+}
+
+const REBOOK_FEE_TYPES: readonly string[] = ['none', 'fixed', 'percent'];
+
+/**
+ * Reads a stored policy snapshot (JSON from the database). Returns null for anything incomplete or
+ * malformed so the caller falls back to the property's current policy instead of guessing.
+ */
+export function parsePolicySnapshot(raw: unknown): PolicySnapshot | null {
+  if (typeof raw !== 'object' || raw === null) {
+    return null;
+  }
+  const record = raw as Record<string, unknown>;
+  if (
+    !Array.isArray(record.tiers) ||
+    typeof record.rebookable !== 'boolean' ||
+    typeof record.rebookFeeType !== 'string' ||
+    !REBOOK_FEE_TYPES.includes(record.rebookFeeType) ||
+    typeof record.rebookFeeValue !== 'number'
+  ) {
+    return null;
+  }
+  const tiers: CancellationPolicyTier[] = [];
+  for (const item of record.tiers as unknown[]) {
+    if (typeof item !== 'object' || item === null) {
+      return null;
+    }
+    const tier = item as Record<string, unknown>;
+    if (typeof tier.minDaysBeforeCheckIn !== 'number' || typeof tier.refundPercent !== 'number') {
+      return null;
+    }
+    tiers.push({ minDaysBeforeCheckIn: tier.minDaysBeforeCheckIn, refundPercent: tier.refundPercent });
+  }
+  return {
+    tiers,
+    rebookable: record.rebookable,
+    rebookFeeType: record.rebookFeeType as RebookFeeType,
+    rebookFeeValue: record.rebookFeeValue,
+  };
 }

@@ -23,6 +23,7 @@ import type {
 import type { PoolClient } from 'pg';
 import { DatabaseService } from '../../shared/database/database.service';
 import { DEFAULT_CANCELLATION_TIERS } from '../reservations/reservations.rules';
+import { resolveMapPoint } from './property.rules';
 
 interface PropertyRow {
   id: string;
@@ -509,13 +510,13 @@ export class PropertyRepository {
     );
     const id = inserted.rows[0]?.id;
     if (id === undefined) {
-      throw new Error('House insert returned no row');
+      throw new Error('Stay insert returned no row');
     }
     await this.replaceAmenities(organizationId, propertyId, id, input.amenities);
     await this.replaceHousePhotos(organizationId, propertyId, id, input.photos);
     const house = await this.getHouseById(id);
     if (house === null) {
-      throw new Error('House missing after insert');
+      throw new Error('Stay missing after insert');
     }
     return house;
   }
@@ -800,6 +801,7 @@ function mapPropertySummary(row: PropertyRow): PropertySummary {
 }
 
 function mapHouseSummary(row: HouseRow): HouseSummary {
+  const point = resolveMapPoint(row.latitude, row.longitude, row.property_latitude, row.property_longitude);
   return {
     id: row.id,
     organizationId: row.organization_id,
@@ -819,6 +821,8 @@ function mapHouseSummary(row: HouseRow): HouseSummary {
     nightlyRateCents: row.nightly_rate_cents,
     currencyCode: row.currency_code,
     coverPhotoUrl: row.cover_photo_url,
+    mapLatitude: point.latitude,
+    mapLongitude: point.longitude,
   };
 }
 

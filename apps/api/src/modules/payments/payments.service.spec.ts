@@ -83,6 +83,7 @@ describe('PaymentsService', () => {
   const deleteHoldTtl = jest.fn<Promise<void>, [string]>();
   const clientQuery = jest.fn<Promise<unknown>, [string]>();
   const createIntent = jest.fn<ReturnType<PaymentProvider['createIntent']>, Parameters<PaymentProvider['createIntent']>>();
+  const refund = jest.fn<ReturnType<PaymentProvider['refund']>, Parameters<PaymentProvider['refund']>>();
   let service: PaymentsService;
 
   async function build(provider: PaymentProvider): Promise<PaymentsService> {
@@ -284,7 +285,7 @@ describe('PaymentsService', () => {
     });
 
     it('does not exist at all when a real provider is active', async () => {
-      const real: PaymentProvider = { name: 'stripe', simulated: false, createIntent };
+      const real: PaymentProvider = { name: 'stripe', simulated: false, createIntent, refund };
       const live = await build(real);
 
       await expect(live.completeMock(PAYMENT, 'success')).rejects.toMatchObject({ response: { code: 'MOCK_PAYMENTS_DISABLED' } });
@@ -293,7 +294,7 @@ describe('PaymentsService', () => {
     });
 
     it('tells the guest UI a real provider is not simulated', async () => {
-      const real: PaymentProvider = { name: 'stripe', simulated: false, createIntent };
+      const real: PaymentProvider = { name: 'stripe', simulated: false, createIntent, refund };
       createIntent.mockResolvedValue({ providerRef: 'pi_123', clientSecret: 'secret' });
       const live = await build(real);
 
@@ -301,6 +302,35 @@ describe('PaymentsService', () => {
 
       expect(summary.simulated).toBe(false);
       expect(insert).toHaveBeenCalledWith(expect.objectContaining({ provider: 'stripe', providerRef: 'pi_123' }));
+    });
+  });
+
+  describe('provider access for refunds', () => {
+    it('says which provider is active and whether it is simulated', () => {
+      expect(service.describeProvider()).toEqual({ name: 'mock', simulated: true });
+    });
+
+    it('describes a real provider as not simulated', async () => {
+      const live = await build({ name: 'stripe', simulated: false, createIntent, refund });
+
+      expect(live.describeProvider()).toEqual({ name: 'stripe', simulated: false });
+    });
+
+    it('passes a refund request to the active provider and returns its result', async () => {
+      refund.mockResolvedValue({ providerRef: 're_1', status: 'succeeded' });
+      const live = await build({ name: 'stripe', simulated: false, createIntent, refund });
+      const request = { providerRef: 'pi_1', amountCents: 4000, currencyCode: 'EUR', reason: 'Guest cancelled' };
+
+      await expect(live.issueRefund(request)).resolves.toEqual({ providerRef: 're_1', status: 'succeeded' });
+
+      expect(refund).toHaveBeenCalledWith(request);
+    });
+
+    it('lets a provider failure reach the caller so the booking can record a failed refund', async () => {
+      refund.mockRejectedValue(new Error('provider down'));
+      const live = await build({ name: 'stripe', simulated: false, createIntent, refund });
+
+      await expect(live.issueRefund({ providerRef: 'pi_1', amountCents: 100, currencyCode: 'EUR', reason: 'x' })).rejects.toThrow('provider down');
     });
   });
 });

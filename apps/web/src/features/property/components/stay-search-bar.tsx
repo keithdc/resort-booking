@@ -10,7 +10,7 @@ import { Box, Stack, TextField, Typography } from '@mui/material';
 import { BorderBeam, ShimmerButton } from '@resort-booking/ui';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { StayDatePicker } from '@/shared/components/stay-date-picker';
+import { StayDateField } from '@/shared/components/stay-date-field';
 import { usePropertyUnavailable } from '@/shared/hooks/use-availability';
 import { addDaysIsoDate, clampStayNights, todayIsoDate } from '@/shared/utils/today-iso';
 import { searchHref, withDefaultStay, type StayQuery } from '@/shared/utils/stay-query';
@@ -53,7 +53,7 @@ export function StaySearchBar({ initial }: StaySearchBarProps): React.JSX.Elemen
             submit();
           }}
         >
-          <StayDatePicker
+          <StayDateField
             label="Check-in"
             value={query.checkIn}
             unavailable={availability.unavailable}

@@ -48,6 +48,8 @@ const HOUSE: HouseSummary = {
   nightlyRateCents: 24000,
   currencyCode: 'EUR',
   coverPhotoUrl: null,
+  mapLatitude: 45.9,
+  mapLongitude: 6.1,
 };
 
 const PEAK: RatePeriod = {
@@ -179,7 +181,7 @@ describe('HouseRatePeriodsDialog', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Edit' }));
     expect((screen.getByLabelText(/^Name/) as HTMLInputElement).value).toBe('Peak summer');
-    expect(screen.queryByLabelText('Apply to all houses at this property')).toBeNull();
+    expect(screen.queryByLabelText('Apply to all stays at this property')).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
 
     expect(api.updateRatePeriod).toHaveBeenCalledWith('a', expect.objectContaining({ nightlyRateCents: 31200 }));
@@ -214,15 +216,15 @@ describe('HouseRatePeriodsDialog', () => {
       renderDialog();
       await screen.findByRole('table');
       fillForm();
-      await userEvent.click(screen.getByLabelText('Apply to all houses at this property'));
+      await userEvent.click(screen.getByLabelText('Apply to all stays at this property'));
       await userEvent.click(addButton('Review…'));
     }
 
     it('shows the warning with the houses that clash instead of saving straight away', async () => {
       await reachWarning();
 
-      const warning = await screen.findByRole('dialog', { name: /Change the price of 2 houses at once/ });
-      expect(within(warning).getByRole('list', { name: 'Houses that will be skipped' }).textContent).toContain('Cedar Cabin');
+      const warning = await screen.findByRole('dialog', { name: /Change the price of 2 stays at once/ });
+      expect(within(warning).getByRole('list', { name: 'Stays that will be skipped' }).textContent).toContain('Cedar Cabin');
       expect(api.previewBulkRatePeriod).toHaveBeenCalledWith('p1', expect.objectContaining({ houseIds: ['h1', 'h2'], confirmed: false }));
       expect(api.applyBulkRatePeriod).not.toHaveBeenCalled();
       expect(api.createRatePeriod).not.toHaveBeenCalled();
@@ -241,12 +243,12 @@ describe('HouseRatePeriodsDialog', () => {
       api.applyBulkRatePeriod.mockResolvedValue({ propertyId: 'p1', addedHouseIds: ['h1'], skippedHouseIds: ['h2'] });
       await reachWarning();
 
-      await userEvent.click(await screen.findByRole('button', { name: 'Add to 1 house' }));
+      await userEvent.click(await screen.findByRole('button', { name: 'Add to 1 stay' }));
 
       await waitFor(() =>
         expect(api.applyBulkRatePeriod).toHaveBeenCalledWith('p1', expect.objectContaining({ houseIds: ['h1', 'h2'], confirmed: true })),
       );
-      expect(await screen.findByText('Added to 1 house, skipped 1 with a date clash')).toBeTruthy();
+      expect(await screen.findByText('Added to 1 stay, skipped 1 with a date clash')).toBeTruthy();
     });
   });
 });

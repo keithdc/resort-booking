@@ -32,6 +32,8 @@ function house(id: string, name: string): HouseSummary {
     nightlyRateCents: 10000,
     currencyCode: 'EUR',
     coverPhotoUrl: null,
+    mapLatitude: 45.9,
+    mapLongitude: 6.1,
   };
 }
 
@@ -102,7 +104,7 @@ describe('DiscountDialog', () => {
       type(/^Percentage \(%\)/, '10');
       expect(saveButton().hasAttribute('disabled')).toBe(true);
 
-      await tick('Long stay: minimum nights');
+      await tick('Long booking: minimum nights');
       type('Minimum nights', '7');
 
       expect(saveButton().hasAttribute('disabled')).toBe(false);
@@ -134,10 +136,10 @@ describe('DiscountDialog', () => {
 
     it('blocks a stay window that ends before it starts', async () => {
       renderDialog({ initial: { label: 'July', value: '10' } });
-      await tick(/Stay dates/);
+      await tick(/Booking dates/);
 
-      type('Stay from', '2027-07-10');
-      type('Stay until', '2027-07-01');
+      type('Booking from', '2027-07-10');
+      type('Booking until', '2027-07-01');
 
       expect(screen.getByText('The end date cannot be before the start date')).toBeTruthy();
       expect(saveButton().hasAttribute('disabled')).toBe(true);
@@ -145,10 +147,10 @@ describe('DiscountDialog', () => {
 
     it('does not block past dates', async () => {
       renderDialog({ initial: { label: 'History', value: '10' } });
-      await tick(/Stay dates/);
+      await tick(/Booking dates/);
 
-      type('Stay from', '2019-01-01');
-      type('Stay until', '2019-01-05');
+      type('Booking from', '2019-01-01');
+      type('Booking until', '2019-01-05');
 
       expect(saveButton().hasAttribute('disabled')).toBe(false);
     });
@@ -157,9 +159,9 @@ describe('DiscountDialog', () => {
       renderDialog({ initial: { label: 'Some', value: '10', minNightsOn: true, minNights: '7' } });
 
       await userEvent.click(screen.getByRole('combobox', { name: 'Applies to' }));
-      await userEvent.click(await screen.findByRole('option', { name: 'Only the houses I choose' }));
+      await userEvent.click(await screen.findByRole('option', { name: 'Only the stays I choose' }));
 
-      expect(screen.getByText('Choose at least one house, or apply the discount to all houses')).toBeTruthy();
+      expect(screen.getByText('Choose at least one stay, or apply the discount to all stays')).toBeTruthy();
       expect(saveButton().hasAttribute('disabled')).toBe(true);
 
       await userEvent.click(screen.getByRole('checkbox', { name: 'Dune House' }));
@@ -191,12 +193,12 @@ describe('DiscountDialog', () => {
   describe('always on', () => {
     it('disables every condition while ticked and re-enables them when cleared', async () => {
       renderDialog({ initial: { label: 'X', value: '10' } });
-      const minNights = screen.getByRole('checkbox', { name: 'Long stay: minimum nights' });
+      const minNights = screen.getByRole('checkbox', { name: 'Long booking: minimum nights' });
       expect(minNights.hasAttribute('disabled')).toBe(false);
 
       await tick(/Always on/);
 
-      for (const name of [/Long stay/, /Booked ahead/, /Stay dates/, /Sale window/, /Weekdays/, /Promo code/]) {
+      for (const name of [/Long booking/, /Booked ahead/, /Booking dates/, /Sale window/, /Weekdays/, /Promo code/]) {
         expect(screen.getByRole('checkbox', { name }).hasAttribute('disabled')).toBe(true);
       }
 
@@ -239,13 +241,13 @@ describe('DiscountDialog', () => {
     it('produces each kind of condition', async () => {
       const onSaved = renderDialog({ initial: { label: 'Everything', value: '10' } });
 
-      await tick('Long stay: minimum nights');
+      await tick('Long booking: minimum nights');
       type('Minimum nights', '7');
       await tick(/Booked ahead/);
       type('At least this many days ahead', '60');
-      await tick(/Stay dates/);
-      type('Stay from', '2027-07-01');
-      type('Stay until', '2027-07-31');
+      await tick(/Booking dates/);
+      type('Booking from', '2027-07-01');
+      type('Booking until', '2027-07-31');
       await tick(/Sale window/);
       type('Sale starts', '2027-05-01');
       type('Sale ends', '2027-05-31');
@@ -280,7 +282,7 @@ describe('DiscountDialog', () => {
       const onSaved = renderDialog({ initial: { label: 'Some', value: '10', minNightsOn: true, minNights: '3' } });
 
       await userEvent.click(screen.getByRole('combobox', { name: 'Applies to' }));
-      await userEvent.click(await screen.findByRole('option', { name: 'Only the houses I choose' }));
+      await userEvent.click(await screen.findByRole('option', { name: 'Only the stays I choose' }));
       await userEvent.click(screen.getByRole('checkbox', { name: 'Cedar Cabin' }));
       await userEvent.click(screen.getByRole('switch', { name: 'Can combine with other discounts' }));
       type('Priority', '10');

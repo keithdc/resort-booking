@@ -183,7 +183,7 @@ describe('useHouseRatePeriods', () => {
       });
 
       expect(api.applyBulkRatePeriod).toHaveBeenCalledWith('p1', expect.objectContaining({ houseIds: HOUSES, confirmed: true }));
-      expect(result.current.notice).toBe('Added to 2 houses, skipped 1 with a date clash');
+      expect(result.current.notice).toBe('Added to 2 stays, skipped 1 with a date clash');
       expect(result.current.bulkWarning).toBeNull();
     });
 

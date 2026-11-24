@@ -10,9 +10,11 @@ import { validate } from 'class-validator';
 import { CreateHoldDto } from '../../modules/inventory/dto/create-hold.dto';
 import { UpdateOrganizationDto } from '../../modules/identity/dto/update-organization.dto';
 import { UpsertPropertyDto } from '../../modules/property/dto/upsert-property.dto';
+import { BulkRatePeriodDto } from '../../modules/rates/dto/rate-period-write.dto';
 
 async function failedFields(cls: new () => object, payload: object): Promise<string[]> {
-  const errors = await validate(plainToInstance(cls, payload));
+  // Same conversion setting as the app's global ValidationPipe (main.ts), so these tests see what production sees.
+  const errors = await validate(plainToInstance(cls, payload, { enableImplicitConversion: true }));
   return errors.map((error): string => error.property);
 }
 
@@ -27,6 +29,7 @@ const HOLD = {
   bookerPhone: '+33612345678',
   guestNote: '',
   requestOptionIds: [],
+  termsAccepted: true,
 };
 
 describe('guest checkout contact details (CreateHoldDto)', () => {
@@ -49,6 +52,30 @@ describe('guest checkout contact details (CreateHoldDto)', () => {
     const errors = await validate(plainToInstance(CreateHoldDto, { ...HOLD, bookerPhone: '0612345678' }));
     const messages = errors.flatMap((error): string[] => Object.values(error.constraints ?? {}));
     expect(messages.join(' ')).toContain('+33612345678');
+  });
+});
+
+describe('cancellation terms at checkout (CreateHoldDto)', () => {
+  it('accepts a hold when the guest ticked the terms', async () => {
+    expect(await failedFields(CreateHoldDto, { ...HOLD, termsAccepted: true })).toEqual([]);
+  });
+
+  it.each([false, undefined, null, 'true', 'false', 'yes', '', 1, 0, [], {}])('refuses a hold when termsAccepted is %j', async (termsAccepted) => {
+    expect(await failedFields(CreateHoldDto, { ...HOLD, termsAccepted })).toContain('termsAccepted');
+  });
+
+  it('refuses a hold with the field missing altogether', async () => {
+    const withoutTerms: Record<string, unknown> = { ...HOLD };
+    delete withoutTerms.termsAccepted;
+
+    expect(await failedFields(CreateHoldDto, withoutTerms)).toContain('termsAccepted');
+  });
+
+  it('tells the guest what to do', async () => {
+    const errors = await validate(plainToInstance(CreateHoldDto, { ...HOLD, termsAccepted: false }, { enableImplicitConversion: true }));
+    const messages = errors.flatMap((error): string[] => Object.values(error.constraints ?? {}));
+
+    expect(messages.join(' ')).toContain('read the cancellation terms');
   });
 });
 
@@ -117,5 +144,24 @@ describe('property contact details (UpsertPropertyDto)', () => {
 
   it('rejects a malformed email', async () => {
     expect(await failedFields(UpsertPropertyDto, { ...PROPERTY, email: 'stay@' })).toContain('email');
+  });
+});
+
+describe('bulk rate confirmation (BulkRatePeriodDto)', () => {
+  const BULK = {
+    label: 'Peak',
+    startDate: '2027-07-01',
+    endDate: '2027-08-31',
+    nightlyRateCents: 26000,
+    houseIds: ['33333333-3333-3333-3333-333333333331'],
+    confirmed: true,
+  };
+
+  it('accepts a real confirmation', async () => {
+    expect(await failedFields(BulkRatePeriodDto, BULK)).toEqual([]);
+  });
+
+  it.each(['yes', 'true', 'false', 1, ''])('does not treat %j as a confirmation', async (confirmed) => {
+    expect(await failedFields(BulkRatePeriodDto, { ...BULK, confirmed })).toContain('confirmed');
   });
 });

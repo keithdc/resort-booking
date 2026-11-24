@@ -113,7 +113,7 @@ export function DiscountDialog({
           <TextField
             label="Name"
             required
-            placeholder="Long stay"
+            placeholder="Long booking"
             helperText={problems.label ?? 'Shown to guests on their price'}
             error={problems.label !== undefined && draft.label !== ''}
             value={draft.label}
@@ -149,11 +149,11 @@ export function DiscountDialog({
               value={draft.scope}
               onChange={(event): void => onChange({ scope: event.target.value === 'chosen' ? 'chosen' : 'all' })}
             >
-              <MenuItem value="all">All houses at this property</MenuItem>
-              <MenuItem value="chosen">Only the houses I choose</MenuItem>
+              <MenuItem value="all">All stays at this property</MenuItem>
+              <MenuItem value="chosen">Only the stays I choose</MenuItem>
             </TextField>
             {draft.scope === 'chosen' ? (
-              <FormGroup aria-label="Houses this discount applies to" sx={{ pl: 1 }}>
+              <FormGroup aria-label="Stays this discount applies to" sx={{ pl: 1 }}>
                 {houses.map((house): React.JSX.Element => (
                   <FormControlLabel
                     key={house.id}
@@ -180,12 +180,12 @@ export function DiscountDialog({
             </Typography>
             <FormControlLabel
               control={<Checkbox checked={draft.alwaysOn} onChange={(event): void => onChange({ alwaysOn: event.target.checked })} />}
-              label="Always on (applies to every stay)"
+              label="Always on (applies to every booking)"
             />
             {problems.conditions === undefined ? null : <FormHelperText error>{problems.conditions}</FormHelperText>}
 
             <ConditionSection
-              label="Long stay: minimum nights"
+              label="Long booking: minimum nights"
               checked={draft.minNightsOn}
               disabled={conditionsOff}
               onToggle={(minNightsOn): void => onChange({ minNightsOn })}
@@ -228,7 +228,7 @@ export function DiscountDialog({
             </ConditionSection>
 
             <ConditionSection
-              label="Stay dates: the whole stay falls inside a window"
+              label="Booking dates: the whole booking falls inside a window"
               checked={draft.stayOn}
               disabled={conditionsOff}
               onToggle={(stayOn): void => onChange({ stayOn })}
@@ -236,7 +236,7 @@ export function DiscountDialog({
             >
               <Stack direction="row" spacing={1.5}>
                 <TextField
-                  label="Stay from"
+                  label="Booking from"
                   type="date"
                   size="small"
                   fullWidth
@@ -245,7 +245,7 @@ export function DiscountDialog({
                   slotProps={{ inputLabel: { shrink: true } }}
                 />
                 <TextField
-                  label="Stay until"
+                  label="Booking until"
                   type="date"
                   size="small"
                   fullWidth
@@ -286,7 +286,7 @@ export function DiscountDialog({
             </ConditionSection>
 
             <ConditionSection
-              label="Weekdays: every night of the stay is one of these days"
+              label="Weekdays: every night of the booking is one of these days"
               checked={draft.weekdayOn}
               disabled={conditionsOff}
               onToggle={(weekdayOn): void => onChange({ weekdayOn })}

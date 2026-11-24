@@ -6,6 +6,7 @@
 
 import type { BulkRatePeriodRequest, RatePeriodWrite } from '@resort-booking/shared-types';
 import { ArrayMaxSize, ArrayNotEmpty, IsArray, IsBoolean, IsInt, IsString, Matches, Max, MaxLength, Min } from 'class-validator';
+import { KeepRawValue } from '../../../shared/validation/keep-raw-value';
 import { UUID_LIKE } from '../../../shared/validation/uuid-like';
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -34,6 +35,8 @@ export class BulkRatePeriodDto extends RatePeriodWriteDto implements BulkRatePer
   @Matches(UUID_LIKE, { each: true })
   public houseIds!: string[];
 
+  // "Yes, apply to all of these" must be a real boolean true, not text converted into one.
+  @KeepRawValue()
   @IsBoolean()
   public confirmed!: boolean;
 }

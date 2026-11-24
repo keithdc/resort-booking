@@ -107,7 +107,7 @@ export function PropertyRefundsForm({ propertyId, initial }: PropertyRefundsForm
             }}
           />
         }
-        label="Guests can rebook dates on the same house"
+        label="Guests can rebook dates on the same stay"
       />
       <FormControl>
         <InputLabel id="rebook-fee">Rebook fee</InputLabel>
@@ -125,7 +125,7 @@ export function PropertyRefundsForm({ propertyId, initial }: PropertyRefundsForm
         >
           <MenuItem value="none">None</MenuItem>
           <MenuItem value="fixed">Fixed (euros)</MenuItem>
-          <MenuItem value="percent">Percent of original stay</MenuItem>
+          <MenuItem value="percent">Percent of the original booking</MenuItem>
         </Select>
       </FormControl>
       {form.rebookFeeType !== 'none' ? (

@@ -4,7 +4,8 @@
  * @dependencies RedisService
  */
 
-import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { enforceWindowLimit } from '../../shared/redis/rate-limit';
 import { RedisService } from '../../shared/redis/redis.service';
 
 export const PROMO_ATTEMPTS_PER_WINDOW = 20;
@@ -30,19 +31,13 @@ export class PromoRateLimiter {
     if (promoCode === undefined || promoCode.trim() === '') {
       return;
     }
-    try {
-      const attempts = await this.redis.hitWindow(`${KEY_PREFIX}${callerId ?? 'unknown'}`, PROMO_WINDOW_SECONDS);
-      if (attempts > PROMO_ATTEMPTS_PER_WINDOW) {
-        throw new HttpException(
-          { message: 'Too many promo code attempts. Please wait a minute and try again.', code: 'PROMO_RATE_LIMITED' },
-          HttpStatus.TOO_MANY_REQUESTS,
-        );
-      }
-    } catch (error: unknown) {
-      if (error instanceof HttpException) {
-        throw error;
-      }
-      this.logger.warn('Promo rate limit skipped: Redis unavailable');
-    }
+    await enforceWindowLimit(this.redis, this.logger, {
+      keyPrefix: KEY_PREFIX,
+      callerId,
+      limit: PROMO_ATTEMPTS_PER_WINDOW,
+      windowSeconds: PROMO_WINDOW_SECONDS,
+      code: 'PROMO_RATE_LIMITED',
+      message: 'Too many promo code attempts. Please wait a minute and try again.',
+    });
   }
 }

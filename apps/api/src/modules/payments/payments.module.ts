@@ -16,6 +16,7 @@ import { PaymentsService } from './payments.service';
 @Module({
   imports: [InventoryModule, DiscountsModule],
   controllers: [PaymentsController],
+  exports: [PaymentsService],
   providers: [
     PaymentsService,
     PaymentsRepository,

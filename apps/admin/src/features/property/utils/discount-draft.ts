@@ -216,7 +216,7 @@ export function validateDraft(draft: DiscountDraft): DraftProblems {
   const problems: DraftProblems = {};
   const label = draft.label.trim();
   if (label === '') {
-    problems.label = 'Give the discount a name, e.g. "Long stay"';
+    problems.label = 'Give the discount a name, e.g. "Long booking"';
   } else if (label.length > MAX_LABEL_LENGTH) {
     problems.label = `At most ${String(MAX_LABEL_LENGTH)} characters`;
   }
@@ -225,7 +225,7 @@ export function validateDraft(draft: DiscountDraft): DraftProblems {
     problems.value = valueProblem;
   }
   if (draft.scope === 'chosen' && draft.houseIds.length === 0) {
-    problems.houses = 'Choose at least one house, or apply the discount to all houses';
+    problems.houses = 'Choose at least one stay, or apply the discount to all stays';
   }
   if (!draft.alwaysOn) {
     addConditionProblems(draft, problems);
@@ -332,7 +332,7 @@ export function summarizeCondition(condition: DiscountCondition): string {
     case 'booking_lead_days':
       return summarizeLead(condition.minDays, condition.maxDays);
     case 'stay_dates':
-      return `stays ${formatIsoDate(condition.startDate)} to ${formatIsoDate(condition.endDate)}`;
+      return `booking dates ${formatIsoDate(condition.startDate)} to ${formatIsoDate(condition.endDate)}`;
     case 'booking_window':
       return `booked ${formatIsoDate(condition.startDate)} to ${formatIsoDate(condition.endDate)}`;
     case 'weekday':
@@ -360,11 +360,11 @@ function summarizeLead(minDays: number | null, maxDays: number | null): string {
 }
 
 /**
- * All conditions of a discount, or "Every stay" when it is always on.
+ * All conditions of a discount, or "Every booking" when it is always on.
  */
 export function summarizeConditions(discount: Pick<Discount, 'conditions' | 'alwaysOn'>): string {
   if (discount.conditions.length === 0) {
-    return discount.alwaysOn ? 'Every stay' : 'No conditions';
+    return discount.alwaysOn ? 'Every booking' : 'No conditions';
   }
   return discount.conditions.map(summarizeCondition).join('; ');
 }
@@ -374,10 +374,10 @@ export function summarizeConditions(discount: Pick<Discount, 'conditions' | 'alw
  */
 export function summarizeScope(houseIds: readonly string[] | null, houses: readonly HouseSummary[]): string {
   if (houseIds === null) {
-    return 'All houses';
+    return 'All stays';
   }
   const names = houses.filter((house): boolean => houseIds.includes(house.id)).map((house): string => house.name);
-  return names.length === 0 ? 'No houses' : names.join(', ');
+  return names.length === 0 ? 'No stays' : names.join(', ');
 }
 
 /**

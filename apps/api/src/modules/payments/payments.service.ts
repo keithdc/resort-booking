@@ -15,7 +15,7 @@ import { DatabaseService } from '../../shared/database/database.service';
 import { RedisService } from '../../shared/redis/redis.service';
 import { DiscountsService } from '../discounts/discounts.service';
 import { InventoryService } from '../inventory/inventory.service';
-import { PAYMENT_PROVIDER, type PaymentProvider } from './payment-provider';
+import { PAYMENT_PROVIDER, type PaymentProvider, type RefundRequest, type RefundResult } from './payment-provider';
 import { PaymentsRepository, type PaymentRow } from './payments.repository';
 
 interface PgErrorLike {
@@ -34,6 +34,20 @@ export class PaymentsService {
     private readonly database: DatabaseService,
     private readonly redis: RedisService,
   ) {}
+
+  /**
+   * Which provider is active, and whether it moves real money. Refund rows record this.
+   */
+  public describeProvider(): { name: string; simulated: boolean } {
+    return { name: this.provider.name, simulated: this.provider.simulated };
+  }
+
+  /**
+   * Gives money back on a succeeded payment through the active provider. Throws if it refuses.
+   */
+  public issueRefund(request: RefundRequest): Promise<RefundResult> {
+    return this.provider.refund(request);
+  }
 
   /**
    * Starts paying for a card hold. Repeating the call returns the same open payment, so a double
@@ -56,7 +70,7 @@ export class PaymentsService {
       holdId,
       amountCents: hold.totalCents,
       currencyCode: hold.currencyCode,
-      description: `Stay ${holdId}`,
+      description: `Booking ${holdId}`,
     });
     try {
       const row = await this.payments.insert({

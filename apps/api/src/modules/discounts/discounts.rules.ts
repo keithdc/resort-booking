@@ -198,7 +198,7 @@ function promoOutcome(
     return { code, applied: true, message: `Code ${normalizeCode(code)} applied` };
   }
   if (owners.some((owner): boolean => matching.some((match): boolean => match.id === owner.id))) {
-    return { code, applied: false, message: 'A better offer is already applied to this stay' };
+    return { code, applied: false, message: 'A better offer is already applied to this booking' };
   }
   return { code, applied: false, message: 'This code does not apply to these dates' };
 }
@@ -210,7 +210,7 @@ function promoOutcome(
  */
 export function validateDiscountWrite(write: DiscountWrite): string | null {
   if (write.label.trim() === '') {
-    return 'Give the discount a name, e.g. "Long stay"';
+    return 'Give the discount a name, e.g. "Long booking"';
   }
   if (write.label.trim().length > MAX_DISCOUNT_LABEL_LENGTH) {
     return `The name can be at most ${String(MAX_DISCOUNT_LABEL_LENGTH)} characters`;
@@ -235,7 +235,7 @@ export function validateDiscountWrite(write: DiscountWrite): string | null {
     }
   }
   if (write.houseIds !== null && write.houseIds.length === 0) {
-    return 'Choose at least one house, or apply the discount to every house';
+    return 'Choose at least one stay, or apply the discount to every stay';
   }
   if (!Number.isInteger(write.priority) || write.priority < 0 || write.priority > MAX_PRIORITY) {
     return `Priority must be a whole number from 0 to ${String(MAX_PRIORITY)}`;

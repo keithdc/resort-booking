@@ -157,42 +157,42 @@ export function ReportsPage(): React.JSX.Element {
             {selectedName}
           </Typography>
           <ReportSection
-            title="1. Sold stays"
-            caption="Paid reservations. Occupancy is occupied house-nights ÷ (houses in this filter × nights in the window)."
+            title="1. Sold bookings"
+            caption="Paid reservations. Occupancy is occupied stay-nights ÷ (stays in this filter × nights in the window)."
           >
             <ReportTotals
               stays={report.reservationCount}
               nights={report.occupiedNights}
               revenueLabel={formatCents(report.revenueCents, report.currencyCode)}
               onStays={(): void => {
-                openStays('Stays', 'Every confirmed stay in this window.', stays);
+                openStays('Bookings', 'Every confirmed booking in this window.', stays);
               }}
               onNights={(): void => {
-                openStays('Occupied nights', 'Stays that occupy at least one night in the window.', stays);
+                openStays('Occupied nights', 'Bookings that occupy at least one night in the window.', stays);
               }}
               onRevenue={(): void => {
-                openStays('Revenue', 'Confirmed stay totals in this window.', stays);
+                openStays('Revenue', 'Confirmed booking totals in this window.', stays);
               }}
             />
             <KpiGrid>
             <Kpi
-              label="Confirmed stays"
+              label="Confirmed bookings"
               value={String(report.reservationCount)}
               tone="primary"
-              hint="Paid stays overlapping this window"
+              hint="Paid bookings overlapping this window"
               onOpen={(): void => {
-                openStays('Confirmed stays', 'Every confirmed stay overlapping this window.', stays);
+                openStays('Confirmed bookings', 'Every confirmed booking overlapping this window.', stays);
               }}
             />
             <Kpi
               label="Properties with bookings"
               value={String(report.propertyBookedCount)}
               tone="secondary"
-              hint="Distinct destinations with a confirmed stay"
+              hint="Distinct destinations with a confirmed booking"
               onOpen={(): void => {
                 openStays(
                   'Properties with bookings',
-                  'Confirmed stays grouped by destination in this window.',
+                  'Confirmed bookings grouped by destination in this window.',
                   stays,
                 );
               }}
@@ -201,20 +201,20 @@ export function ReportsPage(): React.JSX.Element {
               label="Guest headcount"
               value={String(report.guestCount)}
               tone="info"
-              hint="Sum of booked guest counts on confirmed stays"
+              hint="Sum of booked guest counts on confirmed bookings"
               onOpen={(): void => {
-                openStays('Guest headcount', 'Booked guest counts on confirmed stays.', stays);
+                openStays('Guest headcount', 'Booked guest counts on confirmed bookings.', stays);
               }}
             />
             <Kpi
-              label="Houses in occupancy pool"
+              label="Stays in occupancy pool"
               value={String(report.houseCount)}
               tone="primary"
-              hint="Denominator for occupancy, not booked houses"
+              hint="Denominator for occupancy, not booked stays"
               onOpen={(): void => {
                 openStays(
-                  'Houses in occupancy pool',
-                  `${report.houseCount} houses in the filter. Occupancy uses these houses × nights in the window.`,
+                  'Stays in occupancy pool',
+                  `${report.houseCount} stays in the filter. Occupancy uses these stays × nights in the window.`,
                   stays,
                 );
               }}
@@ -223,7 +223,7 @@ export function ReportsPage(): React.JSX.Element {
               label="Occupancy"
               value={`${report.occupancyPercent}%`}
               tone="primary"
-              hint={`${report.occupiedNights} of ${report.availableNights} house-nights`}
+              hint={`${report.occupiedNights} of ${report.availableNights} stay-nights`}
               onOpen={(): void => {
                 openStays(
                   'Occupancy',
@@ -242,27 +242,27 @@ export function ReportsPage(): React.JSX.Element {
               }}
             />
             </KpiGrid>
-            <ChartCard title="Revenue by day" tone="secondary.main" hint="Click a bar for that day’s paid stays.">
+            <ChartCard title="Revenue by day" tone="secondary.main" hint="Click a bar for that day’s paid bookings.">
               <BarRow
                 values={chartValues(report.daily, 'revenueCents')}
                 barColor="secondary.main"
                 onSelect={(dates, label): void => {
                   openStays(
                     `Revenue · ${label}`,
-                    'Stays occupying these dates.',
+                    'Bookings occupying these dates.',
                     stays.filter((stay): boolean => dates.some((date): boolean => stayOccupiesDay(stay, date))),
                   );
                 }}
               />
             </ChartCard>
-            <ChartCard title="Occupied houses by day" tone="success.main" hint="Click a bar for who is in-house that day.">
+            <ChartCard title="Occupied stays by day" tone="success.main" hint="Click a bar for who is in-house that day.">
               <BarRow
                 values={chartValues(report.daily, 'occupiedNights')}
                 barColor="success.main"
                 onSelect={(dates, label): void => {
                   openStays(
                     `Occupied · ${label}`,
-                    'Stays occupying these dates.',
+                    'Bookings occupying these dates.',
                     stays.filter((stay): boolean => dates.some((date): boolean => stayOccupiesDay(stay, date))),
                   );
                 }}
@@ -275,7 +275,7 @@ export function ReportsPage(): React.JSX.Element {
               label="In-house now"
               value={String(report.inHouseStayCount)}
               tone="success"
-              hint={`Confirmed stays occupying ${report.asOfDate}, or checked in`}
+              hint={`Confirmed bookings occupying ${report.asOfDate}, or checked in`}
               onOpen={(): void => {
                 openStays(
                   'In-house now',
@@ -292,7 +292,7 @@ export function ReportsPage(): React.JSX.Element {
               onOpen={(): void => {
                 openStays(
                   'Upcoming arrivals',
-                  `Check-in after ${report.asOfDate}, excluding completed and in-house stays.`,
+                  `Check-in after ${report.asOfDate}, excluding completed and in-house bookings.`,
                   stays.filter((stay): boolean => isUpcomingArrivalStay(stay, report.asOfDate)),
                 );
               }}
@@ -301,7 +301,7 @@ export function ReportsPage(): React.JSX.Element {
           </ReportSection>
           <ReportSection
             title="3. Pipeline"
-            caption="Unpaid holds, cancelled stays, rebooks, and expired holds. These are not occupancy."
+            caption="Unpaid holds, cancelled bookings, rebooks, and expired holds. These are not occupancy."
           >
             <KpiGrid>
             <Kpi
@@ -312,7 +312,7 @@ export function ReportsPage(): React.JSX.Element {
               onOpen={(): void => {
                 openStays(
                   'Pending payment',
-                  'Active holds whose stay overlaps this window.',
+                  'Active holds whose booking overlaps this window.',
                   report.pipeline.filter((row): boolean => row.status === 'active'),
                 );
               }}
@@ -321,7 +321,7 @@ export function ReportsPage(): React.JSX.Element {
               label="Cancelled"
               value={String(report.cancelledCount)}
               tone="info"
-              hint="Cancelled stays and released holds"
+              hint="Cancelled bookings and released holds"
               onOpen={(): void => {
                 openStays(
                   'Cancelled',
@@ -336,11 +336,11 @@ export function ReportsPage(): React.JSX.Element {
               label="Rebooks"
               value={String(report.rebookCount)}
               tone="secondary"
-              hint="Stays linked to a previous booking"
+              hint="Bookings linked to a previous booking"
               onOpen={(): void => {
                 openStays(
                   'Rebooks',
-                  'Holds or stays with a previous booking id in this window.',
+                  'Holds or bookings with a previous booking id in this window.',
                   report.pipeline.filter((row): boolean => row.rebookOfId !== null),
                 );
               }}
@@ -400,7 +400,7 @@ export function ReportsPage(): React.JSX.Element {
                   if (label === 'Cancel') {
                     openStays(
                       'Cancelled',
-                      'Cancelled stays and released holds.',
+                      'Cancelled bookings and released holds.',
                       report.pipeline.filter(
                         (row): boolean => row.status === 'cancelled' || row.status === 'released',
                       ),
@@ -415,7 +415,7 @@ export function ReportsPage(): React.JSX.Element {
                     );
                     return;
                   }
-                  openStays('Confirmed stays', 'Paid stays in this window.', stays);
+                  openStays('Confirmed bookings', 'Paid bookings in this window.', stays);
                 }}
               />
             </ChartCard>
@@ -436,7 +436,7 @@ export function ReportsPage(): React.JSX.Element {
                 }}
               />
             </ChartCard>
-            <ChartCard title="Cancelled by day" tone="info.main" hint="Cancelled stays and released holds on those nights.">
+            <ChartCard title="Cancelled by day" tone="info.main" hint="Cancelled bookings and released holds on those nights.">
               <BarRow
                 values={chartValues(report.daily, 'cancelledCount')}
                 barColor="info.main"
@@ -454,7 +454,7 @@ export function ReportsPage(): React.JSX.Element {
               />
             </ChartCard>
           </ReportSection>
-          <ReportSection title="4. How guests paid" caption="Confirmed stay revenue by method.">
+          <ReportSection title="4. How guests paid" caption="Confirmed booking revenue by method.">
             {report.paymentMethods.length === 0 ? (
               <Typography color="text.secondary">No payments in this window.</Typography>
             ) : (
@@ -474,19 +474,19 @@ export function ReportsPage(): React.JSX.Element {
                       const method = slice.paymentMethod;
                       openStays(
                         paymentLabel(method),
-                        'Stays that used this method.',
+                        'Bookings that used this method.',
                         stays.filter((stay): boolean => (stay.paymentMethod ?? 'unknown') === method),
                       );
                     }}
-                    label={`${paymentLabel(slice.paymentMethod)} · ${slice.reservationCount} stays · ${formatCents(slice.revenueCents, report.currencyCode)}`}
+                    label={`${paymentLabel(slice.paymentMethod)} · ${slice.reservationCount} bookings · ${formatCents(slice.revenueCents, report.currencyCode)}`}
                   />
                 ))}
               </Stack>
             )}
           </ReportSection>
-          <ReportSection title="5. By destination" caption="Confirmed stays rolled up by property, then house.">
+          <ReportSection title="5. By destination" caption="Confirmed bookings rolled up by property, then stay.">
           {report.properties.length === 0 ? (
-            <Typography>No confirmed stays in this window.</Typography>
+            <Typography>No confirmed bookings in this window.</Typography>
           ) : (
             report.properties.map((property) => (
               <Box
@@ -502,7 +502,7 @@ export function ReportsPage(): React.JSX.Element {
                 onClick={(): void => {
                   openStays(
                     property.propertyName,
-                    'Confirmed stays at this property in the window.',
+                    'Confirmed bookings at this property in the window.',
                     stays.filter((stay): boolean => stay.propertyId === property.propertyId),
                   );
                 }}
@@ -518,8 +518,8 @@ export function ReportsPage(): React.JSX.Element {
                 <Table size="small" sx={{ mb: 1 }}>
                   <TableHead>
                     <TableRow>
-                      <TableCell>House</TableCell>
-                      <TableCell>Stays</TableCell>
+                      <TableCell>Stay</TableCell>
+                      <TableCell>Bookings</TableCell>
                       <TableCell>Nights</TableCell>
                       <TableCell>Revenue</TableCell>
                     </TableRow>
@@ -534,7 +534,7 @@ export function ReportsPage(): React.JSX.Element {
                           event.stopPropagation();
                           openStays(
                             house.houseName,
-                            `Stays in ${property.propertyName}.`,
+                            `Bookings in ${property.propertyName}.`,
                             stays.filter((stay): boolean => stay.houseId === house.houseId),
                           );
                         }}
@@ -548,7 +548,7 @@ export function ReportsPage(): React.JSX.Element {
                   </TableBody>
                 </Table>
                 <Typography variant="caption" color="text.secondary">
-                  Click the card or a house row for the guest list.
+                  Click the card or a stay row for the guest list.
                 </Typography>
               </Box>
             ))

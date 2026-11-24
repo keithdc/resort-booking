@@ -25,6 +25,7 @@ import { RedisService } from '../../shared/redis/redis.service';
 import { DiscountsService } from '../discounts/discounts.service';
 import { PropertyRepository } from '../property/property.repository';
 import { RatesService, type PeriodsByHouse } from '../rates/rates.service';
+import { ReservationsService } from '../reservations/reservations.service';
 import type { CreateHoldDto } from './dto/create-hold.dto';
 import type { QuoteQueryDto } from './dto/quote-query.dto';
 import type { SearchQueryDto } from './dto/search-query.dto';
@@ -73,6 +74,7 @@ export class InventoryService {
     private readonly redis: RedisService,
     private readonly rates: RatesService,
     private readonly discounts: DiscountsService,
+    private readonly reservations: ReservationsService,
   ) {}
 
   /**
@@ -86,7 +88,7 @@ export class InventoryService {
     const excludeHoldId = options.excludeHoldId ?? null;
     const house = await this.houses.getHouseById(query.houseId);
     if (house === null || (rejectPastCheckIn && !house.published)) {
-      throw new NotFoundException({ message: 'House not found', code: 'HOUSE_NOT_FOUND' });
+      throw new NotFoundException({ message: 'Stay not found', code: 'HOUSE_NOT_FOUND' });
     }
 
     const nights = nightsBetween(query.checkIn, query.checkOut);
@@ -96,7 +98,7 @@ export class InventoryService {
 
     if (query.guestCount > house.capacity) {
       throw new BadRequestException({
-        message: 'Guest count exceeds house capacity',
+        message: 'Guest count exceeds stay capacity',
         code: 'CAPACITY_EXCEEDED',
       });
     }
@@ -192,6 +194,13 @@ export class InventoryService {
    * Creates a per-house hold. Redis TTL is secondary to the Postgres row.
    */
   public async createHold(dto: CreateHoldDto, rejectPastCheckIn: boolean): Promise<Hold> {
+    // The request check already refuses this; the rule is repeated here so no other caller can skip it.
+    if (!dto.termsAccepted) {
+      throw new BadRequestException({
+        message: 'You must confirm you have read the cancellation terms before booking',
+        code: 'TERMS_NOT_ACCEPTED',
+      });
+    }
     const quote = await this.getQuote(dto, rejectPastCheckIn);
     if (!quote.available) {
       throw new ConflictException({
@@ -202,9 +211,11 @@ export class InventoryService {
 
     const house = await this.houses.getHouseById(dto.houseId);
     if (house === null) {
-      throw new NotFoundException({ message: 'House not found', code: 'HOUSE_NOT_FOUND' });
+      throw new NotFoundException({ message: 'Stay not found', code: 'HOUSE_NOT_FOUND' });
     }
 
+    // The guest books under today's policy. They keep this copy for any later cancel or refund.
+    const policy = await this.reservations.getPolicySnapshot(house.propertyId);
     const ttl = holdTtlSeconds(dto.paymentMethod);
     const expiresAt = new Date(Date.now() + ttl * 1000);
 
@@ -241,6 +252,9 @@ export class InventoryService {
             currencyCode: quote.currencyCode,
             // The quoted price travels with the hold so later rate or discount edits never change it.
             priceSnapshot: JSON.stringify(snapshotOf(quote)),
+            policySnapshot: JSON.stringify(policy),
+            // The server clock, not the browser's, records when the terms were accepted.
+            termsAcceptedAt: new Date(),
           });
           const optionIds = dto.requestOptionIds ?? [];
           const allowed = await this.houses.listRequestOptions(house.propertyId, true);
@@ -248,7 +262,7 @@ export class InventoryService {
           for (const optionId of optionIds) {
             if (!allowedIds.has(optionId)) {
               throw new BadRequestException({
-                message: 'Unknown house request option',
+                message: 'Unknown stay request option',
                 code: 'INVALID_REQUEST_OPTION',
               });
             }

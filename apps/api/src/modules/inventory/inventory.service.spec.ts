@@ -14,6 +14,8 @@ import { DiscountsService } from '../discounts/discounts.service';
 import { PropertyRepository } from '../property/property.repository';
 import { RatesRepository } from '../rates/rates.repository';
 import { RatesService } from '../rates/rates.service';
+import { ReservationsService } from '../reservations/reservations.service';
+import type { PolicySnapshot } from '../reservations/reservations.rules';
 import { InventoryRepository, type HoldRow, type StayRow } from './inventory.repository';
 import { InventoryService } from './inventory.service';
 
@@ -42,6 +44,8 @@ function summary(id: string, capacity: number, rate: number): HouseSummary {
     nightlyRateCents: rate,
     currencyCode: 'EUR',
     coverPhotoUrl: null,
+    mapLatitude: 45.9,
+    mapLongitude: 6.1,
   };
 }
 
@@ -60,6 +64,16 @@ function detail(id: string, capacity: number, rate: number): HouseDetail {
 }
 
 /** An unconnected pg client with a stubbed query, so no cast is needed. */
+const POLICY: PolicySnapshot = {
+  tiers: [
+    { minDaysBeforeCheckIn: 7, refundPercent: 100 },
+    { minDaysBeforeCheckIn: 0, refundPercent: 0 },
+  ],
+  rebookable: false,
+  rebookFeeType: 'none',
+  rebookFeeValue: 0,
+};
+
 function discountFor(overrides: Partial<Discount> = {}): Discount {
   return {
     id: 'long-stay',
@@ -103,11 +117,12 @@ describe('InventoryService pricing', () => {
   const listRequestOptions = jest.fn<Promise<never[]>, [string, boolean]>();
   const expireOverdueHolds = jest.fn<Promise<void>, [string]>();
   const hasOverlap = jest.fn<Promise<boolean>, [string, string, string, string | null]>();
-  const insertHold = jest.fn<Promise<HoldRow>, [PoolClient, { totalCents: number; currencyCode: string; priceSnapshot: string }]>();
+  const insertHold = jest.fn<Promise<HoldRow>, [PoolClient, { totalCents: number; currencyCode: string; priceSnapshot: string; policySnapshot: string; termsAcceptedAt: Date }]>();
   const insertBlockRequests = jest.fn<Promise<void>, [PoolClient, string, string[]]>();
   const listForHouses = jest.fn<Promise<RatePeriod[]>, [readonly string[], string, string]>();
   const listDiscounts = jest.fn<Promise<Discount[]>, [readonly string[], boolean]>();
   const getHoldById = jest.fn<Promise<HoldRow | null>, [string]>();
+  const getPolicySnapshot = jest.fn<Promise<PolicySnapshot>, [string]>();
   const confirmPaidHold = jest.fn<Promise<StayRow | null>, [PoolClient, string]>();
   const getConfirmedStay = jest.fn<Promise<StayRow | null>, [string]>();
   const releaseHold = jest.fn<Promise<void>, [string]>();
@@ -128,6 +143,7 @@ describe('InventoryService pricing', () => {
     hasOverlap.mockResolvedValue(false);
     listForHouses.mockResolvedValue([]);
     listDiscounts.mockResolvedValue([]);
+    getPolicySnapshot.mockResolvedValue(POLICY);
     insertBlockRequests.mockResolvedValue(undefined);
     setHoldTtl.mockResolvedValue(undefined);
     releaseHold.mockResolvedValue(undefined);
@@ -138,6 +154,7 @@ describe('InventoryService pricing', () => {
         InventoryService,
         RatesService,
         DiscountsService,
+        { provide: ReservationsService, useValue: { getPolicySnapshot } },
         { provide: PropertyRepository, useValue: { getHouseById, listHousesByPropertySlug, listRequestOptions } },
         { provide: InventoryRepository, useValue: { expireOverdueHolds, hasOverlap, insertHold, insertBlockRequests, getHoldById, confirmPaidHold, getConfirmedStay, releaseHold } },
         { provide: DiscountsRepository, useValue: { listForProperties: listDiscounts } },
@@ -400,6 +417,7 @@ describe('InventoryService pricing', () => {
           bookerPhone: '+330000',
           guestNote: '',
           requestOptionIds: [],
+          termsAccepted: true,
         },
         true,
       );
@@ -415,6 +433,125 @@ describe('InventoryService pricing', () => {
         totalCents: 60000,
         currencyCode: 'EUR',
         promoCode: null,
+      });
+    });
+
+    describe('cancellation policy saved with the hold', () => {
+      const DTO = {
+        houseId: HOUSE_A,
+        checkIn: '2027-07-10',
+        checkOut: '2027-07-12',
+        guestCount: 2,
+        paymentMethod: 'card' as const,
+        bookerName: 'Ada',
+        bookerEmail: 'ada@example.com',
+        bookerPhone: '+330000',
+        guestNote: '',
+        requestOptionIds: [],
+          termsAccepted: true,
+      };
+
+      function heldRow(): HoldRow {
+        return {
+          id: 'hold-1',
+          organization_id: ORG,
+          property_id: PROPERTY,
+          house_id: HOUSE_A,
+          status: 'active',
+          check_in: '2027-07-10',
+          check_out: '2027-07-12',
+          guest_count: 2,
+          payment_method: 'card',
+          expires_at: new Date('2027-05-01T12:15:00Z'),
+          booker_name: 'Ada',
+          booker_email: 'ada@example.com',
+          booker_phone: '+330000',
+          guest_note: '',
+          price_snapshot: null,
+        };
+      }
+
+      it('stores the property\'s CURRENT policy with the hold, so the guest keeps the terms they booked under', async () => {
+        insertHold.mockResolvedValue(heldRow());
+
+        await service.createHold(DTO, true);
+
+        expect(getPolicySnapshot).toHaveBeenCalledWith(PROPERTY);
+        const saved = insertHold.mock.calls[0]?.[1];
+        expect(JSON.parse(saved?.policySnapshot ?? 'null')).toEqual(POLICY);
+      });
+
+      it('reads the policy once per hold', async () => {
+        insertHold.mockResolvedValue(heldRow());
+
+        await service.createHold(DTO, true);
+
+        expect(getPolicySnapshot).toHaveBeenCalledTimes(1);
+      });
+
+      it('does not read the policy, or write anything, for dates that are already taken', async () => {
+        hasOverlap.mockResolvedValue(true);
+
+        await expect(service.createHold(DTO, true)).rejects.toMatchObject({ response: { code: 'DATES_UNAVAILABLE' } });
+
+        expect(getPolicySnapshot).not.toHaveBeenCalled();
+        expect(insertHold).not.toHaveBeenCalled();
+      });
+
+      it('writes no hold when the policy cannot be read, rather than saving a hold with no terms', async () => {
+        getPolicySnapshot.mockRejectedValue(new Error('policy unavailable'));
+
+        await expect(service.createHold(DTO, true)).rejects.toThrow('policy unavailable');
+
+        expect(insertHold).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('cancellation terms', () => {
+      const base = {
+        houseId: HOUSE_A,
+        checkIn: '2027-07-10',
+        checkOut: '2027-07-12',
+        guestCount: 2,
+        paymentMethod: 'card' as const,
+        bookerName: 'Ada',
+        bookerEmail: 'ada@example.com',
+        bookerPhone: '+330000',
+        guestNote: '',
+        requestOptionIds: [],
+      };
+
+      it('refuses a hold when the terms were not accepted, before looking at the calendar or writing anything', async () => {
+        await expect(service.createHold({ ...base, termsAccepted: false }, true)).rejects.toMatchObject({
+          response: { code: 'TERMS_NOT_ACCEPTED' },
+        });
+
+        expect(hasOverlap).not.toHaveBeenCalled();
+        expect(insertHold).not.toHaveBeenCalled();
+      });
+
+      it('records when the terms were accepted using the server clock', async () => {
+        insertHold.mockResolvedValue({
+          id: 'hold-1',
+          organization_id: ORG,
+          property_id: PROPERTY,
+          house_id: HOUSE_A,
+          status: 'active',
+          check_in: '2027-07-10',
+          check_out: '2027-07-12',
+          guest_count: 2,
+          payment_method: 'card',
+          expires_at: new Date('2027-05-01T12:15:00Z'),
+          booker_name: 'Ada',
+          booker_email: 'ada@example.com',
+          booker_phone: '+330000',
+          guest_note: '',
+          price_snapshot: null,
+        });
+
+        await service.createHold({ ...base, termsAccepted: true }, true);
+
+        expect(insertHold.mock.calls[0]?.[1].termsAcceptedAt.toISOString()).toBe('2027-05-01T12:00:00.000Z');
       });
     });
 
@@ -434,6 +571,7 @@ describe('InventoryService pricing', () => {
             bookerPhone: '+330000',
             guestNote: '',
             requestOptionIds: [],
+          termsAccepted: true,
           },
           true,
         ),

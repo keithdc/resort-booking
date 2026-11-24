@@ -9,7 +9,7 @@
 import type { FormEvent } from 'react';
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import { Alert, Box, Button, Stack, TextField, Typography } from '@mui/material';
-import { EmailField, isValidEmail } from '@resort-booking/ui';
+import { EmailField, isValidEmail } from '@resort-booking/ui/contact';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
 import { loginStaff } from '../services/staff-identity-api';
