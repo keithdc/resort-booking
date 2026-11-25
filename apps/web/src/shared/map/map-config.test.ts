@@ -20,7 +20,7 @@ describe('MAP_STYLE_URL', () => {
     vi.stubEnv('NEXT_PUBLIC_MAP_STYLE_URL', '');
     vi.stubEnv('NEXT_PUBLIC_MAPTILER_KEY', '');
 
-    expect(await loadStyle()).toBe('https://tiles.openfreemap.org/styles/positron');
+    expect(await loadStyle()).toBe('https://tiles.openfreemap.org/styles/liberty');
   });
 
   it('uses MapTiler when a key is set', async () => {

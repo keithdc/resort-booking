@@ -119,7 +119,7 @@ describe('SearchResultsMapInner', () => {
   it('uses the light vector basemap, no rotation, and the raster fallback', () => {
     render(<SearchResultsMapInner pins={[pin(1)]} activeHouseId={null} onHoverHouse={vi.fn<(id: string | null) => void>()} />);
 
-    expect(maplibre.state.mapOptions?.style).toBe('https://tiles.openfreemap.org/styles/positron');
+    expect(maplibre.state.mapOptions?.style).toBe('https://tiles.openfreemap.org/styles/liberty');
     expect(maplibre.state.mapOptions?.attributionControl).toEqual({ compact: true });
     expect(maplibre.state.mapOptions?.dragRotate).toBe(false);
     expect(maplibre.state.rotationDisabled).toBe(1);

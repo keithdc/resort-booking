@@ -93,7 +93,7 @@ describe('PropertyMapInner', () => {
     render(<PropertyMapInner latitude={45.9} longitude={6.1} label="Alpine Lake" />);
 
     const options = maplibre.state.mapOptions;
-    expect(options?.style).toBe('https://tiles.openfreemap.org/styles/positron');
+    expect(options?.style).toBe('https://tiles.openfreemap.org/styles/liberty');
     expect(options?.attributionControl).toEqual({ compact: true });
     expect(options?.dragRotate).toBe(false);
     expect(options?.pitchWithRotate).toBe(false);

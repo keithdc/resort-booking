@@ -17,7 +17,7 @@ import {
 describe('resolveMapStyle', () => {
   it('uses the light OpenFreeMap style when nothing is set', () => {
     expect(resolveMapStyle({})).toBe(DEFAULT_MAP_STYLE_URL);
-    expect(DEFAULT_MAP_STYLE_URL).toBe('https://tiles.openfreemap.org/styles/positron');
+    expect(DEFAULT_MAP_STYLE_URL).toBe('https://tiles.openfreemap.org/styles/liberty');
   });
 
   it('uses MapTiler dataviz-light when only a key is set, and encodes the key', () => {

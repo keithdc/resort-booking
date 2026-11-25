@@ -13,7 +13,7 @@ export interface MapEnv {
 }
 
 /** Light, muted vector style from OpenFreeMap: free, no key. The default. */
-export const DEFAULT_MAP_STYLE_URL = 'https://tiles.openfreemap.org/styles/positron';
+export const DEFAULT_MAP_STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty';
 
 const MAPTILER_STYLE_URL = 'https://api.maptiler.com/maps/dataviz-light/style.json';
 
