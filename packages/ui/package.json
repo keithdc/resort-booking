@@ -6,7 +6,8 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./contact": "./src/contact/index.ts"
+    "./contact": "./src/contact/index.ts",
+    "./map": "./src/map/index.ts"
   },
   "peerDependencies": {
     "@emotion/react": "^11.14.0",

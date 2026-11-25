@@ -6,10 +6,12 @@
 
 'use client';
 
-import { LngLatBounds, Map, Marker, NavigationControl, Popup } from 'maplibre-gl';
 import { useTheme } from '@mui/material/styles';
+import { installStyleFallback } from '@resort-booking/ui/map';
+import { LngLatBounds, Map, Marker, NavigationControl, Popup } from 'maplibre-gl';
 import { useEffect, useMemo, useRef } from 'react';
-import { OSM_RASTER_STYLE } from '@/shared/components/property-map-inner';
+import { MAP_STYLE_URL } from '@/shared/map/map-config';
+import { ensureMapWorker } from '@/shared/map/maplibre-worker';
 import type { MapPinStayView, MapPinView } from '../utils/map-pins';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
@@ -29,7 +31,6 @@ interface Palette {
   accent: string;
   onAccent: string;
   border: string;
-  radius: number;
 }
 
 /**
@@ -48,11 +49,10 @@ export function SearchResultsMapInner({ pins, activeHouseId, onHoverHouse }: Sea
       accent: theme.palette.primary.main,
       onAccent: theme.palette.primary.contrastText,
       border: theme.palette.divider,
-      radius: Number.parseFloat(String(theme.shape.borderRadius)),
     }),
     [theme],
   );
-  const { paper, ink, accent, onAccent } = palette;
+  const { paper, ink, accent, onAccent, border } = palette;
 
   // Keep the latest callback without rebuilding the map every time the parent re-renders.
   const hoverRef = useRef(onHoverHouse);
@@ -65,13 +65,18 @@ export function SearchResultsMapInner({ pins, activeHouseId, onHoverHouse }: Sea
     if (node === null || first === undefined) {
       return (): void => undefined;
     }
+    ensureMapWorker();
     const map = new Map({
       container: node,
-      style: OSM_RASTER_STYLE,
+      style: MAP_STYLE_URL,
       center: [first.longitude, first.latitude],
       zoom: 11,
-      attributionControl: {},
+      attributionControl: { compact: true },
+      dragRotate: false,
+      pitchWithRotate: false,
     });
+    installStyleFallback(map);
+    map.touchZoomRotate.disableRotation();
     map.addControl(new NavigationControl({ showCompass: false }), 'top-right');
 
     const markers: Marker[] = [];
@@ -95,7 +100,7 @@ export function SearchResultsMapInner({ pins, activeHouseId, onHoverHouse }: Sea
         });
         stack.appendChild(more);
       }
-      stack.appendChild(pointer(palette.accent));
+      stack.appendChild(pointer(palette));
       const marker = new Marker({ element: stack, anchor: 'bottom' }).setLngLat([pin.longitude, pin.latitude]).addTo(map);
       markers.push(marker);
       bounds.extend([pin.longitude, pin.latitude]);
@@ -127,10 +132,12 @@ export function SearchResultsMapInner({ pins, activeHouseId, onHoverHouse }: Sea
       const active = houseId === activeHouseId;
       chip.style.background = active ? accent : paper;
       chip.style.color = active ? onAccent : ink;
+      chip.style.borderColor = active ? accent : border;
       chip.style.transform = active ? 'scale(1.08)' : 'none';
+      chip.dataset.active = active ? 'true' : 'false';
       chip.style.zIndex = active ? '2' : '1';
     }
-  }, [activeHouseId, pins, accent, onAccent, paper, ink]);
+  }, [activeHouseId, pins, accent, onAccent, paper, ink, border]);
 
   return <div ref={containerRef} style={{ position: 'absolute', inset: 0 }} aria-label="Map of available stays" />;
 }
@@ -149,7 +156,7 @@ function stayChip(
   Object.assign(chip.style, chipStyle(palette));
   const name = document.createElement('span');
   name.textContent = stay.name;
-  Object.assign(name.style, { maxWidth: '130px', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: '400' });
+  Object.assign(name.style, { maxWidth: '130px', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: '500' });
   const price = document.createElement('span');
   price.textContent = stay.priceLabel;
   chip.append(name, price);
@@ -168,6 +175,12 @@ function moreChip(count: number, palette: Palette): HTMLButtonElement {
   return button;
 }
 
+/** People who ask for less motion get no hover animation (matchMedia is missing in some test and old browsers). */
+function reducedMotion(): boolean {
+  return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+/** An Airbnb-style pill: white, hairline border, soft shadow, bold price. The active one turns dark. */
 function chipStyle(palette: Palette): Partial<CSSStyleDeclaration> {
   return {
     display: 'flex',
@@ -176,28 +189,33 @@ function chipStyle(palette: Palette): Partial<CSSStyleDeclaration> {
     background: palette.paper,
     color: palette.ink,
     border: `1px solid ${palette.border}`,
-    borderRadius: `${String(palette.radius)}px`,
-    padding: '4px 10px',
-    fontWeight: '600',
+    borderRadius: '999px',
+    padding: '6px 12px',
+    fontWeight: '700',
     fontSize: '13px',
+    lineHeight: '1.2',
     textDecoration: 'none',
     cursor: 'pointer',
     whiteSpace: 'nowrap',
-    boxShadow: '0 1px 4px rgba(0,0,0,0.25)',
+    boxShadow: '0 2px 6px rgba(0,0,0,0.18)',
+    transition: reducedMotion() ? 'none' : 'transform 120ms ease, background-color 120ms ease, color 120ms ease',
   };
 }
 
-/** A small downward arrow so the stack points at the exact place. */
-function pointer(color: string): HTMLElement {
-  const arrow = document.createElement('div');
-  Object.assign(arrow.style, {
-    width: '0',
-    height: '0',
-    borderLeft: '7px solid transparent',
-    borderRight: '7px solid transparent',
-    borderTop: `9px solid ${color}`,
+/** A small dot with a white ring so the stack points at the exact place. */
+function pointer(palette: Palette): HTMLElement {
+  const dot = document.createElement('div');
+  Object.assign(dot.style, {
+    width: '10px',
+    height: '10px',
+    borderRadius: '50%',
+    background: palette.accent,
+    border: `2px solid ${palette.paper}`,
+    boxShadow: '0 1px 3px rgba(0,0,0,0.35)',
+    boxSizing: 'content-box',
+    marginTop: '2px',
   });
-  return arrow;
+  return dot;
 }
 
 /**

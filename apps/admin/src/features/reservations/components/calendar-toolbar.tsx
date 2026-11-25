@@ -9,11 +9,29 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import TodayOutlinedIcon from '@mui/icons-material/TodayOutlined';
 import { Button, FormControl, IconButton, InputLabel, MenuItem, Paper, Select, Stack, Typography } from '@mui/material';
 import type { PropertySummary } from '@resort-booking/shared-types';
+import { monthNames, yearOptions } from '../utils/calendar-cells';
 
 const ALL_PROPERTIES = 'all';
 
+/** Hidden on screen, still read out: the month in words follows the pickers. */
+const VISUALLY_HIDDEN = {
+  position: 'absolute',
+  width: 1,
+  height: 1,
+  overflow: 'hidden',
+  clip: 'rect(0 0 0 0)',
+  whiteSpace: 'nowrap',
+} as const;
+
 interface CalendarToolbarProps {
+  /** The month in words, announced to screen readers when it changes. */
   label: string;
+  year: number;
+  /** 1-12. */
+  month: number;
+  /** The real current year, to centre the year list. */
+  currentYear: number;
+  onSelectMonth: (year: number, month: number) => void;
   properties: PropertySummary[];
   propertyId: string;
   onPrevious: () => void;
@@ -27,6 +45,10 @@ interface CalendarToolbarProps {
  */
 export function CalendarToolbar({
   label,
+  year,
+  month,
+  currentYear,
+  onSelectMonth,
   properties,
   propertyId,
   onPrevious,
@@ -41,9 +63,41 @@ export function CalendarToolbar({
           <IconButton aria-label="Previous month" onClick={onPrevious} color="primary">
             <ChevronLeftIcon />
           </IconButton>
-          <Typography variant="h6" component="h2" aria-live="polite" sx={{ minWidth: 168, textAlign: 'center' }}>
+          <Typography variant="h6" component="h2" aria-live="polite" sx={VISUALLY_HIDDEN}>
             {label}
           </Typography>
+          <FormControl size="small" sx={{ minWidth: 140 }}>
+            <InputLabel id="calendar-month">Month</InputLabel>
+            <Select
+              labelId="calendar-month"
+              label="Month"
+              value={month}
+              onChange={(event): void => onSelectMonth(year, Number(event.target.value))}
+              MenuProps={{ slotProps: { paper: { sx: { maxHeight: 360 } } } }}
+            >
+              {monthNames().map((name, index): React.JSX.Element => (
+                <MenuItem key={name} value={index + 1}>
+                  {name}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <FormControl size="small" sx={{ minWidth: 100 }}>
+            <InputLabel id="calendar-year">Year</InputLabel>
+            <Select
+              labelId="calendar-year"
+              label="Year"
+              value={year}
+              onChange={(event): void => onSelectMonth(Number(event.target.value), month)}
+              MenuProps={{ slotProps: { paper: { sx: { maxHeight: 360 } } } }}
+            >
+              {yearOptions(year, currentYear).map((option): React.JSX.Element => (
+                <MenuItem key={option} value={option}>
+                  {option}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
           <IconButton aria-label="Next month" onClick={onNext} color="primary">
             <ChevronRightIcon />
           </IconButton>

@@ -77,6 +77,23 @@ export function monthLabel(year: number, month: number): string {
   return new Date(year, month - 1, 1).toLocaleString('en-GB', { month: 'long', year: 'numeric' });
 }
 
+/**
+ * The twelve month names, January first, for the month picker.
+ */
+export function monthNames(): string[] {
+  return Array.from({ length: 12 }, (_value, index): string => new Date(2000, index, 1).toLocaleString('en-GB', { month: 'long' }));
+}
+
+/**
+ * Years offered by the year picker: three back and three ahead of this year, widened to include the
+ * year being shown (e.g. after jumping with the arrows).
+ */
+export function yearOptions(shownYear: number, currentYear: number): number[] {
+  const first = Math.min(shownYear, currentYear - 3);
+  const last = Math.max(shownYear, currentYear + 3);
+  return Array.from({ length: last - first + 1 }, (_value, index): number => first + index);
+}
+
 export type DayTone = 'success' | 'warning' | 'info' | 'error' | 'none';
 
 /**

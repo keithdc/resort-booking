@@ -3,7 +3,9 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
+    "predev": "node ../../scripts/copy-maplibre-worker.mjs .",
     "dev": "next dev --port 3001",
+    "prebuild": "node ../../scripts/copy-maplibre-worker.mjs .",
     "build": "next build",
     "start": "next start --port 3001",
     "lint": "next lint",

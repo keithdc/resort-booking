@@ -1,14 +1,17 @@
 /**
  * @file apps/web/src/shared/components/property-map-inner.tsx
- * @shared MapLibre canvas (client only)
- * @dependencies maplibre-gl
+ * @shared MapLibre canvas for one place (client only)
+ * @dependencies maplibre-gl, @resort-booking/ui/map
  */
 
 'use client';
 
-import { Map, Marker, NavigationControl, Popup, type StyleSpecification } from 'maplibre-gl';
-import { useTheme } from '@mui/material/styles';
+import { alpha, useTheme } from '@mui/material/styles';
+import { createPlacePin, installStyleFallback } from '@resort-booking/ui/map';
+import { Map, Marker, NavigationControl, Popup } from 'maplibre-gl';
 import { useEffect, useRef } from 'react';
+import { MAP_STYLE_URL } from '@/shared/map/map-config';
+import { ensureMapWorker } from '@/shared/map/maplibre-worker';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 interface PropertyMapInnerProps {
@@ -17,32 +20,9 @@ interface PropertyMapInnerProps {
   label: string;
 }
 
-/** OSM raster tiles through MapLibre: no Google SDK, no tile API key. Shared by every map in the guest app. */
-export const OSM_RASTER_STYLE: StyleSpecification = {
-  version: 8,
-  sources: {
-    osm: {
-      type: 'raster',
-      tiles: [
-        'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
-        'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png',
-        'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png',
-      ],
-      tileSize: 256,
-      attribution: '&copy; OpenStreetMap contributors',
-    },
-  },
-  layers: [
-    {
-      id: 'osm',
-      type: 'raster',
-      source: 'osm',
-    },
-  ],
-};
-
 /**
- * OSM raster tiles through MapLibre — no Google SDK, no tile API key.
+ * One place on a light vector basemap (no Google SDK). Scrolling the page is not hijacked: the map
+ * zooms with ctrl/cmd + scroll, or with the +/- buttons and the keyboard. No rotation.
  */
 export function PropertyMapInner({
   latitude,
@@ -51,7 +31,9 @@ export function PropertyMapInner({
 }: PropertyMapInnerProps): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const theme = useTheme();
-  const markerColor = theme.palette.primary.main;
+  const pinBackground = theme.palette.primary.main;
+  const pinIcon = theme.palette.primary.contrastText;
+  const pinBorder = theme.palette.background.paper;
 
   useEffect((): (() => void) => {
     const node = containerRef.current;
@@ -61,16 +43,29 @@ export function PropertyMapInner({
       };
     }
 
+    ensureMapWorker();
     const map = new Map({
       container: node,
-      style: OSM_RASTER_STYLE,
+      style: MAP_STYLE_URL,
       center: [longitude, latitude],
       zoom: 13,
-      attributionControl: {},
+      attributionControl: { compact: true },
+      dragRotate: false,
+      pitchWithRotate: false,
+      cooperativeGestures: true,
     });
+    installStyleFallback(map);
+    map.touchZoomRotate.disableRotation();
     map.addControl(new NavigationControl({ showCompass: false }), 'top-right');
-    const marker = new Marker({ color: markerColor }).setLngLat([longitude, latitude]).addTo(map);
-    marker.setPopup(new Popup({ offset: 24 }).setText(label));
+    const element = createPlacePin(
+      document,
+      { background: pinBackground, icon: pinIcon, ring: alpha(pinBackground, 0.35), border: pinBorder },
+      label,
+    );
+    new Marker({ element, anchor: 'center' })
+      .setLngLat([longitude, latitude])
+      .setPopup(new Popup({ offset: 28 }).setText(label))
+      .addTo(map);
 
     const resize = (): void => {
       map.resize();
@@ -82,7 +77,7 @@ export function PropertyMapInner({
       window.clearTimeout(timeout);
       map.remove();
     };
-  }, [latitude, longitude, label, markerColor]);
+  }, [latitude, longitude, label, pinBackground, pinIcon, pinBorder]);
 
   return (
     <div

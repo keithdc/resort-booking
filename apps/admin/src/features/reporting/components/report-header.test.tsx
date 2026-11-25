@@ -35,32 +35,62 @@ function renderHeader(overrides: Partial<Parameters<typeof ReportHeader>[0]> = {
 describe('ReportHeader', () => {
   afterEach(cleanup);
 
-  it('shows the title, a plain intro and the five periods with the current one pressed', () => {
+  it('shows the title, a plain intro, the chosen period and the dates it covers', () => {
     renderHeader();
 
     expect(screen.getByRole('heading', { level: 1, name: 'Reports' })).toBeTruthy();
     expect(screen.getByText(/How your properties are doing/)).toBeTruthy();
-    const group = screen.getByRole('group', { name: 'Period' });
-    expect(within(group).getAllByRole('button').map((button) => button.textContent)).toEqual(['This month', 'Last month', 'Next 30 days', 'This year', 'Custom']);
-    expect(within(group).getByRole('button', { name: 'This month' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('combobox', { name: 'Period' }).textContent).toBe('This month');
+    expect(screen.getByLabelText('Dates covered: 1 Jul – 31 Jul 2027')).toBeTruthy();
+  });
+
+  it('lists every preset under a heading, each with the dates it covers today', () => {
+    renderHeader();
+
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Period' }));
+    const listbox = screen.getByRole('listbox');
+
+    const headings = ['Days and weeks', 'Months', 'Quarters and years', 'Your own dates'];
+    const labels = within(listbox)
+      .getAllByRole('option')
+      .map((option) => option.textContent ?? '')
+      .filter((text) => !headings.includes(text));
+    const expected = [
+      'Today', 'This week', 'Last week', 'Last 30 days', 'Next 30 days', 'This month', 'Last month',
+      'This quarter', 'Last quarter', 'This year', 'Last year', 'Custom dates',
+    ];
+    expect(labels).toHaveLength(expected.length);
+    expected.forEach((label, index) => expect(labels[index].startsWith(label)).toBe(true));
+    for (const heading of headings) {
+      expect(within(listbox).getByText(heading)).toBeTruthy();
+    }
+    expect(within(listbox).getByRole('option', { name: /^This year/ }).textContent).toMatch(/\d{4}/);
+  });
+
+  it('keeps the long period list short enough to scroll', () => {
+    renderHeader();
+
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Period' }));
+
+    const paper = screen.getByRole('listbox').closest('.MuiPaper-root');
+    expect(paper).not.toBeNull();
+    expect(getComputedStyle(paper as Element).maxHeight).toBe('360px');
   });
 
   it('changes the period', () => {
     const chosen = period();
     renderHeader({ period: chosen });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Last month' }));
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Period' }));
+    fireEvent.click(screen.getByRole('option', { name: /^Last quarter/ }));
 
-    expect(chosen.setPreset).toHaveBeenCalledWith('last_month');
+    expect(chosen.setPreset).toHaveBeenCalledWith('last_quarter');
   });
 
-  it('keeps the current period when the pressed button is pressed again', () => {
-    const chosen = period();
-    renderHeader({ period: chosen });
+  it('asks for the two days instead of showing dates while a custom period is incomplete', () => {
+    renderHeader({ period: period({ preset: 'custom', range: null }) });
 
-    fireEvent.click(screen.getByRole('button', { name: 'This month' }));
-
-    expect(chosen.setPreset).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Dates covered: not chosen yet')).toBeTruthy();
   });
 
   it('shows the custom days only for Custom, with the problem next to the last day', () => {

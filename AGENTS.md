@@ -24,7 +24,7 @@ You are working on a **direct-booking** monorepo (Airbnb replacement), not a CRM
 - Straight-through booking. Card + Apple Pay + Google Pay: 15-minute hold + Stripe (same fee as card). Bank transfer: 48-hour hold, receipt, staff verify. No PayPal/Klarna in v1. Cookie consent before ad pixels. Extra services: instant or on-request after the booking is paid.
 - No Ruby/Rails and no Express in this repo.
 - MUI + theme tokens. Buttons **8px radius**. No hardcoded palette colors.
-- Property listings: photos, OSM map + directions, phone (`tel:`) and email. No in-app chat.
+- Property listings: photos, map (MapLibre, light vector basemap) + directions, phone (`tel:`) and email. No in-app chat.
 - Booking UX: name/email/phone + guest count + pay. No ID storage. 5 min freeze warning; expired hold keeps the form. Optional review after the visit. Arrival: staff verify headcount. Guest calendars disable past days; **admin calendars do not**.
 - **No business logic in React.** Holds, availability, refunds, payments: NestJS only.
 - **Holds expire by the clock, not by events.** A hold past `expires_at` is dead on every read; the minute sweeper only tidies status and sends expiry side effects. Never rely on the browser or Redis expiry events to release a stay (`docs/01-architecture.md`, Hold expiry).

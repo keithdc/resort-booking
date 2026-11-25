@@ -6,6 +6,7 @@
 
 'use client';
 
+import DateRangeOutlinedIcon from '@mui/icons-material/DateRangeOutlined';
 import AssessmentOutlinedIcon from '@mui/icons-material/AssessmentOutlined';
 import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
 import PrintOutlinedIcon from '@mui/icons-material/PrintOutlined';
@@ -13,22 +14,40 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import {
   Box,
   Button,
+  Chip,
   FormControl,
   InputLabel,
+  ListItemText,
+  ListSubheader,
   MenuItem,
   Paper,
   Select,
   Stack,
   TextField,
-  ToggleButton,
-  ToggleButtonGroup,
 } from '@mui/material';
 import { PageHeader } from '@/shared/components/page-header';
+import { useMemo } from 'react';
 import type { PropertySummary } from '@resort-booking/shared-types';
 import type { ReportPeriod } from '../hooks/use-report-period';
-import { isRangePreset, REPORT_RANGE_OPTIONS } from '../utils/report-range';
+import { describePeriod, describePreset, isRangePreset, REPORT_RANGE_OPTIONS, type ReportRangeOption } from '../utils/report-range';
 
 const ALL_PROPERTIES = 'all';
+
+type PeriodMenuEntry = { kind: 'group'; group: string } | { kind: 'option'; option: ReportRangeOption; dates: string };
+
+/** The period menu: option groups with the dates each one covers today. */
+function buildPeriodMenu(now: Date): PeriodMenuEntry[] {
+  const entries: PeriodMenuEntry[] = [];
+  let group = '';
+  for (const option of REPORT_RANGE_OPTIONS) {
+    if (option.group !== group) {
+      group = option.group;
+      entries.push({ kind: 'group', group });
+    }
+    entries.push({ kind: 'option', option, dates: describePreset(option.value, now) });
+  }
+  return entries;
+}
 
 interface ReportHeaderProps {
   period: ReportPeriod;
@@ -58,6 +77,8 @@ export function ReportHeader({
   onPrint,
   onRefresh,
 }: ReportHeaderProps): React.JSX.Element {
+  const periodMenu = useMemo((): PeriodMenuEntry[] => buildPeriodMenu(new Date()), []);
+  const rangeLabel = period.range === null ? '' : describePeriod(period.range.from, period.range.to);
   return (
     <Box data-print="hide" sx={{ mb: 6 }}>
       <PageHeader
@@ -69,25 +90,41 @@ export function ReportHeader({
 
       <Paper elevation={1} sx={{ p: 2.5, borderRadius: 2 }}>
       <Stack direction={{ xs: 'column', lg: 'row' }} spacing={3} alignItems={{ lg: 'center' }} useFlexGap flexWrap="wrap">
-        <ToggleButtonGroup
-          exclusive
-          size="small"
-          color="primary"
-          value={period.preset}
-          aria-label="Period"
-          onChange={(_event, next: string | null): void => {
-            if (next !== null && isRangePreset(next)) {
-              period.setPreset(next);
-            }
-          }}
-          sx={{ flexWrap: 'wrap' }}
-        >
-          {REPORT_RANGE_OPTIONS.map((option): React.JSX.Element => (
-            <ToggleButton key={option.value} value={option.value} sx={{ textTransform: 'none', px: 2 }}>
-              {option.label}
-            </ToggleButton>
-          ))}
-        </ToggleButtonGroup>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+          <FormControl size="small" sx={{ minWidth: 220 }}>
+            <InputLabel id="report-period">Period</InputLabel>
+            <Select
+              labelId="report-period"
+              label="Period"
+              value={period.preset}
+              onChange={(event): void => {
+                if (isRangePreset(event.target.value)) {
+                  period.setPreset(event.target.value);
+                }
+              }}
+              MenuProps={{ slotProps: { paper: { sx: { maxHeight: 360 } } } }}
+              renderValue={(value): string => REPORT_RANGE_OPTIONS.find((option): boolean => option.value === value)?.label ?? ''}
+            >
+              {periodMenu.map((entry): React.JSX.Element =>
+                entry.kind === 'group' ? (
+                  <ListSubheader key={entry.group}>{entry.group}</ListSubheader>
+                ) : (
+                  <MenuItem key={entry.option.value} value={entry.option.value}>
+                    <ListItemText primary={entry.option.label} secondary={entry.dates} />
+                  </MenuItem>
+                ),
+              )}
+            </Select>
+          </FormControl>
+          <Chip
+            icon={<DateRangeOutlinedIcon />}
+            color="primary"
+            variant="outlined"
+            label={rangeLabel === '' ? 'Choose the first and last day' : rangeLabel}
+            aria-label={`Dates covered: ${rangeLabel === '' ? 'not chosen yet' : rangeLabel}`}
+            sx={{ fontWeight: 600 }}
+          />
+        </Box>
 
         <FormControl size="small" sx={{ minWidth: 220 }}>
           <InputLabel id="report-property">Property</InputLabel>

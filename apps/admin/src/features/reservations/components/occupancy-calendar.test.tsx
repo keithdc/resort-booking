@@ -68,6 +68,21 @@ describe('OccupancyCalendar', () => {
     expect(api.fetchStaffCalendar.mock.calls[2]?.[0]).toBe(today.from);
   });
 
+  it('jumps straight to a chosen month and year and loads it', async () => {
+    render(<OccupancyCalendar properties={PROPERTIES} />);
+    await screen.findByRole('list', { name: 'Legend' });
+
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Month' }));
+    fireEvent.click(screen.getByRole('option', { name: 'March' }));
+    await waitFor(() => expect(api.fetchStaffCalendar).toHaveBeenCalledTimes(2));
+    expect(api.fetchStaffCalendar.mock.calls[1]?.[0]).toMatch(/^\d{4}-03-01$/);
+
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Year' }));
+    fireEvent.click(screen.getByRole('option', { name: String(new Date().getFullYear() + 2) }));
+    await waitFor(() => expect(api.fetchStaffCalendar).toHaveBeenCalledTimes(3));
+    expect(api.fetchStaffCalendar.mock.calls[2]?.[0]).toBe(`${new Date().getFullYear() + 2}-03-01`);
+  });
+
   it('jumps back to this month and selects today', async () => {
     render(<OccupancyCalendar properties={PROPERTIES} />);
     await screen.findByRole('list', { name: 'Legend' });

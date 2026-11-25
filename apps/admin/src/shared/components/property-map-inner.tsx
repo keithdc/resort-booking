@@ -6,9 +6,12 @@
 
 'use client';
 
-import { Map, Marker, NavigationControl, Popup, type Map as MapLibreMap, type StyleSpecification } from 'maplibre-gl';
-import { useTheme } from '@mui/material/styles';
+import { alpha, useTheme } from '@mui/material/styles';
+import { createPlacePin, installStyleFallback } from '@resort-booking/ui/map';
+import { Map, Marker, NavigationControl, Popup, type Map as MapLibreMap } from 'maplibre-gl';
 import { useEffect, useRef, useState } from 'react';
+import { MAP_STYLE_URL } from '@/shared/map/map-config';
+import { ensureMapWorker } from '@/shared/map/maplibre-worker';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 interface PropertyMapInnerProps {
@@ -26,33 +29,11 @@ interface PinView {
   zoom: number;
 }
 
-const OSM_RASTER_STYLE: StyleSpecification = {
-  version: 8,
-  sources: {
-    osm: {
-      type: 'raster',
-      tiles: [
-        'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
-        'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png',
-        'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png',
-      ],
-      tileSize: 256,
-      attribution: '&copy; OpenStreetMap contributors',
-    },
-  },
-  layers: [
-    {
-      id: 'osm',
-      type: 'raster',
-      source: 'osm',
-    },
-  ],
-};
-
 const SAME_POINT_DEG = 0.00001;
 
 /**
- * OSM raster tiles. Staff can drag the pin or click the map.
+ * One place on a light vector basemap. Staff can drag the pin or click the map; the page keeps scrolling
+ * (ctrl/cmd + scroll zooms) and there is no rotation.
  */
 export function PropertyMapInner({
   latitude,
@@ -68,7 +49,9 @@ export function PropertyMapInner({
   onPinChangeRef.current = onPinChange;
   const userMovedRef = useRef(false);
   const theme = useTheme();
-  const markerColor = theme.palette.primary.main;
+  const pinBackground = theme.palette.primary.main;
+  const pinIcon = theme.palette.primary.contrastText;
+  const pinBorder = theme.palette.background.paper;
   const canMove = onPinChange !== undefined;
   const resolvedZoom = zoom ?? 13;
   const view: PinView = { latitude, longitude, label, zoom: resolvedZoom };
@@ -87,17 +70,31 @@ export function PropertyMapInner({
     }
 
     const origin = start.current;
+    ensureMapWorker();
     const map = new Map({
       container: node,
-      style: OSM_RASTER_STYLE,
+      style: MAP_STYLE_URL,
       center: [origin.longitude, origin.latitude],
       zoom: origin.zoom,
-      attributionControl: {},
+      attributionControl: { compact: true },
+      dragRotate: false,
+      pitchWithRotate: false,
+      cooperativeGestures: true,
     });
+    installStyleFallback(map);
+    map.touchZoomRotate.disableRotation();
     map.addControl(new NavigationControl({ showCompass: false }), 'top-right');
-    const marker = new Marker({ color: markerColor, draggable: canMove })
+    const element = createPlacePin(
+      document,
+      { background: pinBackground, icon: pinIcon, ring: alpha(pinBackground, 0.35), border: pinBorder },
+      origin.label,
+    );
+    if (canMove) {
+      element.style.cursor = 'grab';
+    }
+    const marker = new Marker({ element, anchor: 'center', draggable: canMove })
       .setLngLat([origin.longitude, origin.latitude])
-      .setPopup(new Popup({ offset: 24 }).setText(origin.label))
+      .setPopup(new Popup({ offset: 28 }).setText(origin.label))
       .addTo(map);
     mapRef.current = map;
     markerRef.current = marker;
@@ -141,7 +138,7 @@ export function PropertyMapInner({
       markerRef.current = null;
       map.remove();
     };
-  }, [canMove, markerColor]);
+  }, [canMove, pinBackground, pinIcon, pinBorder]);
 
   useEffect((): void => {
     const map = mapRef.current;

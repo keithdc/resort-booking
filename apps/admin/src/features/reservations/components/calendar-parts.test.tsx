@@ -21,9 +21,9 @@ const PROPERTIES = [{ id: 'p1', name: 'Alpine Lake' }] as PropertySummary[];
 describe('CalendarToolbar', () => {
   afterEach(cleanup);
 
-  function renderToolbar(): Record<'onPrevious' | 'onNext' | 'onToday' | 'onPropertyChange', ReturnType<typeof vi.fn>> {
-    const handlers = { onPrevious: vi.fn(), onNext: vi.fn(), onToday: vi.fn(), onPropertyChange: vi.fn() };
-    render(<CalendarToolbar label="November 2026" properties={PROPERTIES} propertyId="" {...handlers} />);
+  function renderToolbar(): Record<'onPrevious' | 'onNext' | 'onToday' | 'onPropertyChange' | 'onSelectMonth', ReturnType<typeof vi.fn>> {
+    const handlers = { onPrevious: vi.fn(), onNext: vi.fn(), onToday: vi.fn(), onPropertyChange: vi.fn(), onSelectMonth: vi.fn() };
+    render(<CalendarToolbar label="November 2026" year={2026} month={11} currentYear={2026} properties={PROPERTIES} propertyId="" {...handlers} />);
     return handlers;
   }
 
@@ -38,6 +38,21 @@ describe('CalendarToolbar', () => {
     expect(handlers.onPrevious).toHaveBeenCalledTimes(1);
     expect(handlers.onNext).toHaveBeenCalledTimes(1);
     expect(handlers.onToday).toHaveBeenCalledTimes(1);
+  });
+
+  it('jumps straight to another month or year', () => {
+    const handlers = renderToolbar();
+
+    expect(screen.getByRole('combobox', { name: 'Month' }).textContent).toBe('November');
+    expect(screen.getByRole('combobox', { name: 'Year' }).textContent).toBe('2026');
+
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Month' }));
+    fireEvent.click(screen.getByRole('option', { name: 'March' }));
+    expect(handlers.onSelectMonth).toHaveBeenLastCalledWith(2026, 3);
+
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Year' }));
+    fireEvent.click(screen.getByRole('option', { name: '2028' }));
+    expect(handlers.onSelectMonth).toHaveBeenLastCalledWith(2028, 11);
   });
 
   it('filters by property, with "" meaning all', () => {

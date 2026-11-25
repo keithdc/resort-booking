@@ -64,7 +64,8 @@ describe('ReportsPage', () => {
     render(<ReportsPage />);
     await screen.findByRole('heading', { name: 'At a glance' });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Last month' }));
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Period' }));
+    fireEvent.click(screen.getByRole('option', { name: /^Last month/ }));
 
     await waitFor(() => expect(mocks.fetchStaffReport).toHaveBeenCalledTimes(2));
   });
@@ -146,7 +147,8 @@ describe('ReportsPage', () => {
     await screen.findByRole('heading', { name: 'At a glance' });
     mocks.fetchStaffReport.mockClear();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Custom' }));
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Period' }));
+    fireEvent.click(screen.getByRole('option', { name: /^Custom dates/ }));
 
     expect(await screen.findByText('Pick a first and a last day to see the report.')).toBeTruthy();
     expect(mocks.fetchStaffReport).not.toHaveBeenCalled();

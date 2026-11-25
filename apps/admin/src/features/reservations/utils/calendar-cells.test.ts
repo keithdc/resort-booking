@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { monthBounds } from '@/shared/utils/month-bounds';
-import { buildMonthCells, dayAriaLabel, dayHasActivity, dominantTone, isWeekendIso, longDateLabel, monthLabel, selectedDateInMonth } from './calendar-cells';
+import { buildMonthCells, dayAriaLabel, dayHasActivity, dominantTone, isWeekendIso, longDateLabel, monthLabel, monthNames, selectedDateInMonth, yearOptions } from './calendar-cells';
 
 describe('buildMonthCells', () => {
   it('pads to Monday and lists every day (November 2026 starts on a Sunday)', () => {
@@ -87,5 +87,24 @@ describe('dayAriaLabel', () => {
     expect(dayAriaLabel('2026-11-25', { ...quiet, bookingCount: 2, pendingCount: 1, cancelledCount: 1, rebookCount: 1 })).toBe(
       '25 November 2026, 2 booked, 1 rebooked, 1 on hold, 1 cancelled',
     );
+  });
+});
+
+describe('monthNames and yearOptions', () => {
+  it('lists the twelve months, January first', () => {
+    const names = monthNames();
+    expect(names).toHaveLength(12);
+    expect(names[0]).toBe('January');
+    expect(names[11]).toBe('December');
+  });
+
+  it('offers three years back and three ahead of this year', () => {
+    expect(yearOptions(2026, 2026)).toEqual([2023, 2024, 2025, 2026, 2027, 2028, 2029]);
+  });
+
+  it('widens to the year being shown when it is outside that window', () => {
+    expect(yearOptions(2035, 2026)).toEqual([2023, 2024, 2025, 2026, 2027, 2028, 2029, 2030, 2031, 2032, 2033, 2034, 2035]);
+    expect(yearOptions(2015, 2026)).toContain(2015);
+    expect(yearOptions(2015, 2026)[0]).toBe(2015);
   });
 });

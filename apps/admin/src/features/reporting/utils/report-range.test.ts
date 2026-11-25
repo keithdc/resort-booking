@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import {
   customRange,
   describePeriod,
+  describePreset,
   isRangePreset,
   MAX_CUSTOM_RANGE_DAYS,
   periodNights,
@@ -82,6 +83,57 @@ describe('helpers', () => {
     expect(isRangePreset('this_month')).toBe(true);
     expect(isRangePreset('custom')).toBe(true);
     expect(isRangePreset('last_90')).toBe(false);
-    expect(REPORT_RANGE_OPTIONS.map((option) => option.label)).toEqual(['This month', 'Last month', 'Next 30 days', 'This year', 'Custom']);
+    expect(REPORT_RANGE_OPTIONS).toHaveLength(12);
+    expect(REPORT_RANGE_OPTIONS.map((option) => option.value)).toContain('last_quarter');
+    expect(new Set(REPORT_RANGE_OPTIONS.map((option) => option.value)).size).toBe(12);
+  });
+});
+
+describe('day, week, quarter and year presets (NOW is Thursday 15 Jul 2027)', () => {
+  it('today is one day', () => {
+    expect(rangeFromPreset('today', NOW)).toEqual({ from: '2027-07-15', to: '2027-07-16' });
+  });
+
+  it('this week runs Monday to Sunday and last week is the one before', () => {
+    expect(rangeFromPreset('this_week', NOW)).toEqual({ from: '2027-07-12', to: '2027-07-19' });
+    expect(rangeFromPreset('last_week', NOW)).toEqual({ from: '2027-07-05', to: '2027-07-12' });
+  });
+
+  it('puts Sunday at the end of its week, not the start of the next', () => {
+    const sunday = new Date(2027, 6, 18, 9);
+    expect(rangeFromPreset('this_week', sunday)).toEqual({ from: '2027-07-12', to: '2027-07-19' });
+    const monday = new Date(2027, 6, 19, 9);
+    expect(rangeFromPreset('this_week', monday)).toEqual({ from: '2027-07-19', to: '2027-07-26' });
+    expect(rangeFromPreset('last_week', monday)).toEqual({ from: '2027-07-12', to: '2027-07-19' });
+  });
+
+  it('last 30 days ends today and is 30 days long', () => {
+    const range = rangeFromPreset('last_30', NOW);
+    expect(range).toEqual({ from: '2027-06-16', to: '2027-07-16' });
+    expect(periodNights(range.from, range.to)).toBe(30);
+  });
+
+  it('this and last quarter are three calendar months', () => {
+    expect(rangeFromPreset('this_quarter', NOW)).toEqual({ from: '2027-07-01', to: '2027-10-01' });
+    expect(rangeFromPreset('last_quarter', NOW)).toEqual({ from: '2027-04-01', to: '2027-07-01' });
+  });
+
+  it('last quarter in the first quarter is the previous year\'s fourth', () => {
+    const february = new Date(2027, 1, 10);
+    expect(rangeFromPreset('this_quarter', february)).toEqual({ from: '2027-01-01', to: '2027-04-01' });
+    expect(rangeFromPreset('last_quarter', february)).toEqual({ from: '2026-10-01', to: '2027-01-01' });
+    expect(rangeFromPreset('this_quarter', new Date(2027, 11, 31))).toEqual({ from: '2027-10-01', to: '2028-01-01' });
+  });
+
+  it('last year is the whole previous year', () => {
+    expect(rangeFromPreset('last_year', NOW)).toEqual({ from: '2026-01-01', to: '2027-01-01' });
+  });
+
+  it('describes a preset by the dates it covers, and nothing for custom', () => {
+    expect(describePreset('today', NOW)).toBe('15 Jul 2027');
+    expect(describePreset('this_week', NOW)).toBe('12 Jul – 18 Jul 2027');
+    expect(describePreset('last_quarter', NOW)).toBe('1 Apr – 30 Jun 2027');
+    expect(describePreset('last_year', NOW)).toBe('1 Jan – 31 Dec 2026');
+    expect(describePreset('custom', NOW)).toBe('');
   });
 });

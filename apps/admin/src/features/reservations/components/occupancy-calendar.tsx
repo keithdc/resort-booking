@@ -114,6 +114,10 @@ export function OccupancyCalendar({ properties }: OccupancyCalendarProps): React
       />
       <CalendarToolbar
         label={monthLabel(month.year, month.month)}
+        year={month.year}
+        month={month.month}
+        currentYear={new Date().getFullYear()}
+        onSelectMonth={(year, nextMonthNumber): void => goToMonth(monthBounds(year, nextMonthNumber))}
         properties={properties}
         propertyId={propertyId}
         onPrevious={previousMonth}

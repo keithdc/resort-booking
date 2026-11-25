@@ -89,7 +89,7 @@ export function CancellationPolicySection({
               mb: 1,
               p: 0,
               display: 'grid',
-              gap: 1,
+              gap: 1.5,
               gridTemplateColumns: { xs: '1fr', sm: `repeat(${Math.min(segments.length, 4)}, minmax(0, 1fr))` },
             }}
           >
@@ -143,7 +143,11 @@ function SegmentItem({ segment }: SegmentItemProps): React.JSX.Element {
       component="li"
       data-tone={segment.tone}
       sx={{
-        p: 1.5,
+        p: 2,
+        minHeight: { sm: 148 },
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 1,
         borderRadius: 1,
         border: 1,
         borderColor: `${segment.tone}.main`,
@@ -151,15 +155,18 @@ function SegmentItem({ segment }: SegmentItemProps): React.JSX.Element {
         bgcolor: 'background.paper',
       }}
     >
-      <Typography variant="body2" color="text.secondary">
-        {segment.period}
-      </Typography>
-      {segment.window !== null ? (
-        <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-          {segment.window}
+      <Box>
+        <Typography variant="body2" color="text.secondary">
+          {segment.period}
         </Typography>
-      ) : null}
-      <Typography sx={{ fontWeight: 700, color: `${segment.tone}.dark` }}>{segment.refund}</Typography>
+        {segment.window !== null ? (
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+            {segment.window}
+          </Typography>
+        ) : null}
+      </Box>
+      {/* The refund sits at the bottom of every card, so the four line up across the row. */}
+      <Typography sx={{ fontWeight: 700, color: `${segment.tone}.dark`, mt: 'auto', pt: 1 }}>{segment.refund}</Typography>
     </Box>
   );
 }
