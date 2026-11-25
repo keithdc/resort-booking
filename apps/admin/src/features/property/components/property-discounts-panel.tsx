@@ -25,22 +25,55 @@ import {
   TableRow,
   Typography,
 } from '@mui/material';
+import BlockOutlinedIcon from '@mui/icons-material/BlockOutlined';
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
+import EventBusyOutlinedIcon from '@mui/icons-material/EventBusyOutlined';
+import PowerSettingsNewIcon from '@mui/icons-material/PowerSettingsNew';
+import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
 import { useState } from 'react';
+import { localTodayIso } from '@/shared/utils/month-bounds';
 import { usePropertyDiscounts } from '../hooks/use-property-discounts';
-import { summarizeConditions, summarizeEffect, summarizeScope, summarizeUses } from '../utils/discount-draft';
+import {
+  discountStatus,
+  summarizeConditions,   summarizeEffect,
+  summarizeScope,
+  summarizeStacking,
+  summarizeUses,
+  type DiscountStatusKind,
+} from '../utils/discount-draft';
 import { AllHousesDiscountWarningDialog } from './all-houses-discount-warning-dialog';
 import { DiscountDialog } from './discount-dialog';
 
 interface PropertyDiscountsPanelProps {
   propertyId: string;
   houses: readonly HouseSummary[];
+  /** Today's local date (YYYY-MM-DD). Defaults to the browser's today; tests pass a fixed day. */
+  today?: string;
 }
 
+const STATUS_ICON: Record<DiscountStatusKind, React.ReactElement> = {
+  off: <PowerSettingsNewIcon />,
+  used_up: <BlockOutlinedIcon />,
+  ended: <EventBusyOutlinedIcon />,
+  starts: <ScheduleOutlinedIcon />,
+  live: <CheckCircleOutlineIcon />,
+};
+
+const STATUS_COLOR: Record<DiscountStatusKind, 'default' | 'success' | 'warning' | 'info'> = {
+  off: 'default',
+  used_up: 'warning',
+  ended: 'default',
+  starts: 'info',
+  live: 'success',
+};
+
 /**
- * Discounts for one property: long stay, early bird, promo codes and so on. Guests always get
- * the best single one unless discounts are marked as combinable.
+ * Discounts for one property: long stay, early bird, promo codes and so on. Automatic discounts never stack
+ * (the guest gets the best one); a promo code stacks after it.
  */
-export function PropertyDiscountsPanel({ propertyId, houses }: PropertyDiscountsPanelProps): React.JSX.Element {
+export function PropertyDiscountsPanel({ propertyId, houses, today }: PropertyDiscountsPanelProps): React.JSX.Element {
+  const [clockToday] = useState<string>(() => localTodayIso());
+  const todayIso = today ?? clockToday;
   const state = usePropertyDiscounts(propertyId);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const currencyCode = houses[0]?.currencyCode ?? 'EUR';
@@ -48,8 +81,9 @@ export function PropertyDiscountsPanel({ propertyId, houses }: PropertyDiscounts
   return (
     <Stack spacing={2}>
       <Typography color="text.secondary">
-        Discounts come off the price of the nights. Guests get the single best discount that fits their booking; discounts
-        marked &quot;can combine&quot; stack instead. Bookings already made keep the price the guest was quoted.
+        Discounts come off the price of the nights. Automatic discounts do not stack: the guest gets the best one that fits.
+        A promo code is a coupon and stacks after it. Set a limit and a discount stops being offered once it is used up.
+        Bookings already made keep the price the guest was quoted.
       </Typography>
       {state.error !== null && !state.formOpen ? (
         <Alert severity="error" onClose={state.clearError}>
@@ -83,7 +117,7 @@ export function PropertyDiscountsPanel({ propertyId, houses }: PropertyDiscounts
               >
                 <TableCell>
                   {discount.label}{' '}
-                  <Chip size="small" color={discount.active ? 'success' : 'default'} label={discount.active ? 'On' : 'Off'} />
+                  <StatusChip discount={discount} today={todayIso} />
                   {discount.promoted ? (
                     <>
                       {' '}
@@ -95,9 +129,11 @@ export function PropertyDiscountsPanel({ propertyId, houses }: PropertyDiscounts
                 <TableCell>{summarizeConditions(discount)}</TableCell>
                 <TableCell>{summarizeScope(discount.houseIds, houses)}</TableCell>
                 <TableCell>
-                  {discount.combinable ? 'Can combine' : 'Best single'} · priority {discount.priority}
+                  {summarizeStacking(discount)}
                 </TableCell>
-                <TableCell>{summarizeUses(discount.redemptions, discount.maxRedemptions)}</TableCell>
+                <TableCell>
+                  {summarizeUses(discount.redemptions, discount.maxRedemptions)}
+                </TableCell>
                 <TableCell align="right">
                   <Button
                     size="small"
@@ -133,6 +169,7 @@ export function PropertyDiscountsPanel({ propertyId, houses }: PropertyDiscounts
         draft={state.draft}
         houses={houses}
         currencyCode={currencyCode}
+        today={todayIso}
         error={state.error}
         saving={state.saving}
         onChange={state.updateDraft}
@@ -179,5 +216,20 @@ export function PropertyDiscountsPanel({ propertyId, houses }: PropertyDiscounts
       </Dialog>
       <Snackbar open={state.notice !== null} autoHideDuration={4000} onClose={state.clearNotice} message={state.notice ?? ''} />
     </Stack>
+  );
+}
+
+interface StatusChipProps {
+  discount: Parameters<typeof discountStatus>[0];
+  today: string;
+}
+
+/**
+ * One status per discount: Live, Starts 1 Dec, Ended, Used up or Off. An icon and the word say it, not colour alone.
+ */
+function StatusChip({ discount, today }: StatusChipProps): React.JSX.Element {
+  const status = discountStatus(discount, today);
+  return (
+    <Chip size="small" icon={STATUS_ICON[status.kind]} color={STATUS_COLOR[status.kind]} label={status.label} data-status={status.kind} />
   );
 }

@@ -11,8 +11,33 @@ import type {
   DiscountWrite,
   HouseSummary,
 } from '@resort-booking/shared-types';
-import { formatIsoDate } from '@/shared/utils/format-date';
+import { formatIsoDate, formatShortDate } from '@/shared/utils/format-date';
 import { centsFromEuroInput, eurosInputFromCents, formatCents } from '@/shared/utils/money';
+
+/** Shown for an automatic discount (no promo code): these never stack with each other. */
+export const AUTOMATIC_NOTE = 'Automatic discounts do not stack with each other: the guest gets the best one.';
+
+/** Switch label and help for a promo code (a coupon), which stacks after the best automatic discount. */
+export const COUPON_STACK_LABEL = 'Can be used together with an automatic discount';
+export const COUPON_STACK_HELP =
+  'A coupon is applied after the best automatic discount, on what is left. Turn off to make it replace the automatic discount when it saves more.';
+
+/** Help for the usage limit. */
+export const LIMIT_LABEL = 'Limit how many bookings can use it';
+export const LIMIT_HELP = 'When the limit is reached the discount stops being offered.';
+
+/** The "How long does it run?" section: when guests can book with this discount. */
+export const RUN_WINDOW_TITLE = 'How long does it run?';
+export const RUN_WINDOW_HELP =
+  'Guests can use it only when they book between these dates. Leave blank to run until you switch it off.';
+
+/** The other date condition: which stay dates qualify (a season), not when the guest books. */
+export const STAY_DATES_LABEL = 'Only for stays between these dates (the whole stay must fall inside)';
+export const STAY_DATES_HELP =
+  "Use this for a season (e.g. only July stays). To run a sale between two dates use 'How long does it run?' above.";
+
+/** Priority is no longer shown or edited; a saved value is carried through, and new discounts get this. */
+export const DEFAULT_PRIORITY = 100;
 
 export const WEEKDAY_NAMES: readonly string[] = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 export const PROMO_CODE_PATTERN = /^[A-Za-z0-9_-]{3,30}$/;
@@ -36,14 +61,16 @@ export interface DiscountDraft {
   stayOn: boolean;
   stayStart: string;
   stayEnd: string;
-  windowOn: boolean;
+  /** The run window (both dates, or both empty): the days the guest can book with this discount. */
   windowStart: string;
   windowEnd: string;
   weekdayOn: boolean;
   weekdays: number[];
   promoOn: boolean;
   promoCode: string;
+  /** Only for a promo code (a coupon): stack on top of the best automatic discount. */
   combinable: boolean;
+  /** Not shown in the form: carried through so an old discount keeps its saved value. */
   priority: string;
   active: boolean;
   limitOn: boolean;
@@ -64,7 +91,6 @@ export interface DraftProblems {
   window?: string;
   weekdays?: string;
   promo?: string;
-  priority?: string;
   limit?: string;
 }
 
@@ -83,15 +109,15 @@ export const EMPTY_DISCOUNT_DRAFT: DiscountDraft = {
   stayOn: false,
   stayStart: '',
   stayEnd: '',
-  windowOn: false,
   windowStart: '',
   windowEnd: '',
   weekdayOn: false,
   weekdays: [],
   promoOn: false,
   promoCode: '',
-  combinable: false,
-  priority: '100',
+  // New discounts stack with others by default: a code on top of a long-stay discount is the common case.
+  combinable: true,
+  priority: String(DEFAULT_PRIORITY),
   active: true,
   limitOn: false,
   maxRedemptions: '',
@@ -139,7 +165,6 @@ export function draftFromDiscount(discount: Discount): DiscountDraft {
         draft.stayEnd = condition.endDate;
         break;
       case 'booking_window':
-        draft.windowOn = true;
         draft.windowStart = condition.startDate;
         draft.windowEnd = condition.endDate;
         break;
@@ -153,6 +178,10 @@ export function draftFromDiscount(discount: Discount): DiscountDraft {
         break;
     }
   }
+  // Only a coupon has a stacking choice. Ticking "Promo code" on an automatic discount later starts with the default (stack).
+  if (!draft.promoOn) {
+    draft.combinable = true;
+  }
   return draft;
 }
 
@@ -163,15 +192,30 @@ export function draftToWrite(draft: DiscountDraft): DiscountWrite {
   return {
     label: draft.label.trim(),
     effect: effectFromDraft(draft),
-    conditions: draft.alwaysOn ? [] : conditionsFromDraft(draft),
-    alwaysOn: draft.alwaysOn,
+    conditions: conditionsFromDraft(draft),
+    // "Always on" means no other condition: with a run window the discount is a window-only condition.
+    alwaysOn: draft.alwaysOn && !hasRunWindow(draft),
     houseIds: draft.scope === 'all' ? null : [...draft.houseIds],
-    combinable: draft.combinable,
-    priority: Number(draft.priority.trim()),
+    // Automatic discounts never stack, so the flag is meaningless for them: save it as off.
+    combinable: isCouponDraft(draft) && draft.combinable,
+    priority: carriedPriority(draft.priority),
     active: draft.active,
     maxRedemptions: draft.limitOn ? Number(draft.maxRedemptions.trim()) : null,
     promoted: draft.promoted,
   };
+}
+
+/**
+ * Is this form a coupon: a promo code discount (the guest types a code)?
+ */
+export function isCouponDraft(draft: Pick<DiscountDraft, 'promoOn' | 'alwaysOn'>): boolean {
+  return draft.promoOn && !draft.alwaysOn;
+}
+
+/** A saved priority is passed through untouched; anything else becomes the default. */
+function carriedPriority(raw: string): number {
+  const priority = Number(raw.trim());
+  return raw.trim() !== '' && Number.isInteger(priority) && priority >= 0 && priority <= MAX_PRIORITY ? priority : DEFAULT_PRIORITY;
 }
 
 function effectFromDraft(draft: DiscountDraft): DiscountEffect {
@@ -180,8 +224,22 @@ function effectFromDraft(draft: DiscountDraft): DiscountEffect {
     : { kind: 'fixed', amountCents: centsFromEuroInput(draft.value) };
 }
 
+/**
+ * Is a run window being set (either date filled in)? Both are then required: see `validateDraft`.
+ */
+export function hasRunWindow(draft: Pick<DiscountDraft, 'windowStart' | 'windowEnd'>): boolean {
+  return draft.windowStart !== '' || draft.windowEnd !== '';
+}
+
 function conditionsFromDraft(draft: DiscountDraft): DiscountCondition[] {
   const conditions: DiscountCondition[] = [];
+  // The run window always applies, even on an "always on" discount; the other conditions do not.
+  const runWindow: DiscountCondition[] = hasRunWindow(draft)
+    ? [{ kind: 'booking_window', startDate: draft.windowStart, endDate: draft.windowEnd }]
+    : [];
+  if (draft.alwaysOn) {
+    return runWindow;
+  }
   if (draft.minNightsOn) {
     conditions.push({ kind: 'min_nights', nights: Number(draft.minNights.trim()) });
   }
@@ -195,9 +253,7 @@ function conditionsFromDraft(draft: DiscountDraft): DiscountCondition[] {
   if (draft.stayOn) {
     conditions.push({ kind: 'stay_dates', startDate: draft.stayStart, endDate: draft.stayEnd });
   }
-  if (draft.windowOn) {
-    conditions.push({ kind: 'booking_window', startDate: draft.windowStart, endDate: draft.windowEnd });
-  }
+  conditions.push(...runWindow);
   if (draft.weekdayOn) {
     conditions.push({ kind: 'weekday', days: [...draft.weekdays].sort((a, b): number => a - b) });
   }
@@ -232,12 +288,14 @@ export function validateDraft(draft: DiscountDraft): DraftProblems {
   if (draft.scope === 'chosen' && draft.houseIds.length === 0) {
     problems.houses = 'Choose at least one stay, or apply the discount to all stays';
   }
+  if (hasRunWindow(draft)) {
+    const window = dateRangeProblem(draft.windowStart, draft.windowEnd);
+    if (window !== null) {
+      problems.window = window;
+    }
+  }
   if (!draft.alwaysOn) {
     addConditionProblems(draft, problems);
-  }
-  const priority = Number(draft.priority.trim());
-  if (draft.priority.trim() === '' || !Number.isInteger(priority) || priority < 0 || priority > MAX_PRIORITY) {
-    problems.priority = `A whole number from 0 to ${String(MAX_PRIORITY)}`;
   }
   if (draft.limitOn) {
     const limit = Number(draft.maxRedemptions.trim());
@@ -259,7 +317,8 @@ function validateValue(draft: DiscountDraft): string | null {
 }
 
 function addConditionProblems(draft: DiscountDraft, problems: DraftProblems): void {
-  const anyCondition = draft.minNightsOn || draft.leadOn || draft.stayOn || draft.windowOn || draft.weekdayOn || draft.promoOn;
+  const anyCondition =
+    draft.minNightsOn || draft.leadOn || draft.stayOn || hasRunWindow(draft) || draft.weekdayOn || draft.promoOn;
   if (!anyCondition) {
     problems.conditions = 'Add at least one condition, or tick "Always on"';
   }
@@ -279,12 +338,6 @@ function addConditionProblems(draft: DiscountDraft, problems: DraftProblems): vo
     const stay = dateRangeProblem(draft.stayStart, draft.stayEnd);
     if (stay !== null) {
       problems.stay = stay;
-    }
-  }
-  if (draft.windowOn) {
-    const window = dateRangeProblem(draft.windowStart, draft.windowEnd);
-    if (window !== null) {
-      problems.window = window;
     }
   }
   if (draft.weekdayOn && draft.weekdays.length === 0) {
@@ -337,9 +390,9 @@ export function summarizeCondition(condition: DiscountCondition): string {
     case 'booking_lead_days':
       return summarizeLead(condition.minDays, condition.maxDays);
     case 'stay_dates':
-      return `booking dates ${formatIsoDate(condition.startDate)} to ${formatIsoDate(condition.endDate)}`;
+      return `Stays ${formatDateRange(condition.startDate, condition.endDate)}`;
     case 'booking_window':
-      return `booked ${formatIsoDate(condition.startDate)} to ${formatIsoDate(condition.endDate)}`;
+      return `Book ${formatDateRange(condition.startDate, condition.endDate)}`;
     case 'weekday':
       return `${[...condition.days]
         .sort((a, b): number => a - b)
@@ -353,15 +406,23 @@ export function summarizeCondition(condition: DiscountCondition): string {
 function summarizeLead(minDays: number | null, maxDays: number | null): string {
   const days = (count: number): string => `${String(count)} day${count === 1 ? '' : 's'}`;
   if (minDays !== null && maxDays !== null) {
-    return `booked ${String(minDays)} to ${days(maxDays)} ahead`;
+    return `Book ${String(minDays)} to ${days(maxDays)} ahead`;
   }
   if (minDays !== null) {
-    return `booked ${String(minDays)}+ days ahead`;
+    return `Book ${String(minDays)}+ days ahead`;
   }
   if (maxDays !== null) {
-    return `booked up to ${days(maxDays)} ahead`;
+    return `Book up to ${days(maxDays)} ahead`;
   }
-  return 'booked any time';
+  return 'Book any time';
+}
+
+/**
+ * "1 Dec – 31 Dec 2026" (the year once when both dates share it), "1 Dec 2026 – 31 Jan 2027" otherwise.
+ */
+export function formatDateRange(startIso: string, endIso: string): string {
+  const sameYear = startIso.slice(0, 4) === endIso.slice(0, 4);
+  return `${sameYear ? formatShortDate(startIso) : formatIsoDate(startIso)} – ${formatIsoDate(endIso)}`;
 }
 
 /**
@@ -393,4 +454,103 @@ export function summarizeUses(redemptions: number, maxRedemptions: number | null
     return `${String(redemptions)} of ${String(maxRedemptions)} used`;
   }
   return redemptions === 0 ? 'Unlimited' : `${String(redemptions)} used`;
+}
+
+/**
+ * Has the discount run out of uses? Then guests no longer get it and it is no longer offered.
+ */
+export function isUsedUp(redemptions: number, maxRedemptions: number | null): boolean {
+  return maxRedemptions !== null && redemptions >= maxRedemptions;
+}
+
+/**
+ * How a discount combines, for the list: an automatic discount competes for "best", a coupon stacks (or replaces).
+ */
+export function summarizeStacking(discount: Pick<Discount, 'conditions' | 'combinable'>): string {
+  const isCoupon = discount.conditions.some((condition): boolean => condition.kind === 'promo_code');
+  if (!isCoupon) {
+    return 'Automatic: the best one applies';
+  }
+  return discount.combinable ? 'Coupon: stacks after the automatic discount' : 'Coupon: replaces the automatic discount when better';
+}
+
+// --- Is a discount live, waiting, over or off? ---
+
+export type DiscountStatusKind = 'off' | 'used_up' | 'ended' | 'starts' | 'live';
+
+export interface DiscountStatus {
+  kind: DiscountStatusKind;
+  /** "Off", "Used up", "Ended", "Starts 1 Dec" or "Live". */
+  label: string;
+}
+
+/**
+ * The one status shown per row. Precedence: switched off, used up, ended, starts later, live. "Ended" means the
+ * run window is over or every qualifying stay date has passed; "Starts" means the run window has not opened yet.
+ * `today` is the local calendar date (YYYY-MM-DD), passed in so this stays pure.
+ */
+export function discountStatus(
+  discount: Pick<Discount, 'active' | 'redemptions' | 'maxRedemptions' | 'conditions'>,
+  today: string,
+): DiscountStatus {
+  if (!discount.active) {
+    return { kind: 'off', label: 'Off' };
+  }
+  if (isUsedUp(discount.redemptions, discount.maxRedemptions)) {
+    return { kind: 'used_up', label: 'Used up' };
+  }
+  const windows = discount.conditions.flatMap((condition): { start: string; end: string }[] =>
+    condition.kind === 'booking_window' ? [{ start: condition.startDate, end: condition.endDate }] : [],
+  );
+  const start = windows.map((window): string => window.start).sort().pop() ?? null;
+  const end = windows.map((window): string => window.end).sort()[0] ?? null;
+  const staysOver = discount.conditions.some((condition): boolean => condition.kind === 'stay_dates' && condition.endDate < today);
+  if ((end !== null && end < today) || staysOver) {
+    return { kind: 'ended', label: 'Ended' };
+  }
+  if (start !== null && start > today) {
+    const sameYear = start.slice(0, 4) === today.slice(0, 4);
+    return { kind: 'starts', label: `Starts ${sameYear ? formatShortDate(start) : formatIsoDate(start)}` };
+  }
+  return { kind: 'live', label: 'Live' };
+}
+
+// --- What the run window means, in plain English, while the form is being filled in ---
+
+export interface RunWindowNotes {
+  /** "Guests who book from 1 Dec 2026 to 31 Dec 2026 get this discount." Null until both dates are valid. */
+  summary: string | null;
+  /** "Only for stays between 1 Jul 2026 and 31 Aug 2026." When the stay-dates condition is set. */
+  stayNote: string | null;
+  /** A calm heads-up when the window has not started, or is already over. */
+  notice: { severity: 'info' | 'warning'; text: string } | null;
+}
+
+/**
+ * Plain-English reading of the two date settings. `today` is the local calendar date (YYYY-MM-DD).
+ */
+export function describeRunWindow(draft: DiscountDraft, today: string): RunWindowNotes {
+  const windowOk = hasRunWindow(draft) && dateRangeProblem(draft.windowStart, draft.windowEnd) === null;
+  const stayOk = draft.stayOn && !draft.alwaysOn && dateRangeProblem(draft.stayStart, draft.stayEnd) === null;
+  const summary = windowOk
+    ? `Guests who book from ${formatIsoDate(draft.windowStart)} to ${formatIsoDate(draft.windowEnd)} get this discount.`
+    : null;
+  const stayNote = stayOk
+    ? `Only for stays between ${formatIsoDate(draft.stayStart)} and ${formatIsoDate(draft.stayEnd)}.`
+    : null;
+  let notice: RunWindowNotes['notice'] = null;
+  if (windowOk && draft.windowStart > today) {
+    const days = daysBetweenIso(today, draft.windowStart);
+    notice = {
+      severity: 'info',
+      text: `Starts in ${String(days)} day${days === 1 ? '' : 's'}: until then guests do not see or get this discount.`,
+    };
+  } else if (windowOk && draft.windowEnd < today) {
+    notice = { severity: 'warning', text: 'This window has already ended: guests no longer get this discount.' };
+  }
+  return { summary, stayNote, notice };
+}
+
+function daysBetweenIso(fromIso: string, toIso: string): number {
+  return Math.round((Date.parse(`${toIso}T00:00:00Z`) - Date.parse(`${fromIso}T00:00:00Z`)) / 86_400_000);
 }

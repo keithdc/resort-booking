@@ -57,6 +57,30 @@ describe('StaffQuoteSummary', () => {
     expect(text()).toContain('Those dates are not available for this stay.');
   });
 
+  it('shows the percent next to a percentage discount and notes that two discounts are combined', () => {
+    render(
+      <StaffQuoteSummary
+        quote={rebookQuote({
+          discounts: [
+            { discountId: 'a', label: 'Long stay', amountCents: 9800, percent: 10 },
+            { discountId: 'b', label: 'Welcome code', amountCents: 13230, percent: 15 },
+          ],
+        })}
+      />,
+    );
+
+    const text = screen.getByLabelText('Price of the new dates').textContent ?? '';
+    expect(text).toContain('Long stay · 10% off');
+    expect(text).toContain('Welcome code · 15% off');
+    expect(text).toContain('Discounts are combined.');
+  });
+
+  it('does not note a combination for a single discount', () => {
+    render(<StaffQuoteSummary quote={rebookQuote({ discounts: [{ discountId: 'a', label: 'Long stay', amountCents: 9800, percent: 10 }] })} />);
+
+    expect(screen.getByLabelText('Price of the new dates').textContent).not.toContain('combined');
+  });
+
   it('uses the singular for one night', () => {
     render(<StaffQuoteSummary quote={rebookQuote({ nights: 1, lines: [{ label: 'Standard rate', nights: 1, nightlyRateCents: 20000, subtotalCents: 20000 }] })} />);
 

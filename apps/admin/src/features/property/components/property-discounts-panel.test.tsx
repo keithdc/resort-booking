@@ -77,8 +77,10 @@ const WELCOME = discount('welcome', {
   active: false,
 });
 
+const TODAY = '2026-11-25';
+
 function renderPanel(): void {
-  render(<PropertyDiscountsPanel propertyId="p1" houses={HOUSES} />);
+  render(<PropertyDiscountsPanel propertyId="p1" houses={HOUSES} today={TODAY} />);
 }
 
 function row(name: string): HTMLElement {
@@ -105,18 +107,106 @@ describe('PropertyDiscountsPanel', () => {
     expect(longStay).toContain('10%');
     expect(longStay).toContain('7+ nights');
     expect(longStay).toContain('All stays');
-    expect(longStay).toContain('Best single · priority 100');
+    expect(longStay).toContain('Automatic: the best one applies');
     expect(longStay).toContain('3 of 10 used');
-    expect(longStay).toContain('On');
+    expect(longStay).toContain('Live');
 
     const welcome = plain(row('Welcome code').textContent);
     expect(welcome).toContain('20,00 €');
     expect(welcome).toContain('code WELCOME15');
     expect(welcome).toContain('Dune House');
     expect(welcome).not.toContain('Cedar Cabin');
-    expect(welcome).toContain('Can combine · priority 5');
+    expect(welcome).toContain('Coupon: stacks after the automatic discount');
     expect(welcome).toContain('Unlimited');
     expect(welcome).toContain('Off');
+  });
+
+  it('shows a Used up chip only on a discount that has no uses left', async () => {
+    api.fetchDiscounts.mockResolvedValue([
+      discount('gone', { label: 'Gone', redemptions: 10, maxRedemptions: 10 }),
+      discount('left', { label: 'Left', redemptions: 9, maxRedemptions: 10 }),
+      discount('free', { label: 'Free', redemptions: 40, maxRedemptions: null }),
+    ]);
+    renderPanel();
+    await screen.findByRole('table', { name: 'Discounts' });
+
+    expect(plain(row('Gone').textContent)).toContain('10 of 10 used');
+    expect(plain(row('Gone').textContent)).toContain('Used up');
+    expect(plain(row('Left').textContent)).not.toContain('Used up');
+    expect(plain(row('Free').textContent)).not.toContain('Used up');
+  });
+
+  describe('status and date wording', () => {
+    const statusOf = (name: string): string | null => within(row(name)).getByText(/^(Live|Off|Ended|Used up|Starts .+)$/).textContent;
+
+    it('shows ONE status per discount: Live, Starts, Ended, Used up or Off', async () => {
+      api.fetchDiscounts.mockResolvedValue([
+        discount('live', { label: 'Alive' }),
+        discount('soon', { label: 'Soon', conditions: [{ kind: 'booking_window', startDate: '2026-12-01', endDate: '2026-12-31' }] }),
+        discount('over', { label: 'Over', conditions: [{ kind: 'booking_window', startDate: '2026-10-01', endDate: '2026-11-24' }] }),
+        discount('gone', { label: 'Gone', redemptions: 5, maxRedemptions: 5 }),
+        discount('paused', { label: 'Paused', active: false }),
+      ]);
+      renderPanel();
+      await screen.findByRole('table', { name: 'Discounts' });
+
+      expect(statusOf('Alive')).toBe('Live');
+      expect(statusOf('Soon')).toBe('Starts 1 Dec');
+      expect(statusOf('Over')).toBe('Ended');
+      expect(statusOf('Gone')).toBe('Used up');
+      expect(statusOf('Paused')).toBe('Off');
+      for (const name of ['Alive', 'Soon', 'Over', 'Gone', 'Paused']) {
+        expect(within(row(name)).getAllByText(/^(Live|Off|Ended|Used up|Starts .+)$/)).toHaveLength(1);
+      }
+    });
+
+    it('gives each status chip an icon, so colour is not the only signal', async () => {
+      renderPanel();
+      await screen.findByRole('table', { name: 'Discounts' });
+
+      const chip = within(row('Long stay')).getByText('Live').closest('.MuiChip-root');
+      expect(chip?.querySelector('svg')).not.toBeNull();
+    });
+
+    it('describes the dates in plain words, not "booked ..."', async () => {
+      api.fetchDiscounts.mockResolvedValue([
+        discount('test', {
+          label: 'Test 15%',
+          conditions: [
+            { kind: 'min_nights', nights: 8 },
+            { kind: 'booking_window', startDate: '2026-12-01', endDate: '2026-12-31' },
+          ],
+        }),
+        discount('season', { label: 'Season', conditions: [{ kind: 'stay_dates', startDate: '2027-07-01', endDate: '2027-08-31' }] }),
+        discount('early', { label: 'Early', conditions: [{ kind: 'booking_lead_days', minDays: 14, maxDays: null }] }),
+      ]);
+      renderPanel();
+      await screen.findByRole('table', { name: 'Discounts' });
+
+      expect(plain(row('Test 15%').textContent)).toContain('8+ nights; Book 1 Dec – 31 Dec 2026');
+      expect(plain(row('Season').textContent)).toContain('Stays 1 Jul – 31 Aug 2027');
+      expect(plain(row('Early').textContent)).toContain('Book 14+ days ahead');
+      expect(plain(row('Test 15%').textContent)).not.toContain('booked');
+    });
+
+    it('opens the dialog with the run dates filled in and the not-started note', async () => {
+      api.fetchDiscounts.mockResolvedValue([
+        discount('test', {
+          label: 'Test 15%',
+          conditions: [
+            { kind: 'min_nights', nights: 8 },
+            { kind: 'booking_window', startDate: '2026-12-01', endDate: '2026-12-31' },
+          ],
+        }),
+      ]);
+      renderPanel();
+      await screen.findByRole('table', { name: 'Discounts' });
+
+      await userEvent.click(screen.getByRole('button', { name: 'Edit' }));
+
+      expect((screen.getByLabelText('Starts') as HTMLInputElement).value).toBe('2026-12-01');
+      expect(screen.getByRole('alert').textContent).toContain('Starts in 6 days');
+    });
   });
 
   it('marks only the advertised discounts as Promoted', async () => {

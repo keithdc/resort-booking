@@ -5,7 +5,7 @@
  */
 
 import type { DiscountWrite, HouseSummary } from '@resort-booking/shared-types';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -41,13 +41,14 @@ const HOUSES = [house('h1', 'Dune House'), house('h2', 'Cedar Cabin')];
 
 interface HarnessProps {
   initial?: Partial<DiscountDraft>;
+  today?: string;
   editing?: boolean;
   error?: string | null;
   onSaved: (write: DiscountWrite) => void;
 }
 
 /** Holds the draft like the real hook does; Save reports the DiscountWrite the API would receive. */
-function Harness({ initial = {}, editing = false, error = null, onSaved }: HarnessProps): React.JSX.Element {
+function Harness({ initial = {}, today = '2026-11-25', editing = false, error = null, onSaved }: HarnessProps): React.JSX.Element {
   const [draft, setDraft] = useState<DiscountDraft>({ ...EMPTY_DISCOUNT_DRAFT, ...initial });
   return (
     <DiscountDialog
@@ -56,6 +57,7 @@ function Harness({ initial = {}, editing = false, error = null, onSaved }: Harne
       draft={draft}
       houses={HOUSES}
       currencyCode="EUR"
+      today={today}
       error={error}
       saving={false}
       onChange={(patch): void => setDraft((current) => ({ ...current, ...patch }))}
@@ -180,10 +182,10 @@ describe('DiscountDialog', () => {
 
     it('blocks a stay window that ends before it starts', async () => {
       renderDialog({ initial: { label: 'July', value: '10' } });
-      await tick(/Booking dates/);
+      await tick(/Only for stays between/);
 
-      type('Booking from', '2027-07-10');
-      type('Booking until', '2027-07-01');
+      type('Stay from', '2027-07-10');
+      type('Stay until', '2027-07-01');
 
       expect(screen.getByText('The end date cannot be before the start date')).toBeTruthy();
       expect(saveButton().hasAttribute('disabled')).toBe(true);
@@ -191,10 +193,10 @@ describe('DiscountDialog', () => {
 
     it('does not block past dates', async () => {
       renderDialog({ initial: { label: 'History', value: '10' } });
-      await tick(/Booking dates/);
+      await tick(/Only for stays between/);
 
-      type('Booking from', '2019-01-01');
-      type('Booking until', '2019-01-05');
+      type('Stay from', '2019-01-01');
+      type('Stay until', '2019-01-05');
 
       expect(saveButton().hasAttribute('disabled')).toBe(false);
     });
@@ -234,6 +236,100 @@ describe('DiscountDialog', () => {
     });
   });
 
+  describe('how long does it run?', () => {
+    it('has its own section with the two dates and the plain help text', () => {
+      renderDialog({ initial: { label: 'Sale', value: '10' } });
+
+      const section = screen.getByRole('region', { name: 'How long does it run?' });
+      expect(within(section).getByLabelText('Starts')).toBeTruthy();
+      expect(within(section).getByLabelText('Ends')).toBeTruthy();
+      expect(within(section).getByText('Guests can use it only when they book between these dates. Leave blank to run until you switch it off.')).toBeTruthy();
+    });
+
+    it('no longer offers a "Sale window" checkbox, and explains the stay-dates condition', async () => {
+      renderDialog({ initial: { label: 'Sale', value: '10' } });
+
+      expect(screen.queryByRole('checkbox', { name: /Sale window/ })).toBeNull();
+      await tick(/Only for stays between/);
+      expect(screen.getByText(/Use this for a season/)).toBeTruthy();
+    });
+
+    it('says in plain English who gets the discount, and for which stays', async () => {
+      renderDialog({ initial: { label: 'Sale', value: '10', minNightsOn: true, minNights: '8' } });
+
+      type('Starts', '2026-12-01');
+      type('Ends', '2026-12-31');
+      expect(screen.getByText('Guests who book from 1 Dec 2026 to 31 Dec 2026 get this discount.')).toBeTruthy();
+
+      await tick(/Only for stays between/);
+      type('Stay from', '2027-07-01');
+      type('Stay until', '2027-08-31');
+      expect(screen.getByText('Only for stays between 1 Jul 2027 and 31 Aug 2027.')).toBeTruthy();
+    });
+
+    it('tells the owner calmly when the window has not started yet', () => {
+      renderDialog({ initial: { label: 'Sale', value: '10', minNightsOn: true, minNights: '8', windowStart: '2026-12-01', windowEnd: '2026-12-31' } });
+
+      expect(screen.getByRole('alert').textContent).toBe('Starts in 6 days: until then guests do not see or get this discount.');
+    });
+
+    it('shows no heads-up for a window that is open today, and warns about one that is over', () => {
+      renderDialog({ today: '2026-12-10', initial: { label: 'Sale', value: '10', minNightsOn: true, minNights: '8', windowStart: '2026-12-01', windowEnd: '2026-12-31' } });
+      expect(screen.queryByRole('alert')).toBeNull();
+      cleanup();
+
+      renderDialog({ today: '2027-01-02', initial: { label: 'Sale', value: '10', minNightsOn: true, minNights: '8', windowStart: '2026-12-01', windowEnd: '2026-12-31' } });
+      expect(screen.getByRole('alert').textContent).toBe('This window has already ended: guests no longer get this discount.');
+    });
+
+    it('asks for both dates when only one is filled, and blocks saving', () => {
+      renderDialog({ initial: { label: 'Sale', value: '10', minNightsOn: true, minNights: '8' } });
+
+      type('Starts', '2026-12-01');
+
+      expect(screen.getByText('Choose both dates')).toBeTruthy();
+      expect(saveButton().hasAttribute('disabled')).toBe(true);
+
+      type('Ends', '2026-12-31');
+
+      expect(saveButton().hasAttribute('disabled')).toBe(false);
+    });
+
+    it('saves the dates as the booking window, and nothing when they are left blank', async () => {
+      const onSaved = renderDialog({ initial: { label: 'Sale', value: '15', minNightsOn: true, minNights: '8' } });
+
+      type('Starts', '2026-12-01');
+      type('Ends', '2026-12-31');
+      await userEvent.click(saveButton());
+
+      expect(onSaved.mock.calls[0]?.[0].conditions).toEqual([
+        { kind: 'min_nights', nights: 8 },
+        { kind: 'booking_window', startDate: '2026-12-01', endDate: '2026-12-31' },
+      ]);
+    });
+
+    it('lets "always on" keep the dates: the discount then runs for every booking made in the window', async () => {
+      const onSaved = renderDialog({ initial: { label: 'Sale', value: '15' } });
+
+      await tick(/Always on/);
+      type('Starts', '2026-12-01');
+      type('Ends', '2026-12-31');
+      await userEvent.click(saveButton());
+
+      expect(onSaved.mock.calls[0]?.[0]).toMatchObject({
+        alwaysOn: false,
+        conditions: [{ kind: 'booking_window', startDate: '2026-12-01', endDate: '2026-12-31' }],
+      });
+    });
+
+    it('fills the dates when editing a discount that has a booking window', () => {
+      renderDialog({ editing: true, initial: { label: 'Sale', value: '15', minNightsOn: true, minNights: '8', windowStart: '2026-12-01', windowEnd: '2026-12-31' } });
+
+      expect((screen.getByLabelText('Starts') as HTMLInputElement).value).toBe('2026-12-01');
+      expect((screen.getByLabelText('Ends') as HTMLInputElement).value).toBe('2026-12-31');
+    });
+  });
+
   describe('always on', () => {
     it('disables every condition while ticked and re-enables them when cleared', async () => {
       renderDialog({ initial: { label: 'X', value: '10' } });
@@ -242,7 +338,7 @@ describe('DiscountDialog', () => {
 
       await tick(/Always on/);
 
-      for (const name of [/Long booking/, /Booked ahead/, /Booking dates/, /Sale window/, /Weekdays/, /Promo code/]) {
+      for (const name of [/Long booking/, /Booked ahead/, /Only for stays between/, /Weekdays/, /Promo code/]) {
         expect(screen.getByRole('checkbox', { name }).hasAttribute('disabled')).toBe(true);
       }
 
@@ -290,12 +386,11 @@ describe('DiscountDialog', () => {
       type('Minimum nights', '7');
       await tick(/Booked ahead/);
       type('At least this many days ahead', '60');
-      await tick(/Booking dates/);
-      type('Booking from', '2027-07-01');
-      type('Booking until', '2027-07-31');
-      await tick(/Sale window/);
-      type('Sale starts', '2027-05-01');
-      type('Sale ends', '2027-05-31');
+      await tick(/Only for stays between/);
+      type('Stay from', '2027-07-01');
+      type('Stay until', '2027-07-31');
+      type('Starts', '2027-05-01');
+      type('Ends', '2027-05-31');
       await tick(/Weekdays/);
       await userEvent.click(screen.getByRole('button', { name: 'Thu' }));
       await userEvent.click(screen.getByRole('button', { name: 'Sun' }));
@@ -323,26 +418,62 @@ describe('DiscountDialog', () => {
       expect(mon.getAttribute('aria-pressed')).toBe('false');
     });
 
-    it('produces chosen houses, stacking, priority, switched-off and a use limit', async () => {
+    it('produces chosen houses, switched-off and a use limit, with no priority field', async () => {
       const onSaved = renderDialog({ initial: { label: 'Some', value: '10', minNightsOn: true, minNights: '3' } });
 
       await userEvent.click(screen.getByRole('combobox', { name: 'Applies to' }));
       await userEvent.click(await screen.findByRole('option', { name: 'Only the stays I choose' }));
       await userEvent.click(screen.getByRole('checkbox', { name: 'Cedar Cabin' }));
-      await userEvent.click(screen.getByRole('switch', { name: 'Can combine with other discounts' }));
-      type('Priority', '10');
+      expect(screen.queryByLabelText('Priority')).toBeNull();
       await userEvent.click(screen.getByRole('switch', { name: 'Switched on' }));
-      await tick('Limit number of uses');
-      type('Maximum uses', '25');
+      await userEvent.click(screen.getByRole('switch', { name: 'Limit how many bookings can use it' }));
+      type('Maximum bookings', '25');
       await userEvent.click(saveButton());
 
       expect(onSaved.mock.calls[0]?.[0]).toMatchObject({
         houseIds: ['h2'],
-        combinable: true,
-        priority: 10,
+        combinable: false,
+        priority: 100,
         active: false,
         maxRedemptions: 25,
       });
+    });
+
+    it('explains the usage limit and shows it right after the conditions', () => {
+      renderDialog({ initial: { label: 'Some', value: '10', minNightsOn: true, minNights: '3' } });
+
+      expect(screen.getByText('When the limit is reached the discount stops being offered.')).toBeTruthy();
+      expect(screen.queryByRole('textbox', { name: 'Maximum bookings' })).toBeNull();
+    });
+
+    it('tells an automatic discount it does not stack, and offers no stacking switch', () => {
+      renderDialog({ initial: { label: 'Alone', value: '5', minNightsOn: true, minNights: '2' } });
+
+      expect(screen.getByText('Automatic discounts do not stack with each other: the guest gets the best one.')).toBeTruthy();
+      expect(screen.queryByRole('switch', { name: 'Can be used together with an automatic discount' })).toBeNull();
+      expect(screen.queryByRole('switch', { name: 'Can combine with other discounts' })).toBeNull();
+    });
+
+    it('offers the stacking switch only for a promo code, on by default, and saves the choice', async () => {
+      const onSaved = renderDialog({ initial: { label: 'Code', value: '15', minNightsOn: false, promoOn: true, promoCode: 'WELCOME15' } });
+      const stack = screen.getByRole('switch', { name: 'Can be used together with an automatic discount' }) as HTMLInputElement;
+
+      expect(stack.checked).toBe(true);
+      expect(screen.getByText(/A coupon is applied after the best automatic discount, on what is left/)).toBeTruthy();
+      expect(screen.queryByText('Automatic discounts do not stack with each other: the guest gets the best one.')).toBeNull();
+
+      await userEvent.click(stack);
+      await userEvent.click(saveButton());
+
+      expect(onSaved.mock.calls[0]?.[0]).toMatchObject({ combinable: false });
+    });
+
+    it('saves a coupon that stacks', async () => {
+      const onSaved = renderDialog({ initial: { label: 'Code', value: '15', minNightsOn: false, promoOn: true, promoCode: 'WELCOME15' } });
+
+      await userEvent.click(saveButton());
+
+      expect(onSaved.mock.calls[0]?.[0]).toMatchObject({ combinable: true });
     });
 
     it('produces an always-on discount with no conditions', async () => {

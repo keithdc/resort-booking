@@ -7,6 +7,7 @@
 'use client';
 
 import type { HouseSummary } from '@resort-booking/shared-types';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import {
   Alert,
   Button,
@@ -26,7 +27,23 @@ import {
   Typography,
 } from '@mui/material';
 import type { ReactNode } from 'react';
-import { validateDraft, WEEKDAY_NAMES, type DiscountDraft, type DraftProblems } from '../utils/discount-draft';
+import {
+  AUTOMATIC_NOTE,
+  COUPON_STACK_HELP,
+  COUPON_STACK_LABEL,
+  describeRunWindow,
+  isCouponDraft,
+  LIMIT_HELP,
+  LIMIT_LABEL,
+  RUN_WINDOW_HELP,
+  RUN_WINDOW_TITLE,
+  STAY_DATES_HELP,
+  STAY_DATES_LABEL,
+  validateDraft,
+  WEEKDAY_NAMES,
+  type DiscountDraft,
+  type DraftProblems,
+} from '../utils/discount-draft';
 
 interface DiscountDialogProps {
   open: boolean;
@@ -35,6 +52,8 @@ interface DiscountDialogProps {
   draft: DiscountDraft;
   houses: readonly HouseSummary[];
   currencyCode: string;
+  /** Today's local date (YYYY-MM-DD), to say whether the run window has started. */
+  today: string;
   error: string | null;
   saving: boolean;
   onChange: (patch: Partial<DiscountDraft>) => void;
@@ -81,6 +100,7 @@ export function DiscountDialog({
   draft,
   houses,
   currencyCode,
+  today,
   error,
   saving,
   onChange,
@@ -92,6 +112,7 @@ export function DiscountDialog({
   const conditionsOff = draft.alwaysOn;
   const codeIsPublic = draft.promoOn && !draft.alwaysOn;
   const currencyLabel = currencyCode === 'EUR' ? '€' : currencyCode;
+  const runWindow = describeRunWindow(draft, today);
 
   const toggleHouse = (houseId: string, checked: boolean): void => {
     onChange({
@@ -172,6 +193,45 @@ export function DiscountDialog({
             ) : null}
           </Stack>
 
+          <Stack spacing={1} component="section" aria-labelledby="discount-run-title">
+            <Typography variant="h6" component="h3" id="discount-run-title">
+              {RUN_WINDOW_TITLE}
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              {RUN_WINDOW_HELP}
+            </Typography>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
+              <TextField
+                label="Starts"
+                type="date"
+                size="small"
+                fullWidth
+                value={draft.windowStart}
+                onChange={(event): void => onChange({ windowStart: event.target.value })}
+                slotProps={{ inputLabel: { shrink: true } }}
+              />
+              <TextField
+                label="Ends"
+                type="date"
+                size="small"
+                fullWidth
+                value={draft.windowEnd}
+                onChange={(event): void => onChange({ windowEnd: event.target.value })}
+                slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: draft.windowStart } }}
+              />
+            </Stack>
+            {problems.window === undefined ? null : <FormHelperText error>{problems.window}</FormHelperText>}
+            <div aria-live="polite">
+              {runWindow.summary === null ? null : <Typography variant="body2">{runWindow.summary}</Typography>}
+              {runWindow.stayNote === null ? null : (
+                <Typography variant="body2" color="text.secondary">
+                  {runWindow.stayNote}
+                </Typography>
+              )}
+            </div>
+            {runWindow.notice === null ? null : <Alert severity={runWindow.notice.severity}>{runWindow.notice.text}</Alert>}
+          </Stack>
+
           <Stack spacing={1}>
             <Typography variant="h6" component="h3">
               When does it apply?
@@ -181,7 +241,7 @@ export function DiscountDialog({
             </Typography>
             <FormControlLabel
               control={<Checkbox checked={draft.alwaysOn} onChange={(event): void => onChange({ alwaysOn: event.target.checked })} />}
-              label="Always on (applies to every booking)"
+              label="Always on (no other conditions)"
             />
             {problems.conditions === undefined ? null : <FormHelperText error>{problems.conditions}</FormHelperText>}
 
@@ -229,7 +289,7 @@ export function DiscountDialog({
             </ConditionSection>
 
             <ConditionSection
-              label="Booking dates: the whole booking falls inside a window"
+              label={STAY_DATES_LABEL}
               checked={draft.stayOn}
               disabled={conditionsOff}
               onToggle={(stayOn): void => onChange({ stayOn })}
@@ -237,7 +297,7 @@ export function DiscountDialog({
             >
               <Stack direction="row" spacing={1.5}>
                 <TextField
-                  label="Booking from"
+                  label="Stay from"
                   type="date"
                   size="small"
                   fullWidth
@@ -246,7 +306,7 @@ export function DiscountDialog({
                   slotProps={{ inputLabel: { shrink: true } }}
                 />
                 <TextField
-                  label="Booking until"
+                  label="Stay until"
                   type="date"
                   size="small"
                   fullWidth
@@ -255,35 +315,7 @@ export function DiscountDialog({
                   slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: draft.stayStart } }}
                 />
               </Stack>
-            </ConditionSection>
-
-            <ConditionSection
-              label="Sale window: guest books during these dates"
-              checked={draft.windowOn}
-              disabled={conditionsOff}
-              onToggle={(windowOn): void => onChange({ windowOn })}
-              problem={problems.window}
-            >
-              <Stack direction="row" spacing={1.5}>
-                <TextField
-                  label="Sale starts"
-                  type="date"
-                  size="small"
-                  fullWidth
-                  value={draft.windowStart}
-                  onChange={(event): void => onChange({ windowStart: event.target.value })}
-                  slotProps={{ inputLabel: { shrink: true } }}
-                />
-                <TextField
-                  label="Sale ends"
-                  type="date"
-                  size="small"
-                  fullWidth
-                  value={draft.windowEnd}
-                  onChange={(event): void => onChange({ windowEnd: event.target.value })}
-                  slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: draft.windowStart } }}
-                />
-              </Stack>
+              <FormHelperText>{STAY_DATES_HELP}</FormHelperText>
             </ConditionSection>
 
             <ConditionSection
@@ -329,22 +361,42 @@ export function DiscountDialog({
 
           <Stack spacing={1}>
             <FormControlLabel
-              control={<Switch checked={draft.combinable} onChange={(event): void => onChange({ combinable: event.target.checked })} />}
-              label="Can combine with other discounts"
+              control={<Switch checked={draft.limitOn} onChange={(event): void => onChange({ limitOn: event.target.checked })} />}
+              label={LIMIT_LABEL}
             />
-            <FormHelperText>
-              Otherwise the guest gets the single best discount. Combinable ones stack, lowest priority number first.
-            </FormHelperText>
-            <TextField
-              label="Priority"
-              size="small"
-              sx={{ maxWidth: 200 }}
-              helperText={problems.priority ?? 'Lower runs first when stacking'}
-              error={problems.priority !== undefined && draft.priority !== ''}
-              value={draft.priority}
-              onChange={(event): void => onChange({ priority: event.target.value })}
-              slotProps={{ htmlInput: { inputMode: 'numeric' } }}
-            />
+            <FormHelperText>{LIMIT_HELP}</FormHelperText>
+            {draft.limitOn ? (
+              <TextField
+                label="Maximum bookings"
+                size="small"
+                sx={{ maxWidth: 200 }}
+                helperText={problems.limit}
+                error={problems.limit !== undefined && draft.maxRedemptions !== ''}
+                value={draft.maxRedemptions}
+                onChange={(event): void => onChange({ maxRedemptions: event.target.value })}
+                slotProps={{ htmlInput: { inputMode: 'numeric' } }}
+              />
+            ) : null}
+          </Stack>
+
+          <Stack spacing={1}>
+            {isCouponDraft(draft) ? (
+              <>
+                <FormControlLabel
+                  control={<Switch checked={draft.combinable} onChange={(event): void => onChange({ combinable: event.target.checked })} />}
+                  label={COUPON_STACK_LABEL}
+                />
+                <FormHelperText>{COUPON_STACK_HELP}</FormHelperText>
+              </>
+            ) : (
+              <Stack direction="row" spacing={1} alignItems="center" sx={{ color: 'text.secondary' }}>
+                <InfoOutlinedIcon fontSize="small" aria-hidden />
+                <Typography variant="body2">{AUTOMATIC_NOTE}</Typography>
+              </Stack>
+            )}
+          </Stack>
+
+          <Stack spacing={1}>
             <FormControlLabel
               control={<Switch checked={draft.active} onChange={(event): void => onChange({ active: event.target.checked })} />}
               label="Switched on"
@@ -364,22 +416,6 @@ export function DiscountDialog({
                 ? 'Guests will SEE this code on the website. Leave off to keep the code private.'
                 : 'Guests see this offer on stay pages before they pick dates.'}
             </FormHelperText>
-            <FormControlLabel
-              control={<Checkbox checked={draft.limitOn} onChange={(event): void => onChange({ limitOn: event.target.checked })} />}
-              label="Limit number of uses"
-            />
-            {draft.limitOn ? (
-              <TextField
-                label="Maximum uses"
-                size="small"
-                sx={{ maxWidth: 200 }}
-                helperText={problems.limit}
-                error={problems.limit !== undefined && draft.maxRedemptions !== ''}
-                value={draft.maxRedemptions}
-                onChange={(event): void => onChange({ maxRedemptions: event.target.value })}
-                slotProps={{ htmlInput: { inputMode: 'numeric' } }}
-              />
-            ) : null}
           </Stack>
         </Stack>
       </DialogContent>

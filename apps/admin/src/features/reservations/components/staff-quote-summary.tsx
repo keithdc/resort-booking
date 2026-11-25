@@ -6,6 +6,7 @@
 
 import type { RebookQuote } from '@resort-booking/shared-types';
 import { Alert, Stack, Typography } from '@mui/material';
+import { COMBINED_DISCOUNTS_NOTE, discountLineLabel, discountsAreCombined } from '@/shared/utils/discount-line';
 import { formatCents } from '@/shared/utils/money';
 import { staffBalanceKind, staffBalanceStatement } from '../utils/change-labels';
 
@@ -34,8 +35,13 @@ export function StaffQuoteSummary({ quote }: StaffQuoteSummaryProps): React.JSX.
         />
       ))}
       {quote.discounts.map((discount): React.JSX.Element => (
-        <Row key={discount.discountId} label={discount.label} value={`−${money(discount.amountCents)}`} tone="success.main" />
+        <Row key={discount.discountId} label={discountLineLabel(discount)} value={`−${money(discount.amountCents)}`} tone="success.main" />
       ))}
+      {discountsAreCombined(quote.discounts) ? (
+        <Typography variant="caption" color="text.secondary">
+          {COMBINED_DISCOUNTS_NOTE}
+        </Typography>
+      ) : null}
       <Row label="New total" value={money(quote.newTotalCents)} />
       <Row label="Change fee" value={money(quote.feeCents)} />
       <Row label="Already paid" value={money(quote.paidCents)} muted />
