@@ -11,6 +11,7 @@ import NextLink from 'next/link';
 import { OfferChips } from '@/shared/components/offer-chips';
 import { formatCents } from '@/shared/utils/money';
 import { houseHref, type StayQuery } from '@/shared/utils/stay-query';
+import { ImageScrim } from './image-scrim';
 
 interface HouseListingCardProps {
   house: HouseSummary;
@@ -56,17 +57,7 @@ export function HouseListingCard({
           ) : (
             <Box sx={{ height: 160, bgcolor: 'action.hover' }} />
           )}
-          <Box
-            sx={{
-              position: 'absolute',
-              left: 0,
-              right: 0,
-              bottom: 0,
-              height: '55%',
-              bgcolor: 'common.black',
-              opacity: 0.5,
-            }}
-          />
+          <ImageScrim />
           <Box sx={{ position: 'absolute', left: 16, right: 16, bottom: 16, color: 'common.white' }}>
             <Typography variant="h6">{house.name}</Typography>
             <Typography variant="body2">{house.propertyCity}</Typography>

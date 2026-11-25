@@ -41,3 +41,18 @@ describe('DiscountWriteDto promoted', () => {
     expect(await problems({ promoted })).toBeGreaterThan(0);
   });
 });
+
+describe('DiscountWriteDto priority', () => {
+  it('is optional: the admin no longer sends it', async () => {
+    const withoutPriority = body();
+    delete withoutPriority.priority;
+    const dto = plainToInstance(DiscountWriteDto, withoutPriority, { enableImplicitConversion: true });
+    expect(await validate(dto)).toHaveLength(0);
+  });
+
+  it('still checks the range when an older client sends one', async () => {
+    expect(await problems({ priority: 1001 })).toBeGreaterThan(0);
+    expect(await problems({ priority: -1 })).toBeGreaterThan(0);
+    expect(await problems({ priority: 250 })).toBe(0);
+  });
+});

@@ -6,6 +6,7 @@
 
 import type { Quote } from '@resort-booking/shared-types';
 import { Stack, Typography } from '@mui/material';
+import { COMBINED_DISCOUNTS_NOTE, discountLineLabel, discountsAreCombined } from '@/shared/utils/discount-line';
 import { formatCents } from '@/shared/utils/money';
 import { STANDARD_RATE_LABEL } from '../utils/nightly-rate-label';
 
@@ -41,13 +42,18 @@ export function QuoteBreakdown({ quote }: QuoteBreakdownProps): React.JSX.Elemen
           {quote.discounts.map((discount): React.JSX.Element => (
             <Stack key={discount.discountId} direction="row" justifyContent="space-between" spacing={2}>
               <Typography variant="body2" color="success.main">
-                {discount.label}
+                {discountLineLabel(discount)}
               </Typography>
               <Typography variant="body2" color="success.main">
                 −{formatCents(discount.amountCents, quote.currencyCode)}
               </Typography>
             </Stack>
           ))}
+          {discountsAreCombined(quote.discounts) ? (
+            <Typography variant="caption" color="text.secondary">
+              {COMBINED_DISCOUNTS_NOTE}
+            </Typography>
+          ) : null}
         </>
       ) : null}
       <Stack direction="row" justifyContent="space-between" spacing={2}>

@@ -163,6 +163,8 @@ describe('SearchResultsView', () => {
     fireEvent.mouseEnter(chip(/chip Spruce Studio/));
 
     expect(card('spruce').getAttribute('data-active')).toBe('true');
+    expect(getComputedStyle(card('spruce')).transform).toContain('scale(1.015)');
+    expect(getComputedStyle(card('lake')).transform).toBe('none');
     expect(card('lake').getAttribute('data-active')).toBe('false');
     fireEvent.mouseLeave(chip(/chip Spruce Studio/));
     expect(card('spruce').getAttribute('data-active')).toBe('false');

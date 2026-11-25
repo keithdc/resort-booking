@@ -144,7 +144,8 @@ describe('SearchResultsMapInner', () => {
     const [first, second] = chips();
     expect(first?.dataset.active).toBe('false');
     expect(second?.dataset.active).toBe('true');
-    expect(second?.style.transform).toBe('scale(1.08)');
+    expect(second?.style.transform).toBe('scale(1.18)');
+    expect(second?.style.boxShadow).toContain('20px');
     expect(first?.style.transform).toBe('none');
     expect(second?.style.background).not.toBe(first?.style.background);
   });

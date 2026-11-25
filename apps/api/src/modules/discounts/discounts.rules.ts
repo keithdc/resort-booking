@@ -16,6 +16,8 @@ import { isValidIsoDate } from '../../shared/dates/iso-date';
 
 export const MAX_DISCOUNT_LABEL_LENGTH = 80;
 export const MAX_PRIORITY = 1000;
+/** Stored for older data and clients; the rules no longer read it. */
+export const DEFAULT_PRIORITY = 100;
 export const PROMO_CODE_PATTERN = /^[A-Za-z0-9_-]{3,30}$/;
 
 /** Facts about one stay that conditions are checked against. */
@@ -112,10 +114,12 @@ export function discountAmount(effect: DiscountEffect, base: number): number {
 /**
  * Applies the discounts that match a stay to its subtotal.
  *
- * - By default the guest gets the single best matching non-combinable discount.
- * - Combinable discounts stack with each other, in priority order, each on what is left.
- * - The guest gets whichever of those two options saves more; they never mix.
- * - The total never goes below zero.
+ * - AUTOMATIC discounts (no promo code) never stack with each other: the guest gets the single best one.
+ * - A PROMO CODE discount is a coupon. It stacks on top of the best automatic discount, taken from what is
+ *   left (automatic first, then the coupon). Only one code can be typed per booking.
+ * - A coupon switched to "not combinable" never stacks: the guest gets whichever saves more, that coupon
+ *   alone or the best automatic discount alone, never both.
+ * - Exhausted and switched-off discounts never match. The total never goes below zero.
  */
 export function applyDiscounts(
   subtotalCents: number,
@@ -123,27 +127,25 @@ export function applyDiscounts(
   context: DiscountContext,
 ): DiscountOutcome {
   const matching = discounts.filter((discount): boolean => discountMatches(discount, context));
+  const automatic = matching.filter((discount): boolean => promoCodeOf(discount) === null);
+  const coupons = matching.filter((discount): boolean => promoCodeOf(discount) !== null);
 
-  const singles = matching
-    .filter((discount): boolean => !discount.combinable)
-    .map((discount): QuoteDiscountLine => lineFor(discount, discountAmount(discount.effect, subtotalCents)))
-    .sort((a, b): number => b.amountCents - a.amountCents || a.label.localeCompare(b.label));
-  const bestSingle = singles[0];
+  const bestAutomatic = bestLine(automatic, subtotalCents);
+  const afterAutomatic = subtotalCents - (bestAutomatic?.amountCents ?? 0);
 
-  const stack: QuoteDiscountLine[] = [];
-  let remaining = subtotalCents;
-  const combinables = matching
-    .filter((discount): boolean => discount.combinable)
-    .sort((a, b): number => a.priority - b.priority || a.label.localeCompare(b.label));
-  for (const discount of combinables) {
-    const amountCents = discountAmount(discount.effect, remaining);
-    remaining -= amountCents;
-    stack.push(lineFor(discount, amountCents));
-  }
+  const stackedCoupon = bestLine(
+    coupons.filter((discount): boolean => discount.combinable),
+    afterAutomatic,
+  );
+  const exclusiveCoupon = bestLine(
+    coupons.filter((discount): boolean => !discount.combinable),
+    subtotalCents,
+  );
 
-  const stackTotal = sum(stack);
-  const singleTotal = bestSingle?.amountCents ?? 0;
-  const chosen = stackTotal > singleTotal ? stack : bestSingle === undefined ? [] : [bestSingle];
+  const stacked = [bestAutomatic, stackedCoupon].filter((line): line is QuoteDiscountLine => line !== undefined);
+  const alone = exclusiveCoupon === undefined ? [] : [exclusiveCoupon];
+  // The stack wins a tie: the guest sees the automatic discount and keeps the code.
+  const chosen = sum(alone) > sum(stacked) ? alone : stacked;
   const lines = chosen.filter((line): boolean => line.amountCents > 0);
 
   return {
@@ -153,8 +155,19 @@ export function applyDiscounts(
   };
 }
 
+/**
+ * The discount that saves most on `base` (ties: name order), as a quote line; undefined when none.
+ */
+function bestLine(candidates: readonly Discount[], base: number): QuoteDiscountLine | undefined {
+  return candidates
+    .map((discount): QuoteDiscountLine => lineFor(discount, discountAmount(discount.effect, base)))
+    .sort((a, b): number => b.amountCents - a.amountCents || a.label.localeCompare(b.label))[0];
+}
+
 function lineFor(discount: Discount, amountCents: number): QuoteDiscountLine {
-  return { discountId: discount.id, label: discount.label, amountCents };
+  const line: QuoteDiscountLine = { discountId: discount.id, label: discount.label, amountCents };
+  // A percentage discount carries its size so the guest sees "10% off" next to the name.
+  return discount.effect.kind === 'percent' ? { ...line, percent: discount.effect.percent } : line;
 }
 
 function sum(lines: readonly QuoteDiscountLine[]): number {
@@ -200,7 +213,14 @@ function promoOutcome(
   if (owners.some((owner): boolean => matching.some((match): boolean => match.id === owner.id))) {
     return { code, applied: false, message: 'A better offer is already applied to this booking' };
   }
+  if (owners.every(isUsedUp)) {
+    return { code, applied: false, message: 'This code has been used up' };
+  }
   return { code, applied: false, message: 'This code does not apply to these dates' };
+}
+
+function isUsedUp(discount: Discount): boolean {
+  return discount.maxRedemptions !== null && discount.redemptions >= discount.maxRedemptions;
 }
 
 // --- Validation (staff input) ---

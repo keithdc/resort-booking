@@ -6,6 +6,7 @@
 
 import {
   holdTtlSeconds,
+  isPriceSnapshot,
   isCheckInBeforeToday,
   nightsBetween,
   referenceFor,
@@ -47,5 +48,20 @@ describe('inventory.rules', () => {
 
   it('gives different stays different references', () => {
     expect(referenceFor('11111111-1111-4111-8111-111111111111')).not.toBe(referenceFor('22222222-2222-4222-8222-222222222222'));
+  });
+});
+
+describe('isPriceSnapshot with discount percents', () => {
+  const base = { lines: [], subtotalCents: 98000, discountCents: 9800, totalCents: 88200, currencyCode: 'EUR', promoCode: null };
+
+  it('accepts a snapshot whose discount lines carry a percent, and keeps it', () => {
+    const snapshot: unknown = { ...base, discounts: [{ discountId: 'd', label: 'Long stay', amountCents: 9800, percent: 10 }] };
+
+    expect(isPriceSnapshot(snapshot)).toBe(true);
+    expect(JSON.parse(JSON.stringify(snapshot))).toEqual(snapshot);
+  });
+
+  it('still accepts an older snapshot without a percent', () => {
+    expect(isPriceSnapshot({ ...base, discounts: [{ discountId: 'd', label: 'Long stay', amountCents: 9800 }] })).toBe(true);
   });
 });

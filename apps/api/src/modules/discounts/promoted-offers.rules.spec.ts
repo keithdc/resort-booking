@@ -209,6 +209,13 @@ describe('buildPromotedOffers', () => {
     expect(buildPromotedOffers([discount({ maxRedemptions: 5, redemptions: 4 })], houses, TODAY)).toHaveLength(1);
   });
 
+  it('stops promoting a promo-code coupon once its uses are gone', () => {
+    const coupon = (redemptions: number): Discount =>
+      discount({ promoted: true, maxRedemptions: 10, redemptions, conditions: [{ kind: 'promo_code', code: 'WELCOME15' }] });
+    expect(buildPromotedOffers([coupon(9)], houses, TODAY)).toHaveLength(1);
+    expect(buildPromotedOffers([coupon(10)], houses, TODAY)).toEqual([]);
+  });
+
   it('skips a booking window that has closed or not opened yet, and keeps one that is open today', () => {
     const window = (startDate: string, endDate: string): Discount =>
       discount({ conditions: [{ kind: 'booking_window', startDate, endDate }] });

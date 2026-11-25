@@ -86,6 +86,24 @@ describe('RebookQuoteSummary', () => {
     expect(text()).toContain('Long stay−124,80 €');
   });
 
+  it('shows the percent next to a percentage discount and notes two discounts are combined', () => {
+    render(
+      <RebookQuoteSummary
+        quote={quote({
+          discounts: [
+            { discountId: 'a', label: 'Long stay', amountCents: 9800, percent: 10 },
+            { discountId: 'b', label: 'Welcome code', amountCents: 13230, percent: 15 },
+          ],
+          discountCents: 23030,
+        })}
+      />,
+    );
+
+    expect(text()).toContain('Long stay · 10% off−98,00 €');
+    expect(text()).toContain('Welcome code · 15% off−132,30 €');
+    expect(text()).toContain('Your discounts are combined.');
+  });
+
   it('shows why the dates cannot be used', () => {
     render(<RebookQuoteSummary quote={quote({ available: false, problem: 'Those dates are not available for this stay.' })} />);
 

@@ -7,7 +7,7 @@
 'use client';
 
 import type { HouseSearchResult } from '@resort-booking/shared-types';
-import { Box, Button, Typography } from '@mui/material';
+import { alpha, Box, Button, Typography } from '@mui/material';
 import { BlurFade } from '@resort-booking/ui';
 import { useMemo, useState } from 'react';
 import type { StayQuery } from '@/shared/utils/stay-query';
@@ -75,9 +75,13 @@ export function SearchResultsView({ results, stay }: SearchResultsViewProps): Re
                     onBlur={(): void => setActiveHouseId(null)}
                     sx={{
                       borderRadius: 1,
-                      outline: active ? '2px solid' : '2px solid transparent',
-                      outlineColor: active ? 'primary.main' : 'transparent',
-                      outlineOffset: 2,
+                      // No border: a soft shadow and a small lift mark the hovered card (the map pill goes dark).
+                      boxShadow: (theme): string =>
+                        active ? `0 16px 32px ${alpha(theme.palette.common.black, 0.2)}` : '0 0 0 0 transparent',
+                      // A small lift when the card (or its map pill) is hovered: the card magnifies a touch.
+                      transform: active ? 'translateY(-3px) scale(1.015)' : 'none',
+                      transition: 'transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 180ms ease',
+                      '@media (prefers-reduced-motion: reduce)': { transition: 'none', transform: 'none' },
                     }}
                   >
                     <HouseListingCard house={result.house} quote={result.quote} stay={stay} />

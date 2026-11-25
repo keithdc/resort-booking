@@ -180,11 +180,11 @@ describe('applyDiscounts', () => {
 
   it('applies one matching discount as its own line', () => {
     const result = applyDiscounts(100000, [discount()], ctx());
-    expect(result.lines).toEqual([{ discountId: 'd1', label: 'Long stay', amountCents: 10000 }]);
+    expect(result.lines).toEqual([{ discountId: 'd1', label: 'Long stay', amountCents: 10000, percent: 10 }]);
     expect(result.discountCents).toBe(10000);
   });
 
-  it('gives the single best of several non-combinable discounts, never two', () => {
+  it('gives the single best of several automatic discounts, never two', () => {
     const result = applyDiscounts(
       100000,
       [
@@ -198,51 +198,168 @@ describe('applyDiscounts', () => {
     expect(result.discountCents).toBe(20000);
   });
 
-  it('stacks combinable discounts in priority order, each on what is left', () => {
+  it('never stacks automatic discounts, even when they say they are combinable', () => {
     const result = applyDiscounts(
       100000,
       [
-        discount({ id: 'b', label: 'Second', combinable: true, priority: 20, effect: { kind: 'percent', percent: 10 } }),
-        discount({ id: 'a', label: 'First', combinable: true, priority: 10, effect: { kind: 'percent', percent: 10 } }),
+        discount({ id: 'a', label: 'A', combinable: true, priority: 1, effect: { kind: 'percent', percent: 10 } }),
+        discount({ id: 'b', label: 'B', combinable: true, priority: 2, effect: { kind: 'percent', percent: 12 } }),
       ],
       ctx(),
     );
-    expect(result.lines).toEqual([
-      { discountId: 'a', label: 'First', amountCents: 10000 },
-      { discountId: 'b', label: 'Second', amountCents: 9000 },
-    ]);
-    expect(result.discountCents).toBe(19000);
+    expect(result.lines.map((line) => line.discountId)).toEqual(['b']);
+    expect(result.discountCents).toBe(12000);
   });
 
-  it('gives the better of the best single or the combinable stack, never a mix', () => {
-    const single = discount({ id: 's', label: 'Single', effect: { kind: 'percent', percent: 15 } });
-    const stack = [
-      discount({ id: 'c1', label: 'C1', combinable: true, priority: 1, effect: { kind: 'percent', percent: 10 } }),
-      discount({ id: 'c2', label: 'C2', combinable: true, priority: 2, effect: { kind: 'percent', percent: 10 } }),
-    ];
-    expect(applyDiscounts(100000, [single, ...stack], ctx()).lines.map((line) => line.discountId)).toEqual(['c1', 'c2']);
-
-    const bigSingle = discount({ id: 's', label: 'Single', effect: { kind: 'percent', percent: 30 } });
-    expect(applyDiscounts(100000, [bigSingle, ...stack], ctx()).lines.map((line) => line.discountId)).toEqual(['s']);
-  });
-
-  it('prefers the single discount on a tie', () => {
-    const single = discount({ id: 's', effect: { kind: 'percent', percent: 10 } });
-    const combinable = discount({ id: 'c', combinable: true, effect: { kind: 'percent', percent: 10 } });
-    expect(applyDiscounts(100000, [single, combinable], ctx()).lines.map((line) => line.discountId)).toEqual(['s']);
-  });
-
-  it('never takes the total below zero when fixed discounts stack past the subtotal', () => {
+  it('breaks a tie between automatic discounts by name, whatever their priority', () => {
     const result = applyDiscounts(
-      10000,
+      100000,
       [
-        discount({ id: 'a', combinable: true, priority: 1, effect: { kind: 'fixed', amountCents: 8000 } }),
-        discount({ id: 'b', combinable: true, priority: 2, effect: { kind: 'fixed', amountCents: 8000 } }),
+        discount({ id: 'z', label: 'Zebra', priority: 1, effect: { kind: 'percent', percent: 10 } }),
+        discount({ id: 'a', label: 'Apple', priority: 900, effect: { kind: 'percent', percent: 10 } }),
       ],
       ctx(),
     );
+    expect(result.lines.map((line) => line.discountId)).toEqual(['a']);
+  });
+
+  it('ignores priority altogether', () => {
+    const coupon = discount({
+      id: 'c',
+      label: 'Coupon',
+      combinable: true,
+      effect: { kind: 'percent', percent: 15 },
+      conditions: [{ kind: 'promo_code', code: 'WELCOME15' }],
+    });
+    const low = applyDiscounts(98000, [discount({ id: 'auto', priority: 0 }), { ...coupon, priority: 1000 }], ctx({ promoCode: 'WELCOME15' }));
+    const high = applyDiscounts(98000, [discount({ id: 'auto', priority: 1000 }), { ...coupon, priority: 0 }], ctx({ promoCode: 'WELCOME15' }));
+    expect(high.lines).toEqual(low.lines);
+    expect(low.lines.map((line) => line.discountId)).toEqual(['auto', 'c']);
+  });
+
+  it('never takes the total below zero', () => {
+    const result = applyDiscounts(10000, [discount({ effect: { kind: 'fixed', amountCents: 50000 } })], ctx());
     expect(result.discountCents).toBe(10000);
-    expect(result.lines.map((line) => line.amountCents)).toEqual([8000, 2000]);
+    expect(result.lines.map((line) => line.amountCents)).toEqual([10000]);
+  });
+
+  describe('a promo code (coupon) on top of an automatic discount', () => {
+    const longStay = discount({
+      id: 'long',
+      label: 'Long stay: 7+ nights',
+      combinable: false,
+      effect: { kind: 'percent', percent: 10 },
+      conditions: [{ kind: 'min_nights', nights: 7 }],
+    });
+    const welcome = discount({
+      id: 'welcome',
+      label: 'Welcome code',
+      combinable: true,
+      effect: { kind: 'percent', percent: 15 },
+      conditions: [{ kind: 'promo_code', code: 'WELCOME15' }],
+    });
+    const sevenNights = ['2027-07-10', '2027-07-11', '2027-07-12', '2027-07-13', '2027-07-14', '2027-07-15', '2027-07-16'];
+
+    it('takes the automatic 10% first, then 15% of the rest: 980,00 becomes 749,70', () => {
+      const result = applyDiscounts(98000, [welcome, longStay], ctx({ nights: sevenNights, promoCode: 'welcome15' }));
+
+      expect(result.lines).toEqual([
+        { discountId: 'long', label: 'Long stay: 7+ nights', amountCents: 9800, percent: 10 },
+        { discountId: 'welcome', label: 'Welcome code', amountCents: 13230, percent: 15 },
+      ]);
+      expect(result.discountCents).toBe(23030);
+      expect(98000 - result.discountCents).toBe(74970);
+      expect(result.promoCode).toEqual(expect.objectContaining({ applied: true }));
+    });
+
+    it('stacks the coupon even though the automatic discount is not marked combinable', () => {
+      expect(longStay.combinable).toBe(false);
+      const result = applyDiscounts(98000, [welcome, longStay], ctx({ nights: sevenNights, promoCode: 'WELCOME15' }));
+      expect(result.lines.map((line) => line.discountId)).toEqual(['long', 'welcome']);
+    });
+
+    it('applies only the best automatic discount when the code is not typed (a coupon never applies on its own)', () => {
+      const result = applyDiscounts(98000, [welcome, longStay], ctx({ nights: sevenNights, promoCode: null }));
+
+      expect(result.lines.map((line) => line.discountId)).toEqual(['long']);
+      expect(result.discountCents).toBe(9800);
+      expect(result.promoCode).toBeNull();
+    });
+
+    it('applies only the coupon on a short stay', () => {
+      const result = applyDiscounts(28000, [welcome, longStay], ctx({ nights: sevenNights.slice(0, 2), promoCode: 'WELCOME15' }));
+
+      expect(result.lines.map((line) => line.discountId)).toEqual(['welcome']);
+      expect(result.discountCents).toBe(4200);
+    });
+
+    it('stacks the coupon on only the BEST of several automatic discounts', () => {
+      const small = discount({ id: 'small', label: 'Small', effect: { kind: 'percent', percent: 5 } });
+      const result = applyDiscounts(100000, [small, longStay, welcome], ctx({ nights: sevenNights, promoCode: 'WELCOME15' }));
+
+      expect(result.lines.map((line) => line.discountId)).toEqual(['long', 'welcome']);
+      expect(result.discountCents).toBe(10000 + 13500);
+    });
+
+    it('takes a fixed automatic discount first, then the percent coupon on what is left', () => {
+      const fixedAuto = discount({ id: 'fixed', label: 'Fixed', effect: { kind: 'fixed', amountCents: 5000 } });
+      const result = applyDiscounts(100000, [fixedAuto, welcome], ctx({ nights: sevenNights, promoCode: 'WELCOME15' }));
+
+      expect(result.lines.map((line) => line.amountCents)).toEqual([5000, 14250]);
+      expect(result.discountCents).toBe(19250);
+    });
+
+    it('with a NON-combinable coupon the guest gets the better of the coupon alone or the automatic one alone, never both', () => {
+      const exclusive = { ...welcome, combinable: false };
+
+      const bigCoupon = applyDiscounts(100000, [{ ...exclusive, effect: { kind: 'percent' as const, percent: 30 } }, longStay], ctx({ nights: sevenNights, promoCode: 'WELCOME15' }));
+      expect(bigCoupon.lines.map((line) => line.discountId)).toEqual(['welcome']);
+      expect(bigCoupon.discountCents).toBe(30000);
+      expect(bigCoupon.promoCode?.applied).toBe(true);
+
+      const smallCoupon = applyDiscounts(100000, [{ ...exclusive, effect: { kind: 'percent' as const, percent: 5 } }, longStay], ctx({ nights: sevenNights, promoCode: 'WELCOME15' }));
+      expect(smallCoupon.lines.map((line) => line.discountId)).toEqual(['long']);
+      expect(smallCoupon.discountCents).toBe(10000);
+      expect(smallCoupon.promoCode).toEqual({ code: 'WELCOME15', applied: false, message: 'A better offer is already applied to this booking' });
+    });
+
+    it('on a tie a non-combinable coupon gives way to the automatic discount', () => {
+      const exclusive = { ...welcome, combinable: false, effect: { kind: 'percent' as const, percent: 10 } };
+      const result = applyDiscounts(100000, [exclusive, longStay], ctx({ nights: sevenNights, promoCode: 'WELCOME15' }));
+      expect(result.lines.map((line) => line.discountId)).toEqual(['long']);
+    });
+
+    it('never takes the total below zero when a stacked coupon is a large fixed amount', () => {
+      const bigFixed = { ...welcome, effect: { kind: 'fixed' as const, amountCents: 500000 } };
+      const result = applyDiscounts(98000, [longStay, bigFixed], ctx({ nights: sevenNights, promoCode: 'WELCOME15' }));
+
+      expect(result.discountCents).toBe(98000);
+      expect(result.lines.map((line) => line.amountCents)).toEqual([9800, 88200]);
+    });
+
+    it('does not apply a used-up coupon or a used-up automatic discount', () => {
+      const usedUpCoupon = { ...welcome, maxRedemptions: 10, redemptions: 10 };
+      const couponResult = applyDiscounts(98000, [usedUpCoupon, longStay], ctx({ nights: sevenNights, promoCode: 'WELCOME15' }));
+      expect(couponResult.lines.map((line) => line.discountId)).toEqual(['long']);
+
+      const usedUpAuto = { ...longStay, maxRedemptions: 3, redemptions: 3 };
+      const autoResult = applyDiscounts(98000, [usedUpAuto, welcome], ctx({ nights: sevenNights, promoCode: 'WELCOME15' }));
+      expect(autoResult.lines.map((line) => line.discountId)).toEqual(['welcome']);
+      expect(autoResult.discountCents).toBe(14700);
+    });
+
+    it('keeps offering a coupon that still has uses left', () => {
+      const lastUse = { ...welcome, maxRedemptions: 10, redemptions: 9 };
+      const result = applyDiscounts(98000, [lastUse], ctx({ nights: sevenNights, promoCode: 'WELCOME15' }));
+      expect(result.promoCode?.applied).toBe(true);
+    });
+  });
+
+  it('gives a fixed-amount line no percent', () => {
+    const result = applyDiscounts(100000, [discount({ effect: { kind: 'fixed', amountCents: 5000 } })], ctx());
+
+    expect(result.lines).toEqual([{ discountId: 'd1', label: 'Long stay', amountCents: 5000 }]);
+    expect('percent' in (result.lines[0] ?? {})).toBe(false);
   });
 
   it('drops zero-value lines', () => {
@@ -253,10 +370,15 @@ describe('applyDiscounts', () => {
     const result = applyDiscounts(
       33333,
       [
-        discount({ id: 'a', combinable: true, priority: 1, effect: { kind: 'percent', percent: 7 } }),
-        discount({ id: 'b', combinable: true, priority: 2, effect: { kind: 'percent', percent: 13 } }),
+        discount({ id: 'a', effect: { kind: 'percent', percent: 7 } }),
+        discount({
+          id: 'b',
+          combinable: true,
+          effect: { kind: 'percent', percent: 13 },
+          conditions: [{ kind: 'promo_code', code: 'CODE13' }],
+        }),
       ],
-      ctx(),
+      ctx({ promoCode: 'CODE13' }),
     );
     expect(result.lines.reduce((total, line) => total + line.amountCents, 0)).toBe(result.discountCents);
   });
@@ -312,9 +434,19 @@ describe('applyDiscounts', () => {
       expect(result.lines.map((line) => line.discountId)).toEqual(['better']);
     });
 
-    it('treats a used-up code as not applying', () => {
+    it('says a used-up code has been used up, and still prices the stay', () => {
       const usedUp = { ...promo, maxRedemptions: 1, redemptions: 1 };
-      expect(applyDiscounts(100000, [usedUp], ctx({ promoCode: 'WELCOME15' })).promoCode?.applied).toBe(false);
+      const result = applyDiscounts(100000, [usedUp], ctx({ promoCode: 'WELCOME15' }));
+      expect(result.promoCode).toEqual({ code: 'WELCOME15', applied: false, message: 'This code has been used up' });
+      expect(result.discountCents).toBe(0);
+    });
+
+    it('does not call a code used up while a sibling with the same code still has uses', () => {
+      const usedUp = { ...promo, id: 'old', maxRedemptions: 1, redemptions: 1 };
+      const fresh = { ...promo, id: 'new', maxRedemptions: 5, redemptions: 0 };
+      const result = applyDiscounts(100000, [usedUp, fresh], ctx({ promoCode: 'WELCOME15' }));
+      expect(result.promoCode?.applied).toBe(true);
+      expect(result.lines.map((line) => line.discountId)).toEqual(['new']);
     });
   });
 });

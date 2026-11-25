@@ -212,6 +212,20 @@ describe('DiscountsService', () => {
       );
     });
 
+    it('does not need a priority (the admin no longer sends one) and stores the default', async () => {
+      const withoutPriority = dto();
+      delete withoutPriority.priority;
+      await service.create(PROPERTY, withoutPriority);
+
+      expect(insert).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ priority: 100 }));
+    });
+
+    it('still accepts a priority from an older client', async () => {
+      await service.create(PROPERTY, dto({ priority: 250 }));
+
+      expect(insert).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ priority: 250 }));
+    });
+
     it('drops unknown fields from the rules instead of storing them', async () => {
       await service.create(PROPERTY, dto({ effect: { kind: 'percent', percent: 10, evil: true } }));
 

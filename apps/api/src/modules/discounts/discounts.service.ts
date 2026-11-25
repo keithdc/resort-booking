@@ -13,6 +13,7 @@ import type { DiscountWriteDto } from './dto/discount-write.dto';
 import { DiscountsRepository } from './discounts.repository';
 import {
   applyDiscounts,
+  DEFAULT_PRIORITY,
   parseConditions,
   parseEffect,
   validateDiscountWrite,
@@ -170,7 +171,7 @@ export class DiscountsService {
       alwaysOn: dto.alwaysOn,
       houseIds: dto.houseIds,
       combinable: dto.combinable,
-      priority: dto.priority,
+      priority: dto.priority ?? DEFAULT_PRIORITY,
       active: dto.active,
       maxRedemptions: dto.maxRedemptions,
       promoted: dto.promoted ?? false,

@@ -108,7 +108,7 @@ describe('QuoteBreakdown', () => {
           subtotalCents: 112000,
           discounts: [
             { discountId: 'a', label: 'Long stay: 7+ nights', amountCents: 11200 },
-            { discountId: 'b', label: 'Welcome code', amountCents: 5000 },
+            { discountId: 'b', label: 'Welcome code', amountCents: 5000, percent: 15 },
           ],
           discountCents: 16200,
           totalCents: 95800,
@@ -119,8 +119,48 @@ describe('QuoteBreakdown', () => {
     const rows = text(screen.getByLabelText('Price breakdown').textContent);
     expect(rows).toContain('Subtotal1 120,00 €');
     expect(rows).toContain('Long stay: 7+ nights−112,00 €');
-    expect(rows).toContain('Welcome code−50,00 €');
+    expect(rows).toContain('Welcome code · 15% off−50,00 €');
     expect(rows).toContain('Total958,00 €');
+  });
+
+  it('puts the percent next to the name and says the discounts are combined when there are two', () => {
+    render(
+      <QuoteBreakdown
+        quote={quote({
+          nights: 7,
+          lines: [{ label: 'Standard rate', nights: 7, nightlyRateCents: 14000, subtotalCents: 98000 }],
+          subtotalCents: 98000,
+          discounts: [
+            { discountId: 'a', label: 'Long stay: 7+ nights', amountCents: 9800, percent: 10 },
+            { discountId: 'b', label: 'Welcome code', amountCents: 13230, percent: 15 },
+          ],
+          discountCents: 23030,
+          totalCents: 74970,
+        })}
+      />,
+    );
+
+    const rows = text(screen.getByLabelText('Price breakdown').textContent);
+    expect(rows).toContain('Long stay: 7+ nights · 10% off−98,00 €');
+    expect(rows).toContain('Welcome code · 15% off−132,30 €');
+    expect(rows).toContain('Your discounts are combined.');
+    expect(rows).toContain('Total749,70 €');
+  });
+
+  it('does not say combined for a single discount', () => {
+    render(
+      <QuoteBreakdown
+        quote={quote({
+          lines: [{ label: 'Standard rate', nights: 7, nightlyRateCents: 14000, subtotalCents: 98000 }],
+          subtotalCents: 98000,
+          discounts: [{ discountId: 'a', label: 'Long stay: 7+ nights', amountCents: 9800, percent: 10 }],
+          discountCents: 9800,
+          totalCents: 88200,
+        })}
+      />,
+    );
+
+    expect(text(screen.getByLabelText('Price breakdown').textContent)).not.toContain('combined');
   });
 
   it('hides the subtotal row when there is no discount', () => {

@@ -296,6 +296,11 @@ export interface QuoteDiscountLine {
   discountId: string;
   label: string;
   amountCents: number;
+  /**
+   * The discount's size when it is a percentage ("10% off"). Absent for a fixed amount, and for price
+   * snapshots saved before this field existed, so always treat it as optional.
+   */
+  percent?: number;
 }
 
 /** Outcome of a typed promo code. A bad code never blocks a booking. */
@@ -701,9 +706,13 @@ export interface DiscountWrite {
   alwaysOn: boolean;
   /** Null means every house at the property. */
   houseIds: string[] | null;
-  /** May stack with other combinable discounts. Otherwise it competes for "best single". */
+  /**
+   * Only read for a promo-code discount (a coupon): true = it stacks on top of the best automatic discount;
+   * false = the guest gets whichever saves more, the coupon alone or the automatic one alone. Automatic
+   * discounts never stack with each other, whatever this says.
+   */
   combinable: boolean;
-  /** Lower runs first when stacking. */
+  /** Kept for older data; no longer read by the pricing rules or set in the admin. Default 100. */
   priority: number;
   active: boolean;
   maxRedemptions: number | null;

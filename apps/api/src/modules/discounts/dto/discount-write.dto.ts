@@ -34,10 +34,12 @@ export class DiscountWriteDto {
   @IsBoolean()
   public combinable!: boolean;
 
+  /** No longer set by the admin (automatic discounts never stack; a coupon follows them). Optional, default 100. */
+  @IsOptional()
   @IsInt()
   @Min(0)
   @Max(1000)
-  public priority!: number;
+  public priority?: number;
 
   @IsBoolean()
   public active!: boolean;

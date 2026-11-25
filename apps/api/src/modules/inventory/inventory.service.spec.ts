@@ -268,7 +268,7 @@ describe('InventoryService pricing', () => {
       const quote = await service.getQuote(query, true);
 
       expect(quote.subtotalCents).toBe(54000);
-      expect(quote.discounts).toEqual([{ discountId: 'long-stay', label: 'Long stay', amountCents: 5400 }]);
+      expect(quote.discounts).toEqual([{ discountId: 'long-stay', label: 'Long stay', amountCents: 5400, percent: 10 }]);
       expect(quote.discountCents).toBe(5400);
       expect(quote.totalCents).toBe(48600);
       expect(quote.promoCode).toBeNull();

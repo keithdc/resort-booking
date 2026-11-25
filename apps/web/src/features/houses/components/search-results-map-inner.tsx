@@ -133,9 +133,10 @@ export function SearchResultsMapInner({ pins, activeHouseId, onHoverHouse }: Sea
       chip.style.background = active ? accent : paper;
       chip.style.color = active ? onAccent : ink;
       chip.style.borderColor = active ? accent : border;
-      chip.style.transform = active ? 'scale(1.08)' : 'none';
+      chip.style.transform = active ? 'scale(1.18)' : 'none';
+      chip.style.boxShadow = active ? '0 8px 20px rgba(0,0,0,0.32)' : '0 2px 6px rgba(0,0,0,0.18)';
       chip.dataset.active = active ? 'true' : 'false';
-      chip.style.zIndex = active ? '2' : '1';
+      chip.style.zIndex = active ? '3' : '1';
     }
   }, [activeHouseId, pins, accent, onAccent, paper, ink, border]);
 
@@ -198,7 +199,7 @@ function chipStyle(palette: Palette): Partial<CSSStyleDeclaration> {
     cursor: 'pointer',
     whiteSpace: 'nowrap',
     boxShadow: '0 2px 6px rgba(0,0,0,0.18)',
-    transition: reducedMotion() ? 'none' : 'transform 120ms ease, background-color 120ms ease, color 120ms ease',
+    transition: reducedMotion() ? 'none' : 'transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 180ms ease, background-color 150ms ease, color 150ms ease',
   };
 }
 
