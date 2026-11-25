@@ -5,9 +5,16 @@
  */
 
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
-import { Box, Link as MuiLink, Paper, Typography } from '@mui/material';
+import EventOutlinedIcon from '@mui/icons-material/EventOutlined';
+import HourglassTopOutlinedIcon from '@mui/icons-material/HourglassTopOutlined';
+import LoginOutlinedIcon from '@mui/icons-material/LoginOutlined';
+import ReplayOutlinedIcon from '@mui/icons-material/ReplayOutlined';
+import { Box, Link as MuiLink, Paper, Stack, Typography } from '@mui/material';
 import type { ReportAttention } from '@resort-booking/shared-types';
 import NextLink from 'next/link';
+import type { ReactElement } from 'react';
+import { IconChip } from '@/shared/components/icon-chip';
+import type { AvatarTone } from '@/shared/utils/avatar-color';
 import { buildAttentionItems, type AttentionItem } from '../utils/attention-items';
 import { EMPTY_STATES, type ReportTabKey } from '../utils/metric-definitions';
 import { MetricInfo } from './metric-info';
@@ -18,6 +25,13 @@ interface AttentionStripProps {
   currencyCode: string;
   onOpenTab: (tab: ReportTabKey) => void;
 }
+
+const ITEM_LOOK: Record<AttentionItem['key'], { tone: AvatarTone; icon: ReactElement }> = {
+  unpaidHolds: { tone: 'warning', icon: <HourglassTopOutlinedIcon /> },
+  refundsToPay: { tone: 'secondary', icon: <ReplayOutlinedIcon /> },
+  arrivalsToday: { tone: 'info', icon: <LoginOutlinedIcon /> },
+  arrivalsNext7Days: { tone: 'primary', icon: <EventOutlinedIcon /> },
+};
 
 /**
  * What needs a person today. Each item opens the page or tab where it is dealt with; with nothing to
@@ -35,7 +49,10 @@ export function AttentionStrip({ attention, currencyCode, onOpenTab }: Attention
       ) : (
         <Box component="ul" sx={{ listStyle: 'none', m: 0, p: 0, display: 'grid', gap: 2.5, gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr', lg: 'repeat(4, 1fr)' } }}>
           {items.map((item: AttentionItem): React.JSX.Element => (
-            <Paper key={item.key} component="li" variant="outlined" sx={{ p: 2.5, borderRadius: 2, borderColor: 'warning.main' }}>
+            <Paper key={item.key} component="li" variant="outlined" sx={{ p: 2, borderRadius: 2, borderColor: 'warning.main', borderWidth: 1.5 }}>
+              <Stack direction="row" spacing={1.5} alignItems="flex-start">
+                <IconChip icon={ITEM_LOOK[item.key].icon} tone={ITEM_LOOK[item.key].tone} size={36} />
+                <Box sx={{ minWidth: 0 }}>
               {item.href !== null ? (
                 <MuiLink component={NextLink} href={item.href} underline="hover" sx={{ fontWeight: 600 }}>
                   {item.text}
@@ -61,6 +78,8 @@ export function AttentionStrip({ attention, currencyCode, onOpenTab }: Attention
                   {item.detail}
                 </Typography>
               ) : null}
+                </Box>
+              </Stack>
             </Paper>
           ))}
         </Box>

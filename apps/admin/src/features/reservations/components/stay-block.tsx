@@ -4,24 +4,31 @@
  * @dependencies MUI
  */
 
-import { Box, Divider, Stack, Typography } from '@mui/material';
+import { Box, Stack, Typography } from '@mui/material';
+import type { ReactNode } from 'react';
+import { IconChip } from '@/shared/components/icon-chip';
+import type { AvatarTone } from '@/shared/utils/avatar-color';
 
 interface StayBlockProps {
   title: string;
-  children: React.ReactNode;
+  icon?: ReactNode;
+  tone?: AvatarTone;
+  children: ReactNode;
 }
 
 /**
- * A titled card inside the booking dialog.
+ * A titled card inside the booking dialog: tinted icon and title on a header strip, facts below.
  */
-export function StayBlock({ title, children }: StayBlockProps): React.JSX.Element {
+export function StayBlock({ title, icon, tone = 'primary', children }: StayBlockProps): React.JSX.Element {
   return (
-    <Box sx={{ p: 2, border: 1, borderColor: 'divider', borderRadius: 1, bgcolor: 'background.paper' }}>
-      <Typography variant="subtitle2" sx={{ mb: 1.5 }}>
-        {title}
-      </Typography>
-      <Divider sx={{ mb: 1.5 }} />
-      <Stack spacing={1.25}>{children}</Stack>
+    <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 2, bgcolor: 'background.paper', overflow: 'hidden' }}>
+      <Stack direction="row" spacing={1.5} alignItems="center" sx={{ px: 2, py: 1.5, bgcolor: 'action.hover', borderBottom: 1, borderColor: 'divider' }}>
+        {icon !== undefined ? <IconChip icon={icon} tone={tone} size={32} /> : null}
+        <Typography variant="subtitle2">{title}</Typography>
+      </Stack>
+      <Stack spacing={1.5} sx={{ p: 2 }}>
+        {children}
+      </Stack>
     </Box>
   );
 }
@@ -37,7 +44,7 @@ interface StayFactProps {
 export function StayFact({ label, value }: StayFactProps): React.JSX.Element {
   return (
     <Box>
-      <Typography variant="caption" color="text.secondary" display="block">
+      <Typography variant="caption" color="text.secondary" display="block" sx={{ textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
         {label}
       </Typography>
       <Typography>{value}</Typography>

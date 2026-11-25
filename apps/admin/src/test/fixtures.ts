@@ -4,10 +4,12 @@
  */
 
 import type {
+  OrganizationSettings,
   PeriodSummary,
   RebookQuote,
   StaffBookingChange,
   StaffCancellation,
+  StaffProfile,
   StaffRefund,
   StaffReport,
   StaffReservation,
@@ -210,6 +212,29 @@ export function staffReport(overrides: Partial<StaffReport> = {}): StaffReport {
     discountUsage: [{ discountId: 'd1', label: 'Long stay: 7+ nights', redemptionCount: 2, discountCents: 12000 }],
     attention: { unpaidHoldCount: 1, refundsToPayCount: 2, refundsToPayCents: 15000, arrivalsTodayCount: 0, arrivalsNext7DaysCount: 3 },
     previous: periodSummary(),
+    ...overrides,
+  };
+}
+
+export function staffProfile(overrides: Partial<StaffProfile> = {}): StaffProfile {
+  return { id: 's1', organizationId: 'o1', fullName: 'Marie Dupont', email: 'marie@humphreys.example', ...overrides };
+}
+
+export function organizationSettings(overrides: Partial<OrganizationSettings> = {}): OrganizationSettings {
+  return {
+    id: 'o1',
+    name: 'Humphreys',
+    legalName: 'Humphreys Hospitality SAS',
+    legalAddress: '1 Rue du Lac, 74000 Annecy',
+    vatNumber: 'FR12345678901',
+    iban: 'FR7612345678901234567890123',
+    bic: 'BNPAFRPP',
+    bankAccountName: 'Humphreys Hospitality',
+    contactEmail: 'ops@humphreys.example',
+    contactPhone: '',
+    ownerName: 'Marie Dupont',
+    bookingEmail: 'bookings@humphreys.example',
+    guestReplyEmail: 'hello@humphreys.example',
     ...overrides,
   };
 }

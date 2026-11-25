@@ -8,16 +8,23 @@
 
 import type { OrganizationSettings, StaffProfile } from '@resort-booking/shared-types';
 import AccountCircleOutlinedIcon from '@mui/icons-material/AccountCircleOutlined';
-import { Alert, Card, CardContent, CircularProgress, Stack, Typography } from '@mui/material';
+import GavelOutlinedIcon from '@mui/icons-material/GavelOutlined';
+import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
+import { Alert, Box, Button, Skeleton, Stack, Typography } from '@mui/material';
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { fetchStaffMe } from '@/features/identity/services/staff-identity-api';
 import { fetchOrganizationSettings } from '@/features/property/services/staff-property-api';
+import { PageHeader } from '@/shared/components/page-header';
+import { SectionCard } from '@/shared/components/section-card';
 import { ApiRequestError } from '@/shared/services/api-client';
+import { AccountSummary } from './account-summary';
 import { OrganizationSettingsForm } from './organization-settings-form';
 import { OwnerAccountForm } from './owner-account-form';
 
 /**
- * Operator account in three cards: login, guest emails, legal and bank.
+ * Operator account in short sections: who is signed in, how you sign in, your business, guest
+ * emails, and legal and bank details. Refunds and extras stay on each property.
  */
 export function ConfigurationPage(): React.JSX.Element {
   const [org, setOrg] = useState<OrganizationSettings | null>(null);
@@ -44,41 +51,52 @@ export function ConfigurationPage(): React.JSX.Element {
   }, []);
 
   return (
-    <Stack spacing={3} maxWidth={720}>
-      <div>
-        <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 1 }}>
-          <AccountCircleOutlinedIcon color="primary" />
-          <Typography variant="h4" component="h1">
-            Account
-          </Typography>
-        </Stack>
-        <Typography color="text.secondary">
-          Three short sections: how you sign in, where booking emails go, then legal and bank details
-          for transfers. Refunds and extras stay on each property.
-        </Typography>
-      </div>
-      {error !== null ? <Alert severity="error">{error}</Alert> : null}
+    <Box sx={{ maxWidth: 960 }}>
+      <PageHeader
+        icon={<AccountCircleOutlinedIcon />}
+        tone="secondary"
+        title="Account"
+        description="How you sign in, your business, where booking emails go, and the legal and bank details for transfers."
+      />
+      {error !== null ? <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert> : null}
       {staff === null || org === null ? (
-        <CircularProgress />
+        error === null ? (
+          <Stack spacing={3} aria-busy="true" aria-label="Loading account">
+            <Skeleton variant="rounded" height={120} />
+            <Skeleton variant="rounded" height={260} />
+          </Stack>
+        ) : null
       ) : (
-        <>
-          <Card>
-            <CardContent>
-              <Typography variant="overline" color="secondary.main">
-                1 · Sign in
-              </Typography>
-              <Typography variant="h6" gutterBottom>
-                Your staff login
-              </Typography>
-              <Typography color="text.secondary" sx={{ mb: 2 }}>
-                Name and email you use on this admin site. Change the password here if you need to.
-              </Typography>
-              <OwnerAccountForm initial={staff} />
-            </CardContent>
-          </Card>
+        <Stack spacing={3}>
+          <AccountSummary staff={staff} org={org} />
+          <SectionCard
+            eyebrow="1 · Sign in"
+            icon={<LockOutlinedIcon />}
+            tone="primary"
+            title="Your staff login"
+            description="Name and email you use on this admin site. Change the password here if you need to."
+          >
+            <OwnerAccountForm initial={staff} />
+          </SectionCard>
           <OrganizationSettingsForm initial={org} />
-        </>
+          <SectionCard
+            icon={<GavelOutlinedIcon />}
+            tone="warning"
+            title="Cancellation, refunds and extras"
+            description="These are set for each property, not here."
+            action={
+              <Button component={Link} href="/properties" variant="outlined">
+                Open properties
+              </Button>
+            }
+          >
+            <Typography color="text.secondary">
+              Open a property and use the tabs “If they cancel”, “Guest extras” and “Discounts” to change what guests are refunded,
+              what they can add, and the offers they see.
+            </Typography>
+          </SectionCard>
+        </Stack>
       )}
-    </Stack>
+    </Box>
   );
 }

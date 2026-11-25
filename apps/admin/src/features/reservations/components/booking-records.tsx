@@ -5,18 +5,21 @@
  */
 
 import type { StaffBookingChange, StaffCancellation, StaffRefund, StaffReservation } from '@resort-booking/shared-types';
-import { Box, Chip, Stack, Typography } from '@mui/material';
+import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
+import HistoryOutlinedIcon from '@mui/icons-material/HistoryOutlined';
+import ReplayOutlinedIcon from '@mui/icons-material/ReplayOutlined';
+import { Box, Stack, Typography } from '@mui/material';
 import {
   cancellationSummary,
   changeSummary,
   formatDateTime,
   initiatorLabel,
   refundKindLabel,
-  refundStatusColor,
-  refundStatusLabel,
   resolvedByHandText,
 } from '@/shared/utils/booking-labels';
+import { StatusChip } from '@/shared/components/status-chip';
 import { formatCents } from '@/shared/utils/money';
+import { refundStyle } from '@/shared/utils/status-style';
 import { StayBlock, StayFact } from './stay-block';
 
 interface CancellationBlockProps {
@@ -28,7 +31,7 @@ interface CancellationBlockProps {
  */
 export function CancellationBlock({ cancellation }: CancellationBlockProps): React.JSX.Element {
   return (
-    <StayBlock title="Cancellation">
+    <StayBlock title="Cancellation" icon={<CancelOutlinedIcon />} tone="error">
       <StayFact label="What happened" value={cancellationSummary(cancellation)} />
       <StayFact label="When" value={formatDateTime(cancellation.cancelledAt)} />
       <StayFact label="Note" value={cancellation.note === null || cancellation.note.trim() === '' ? 'No note' : cancellation.note} />
@@ -45,7 +48,7 @@ interface RefundsBlockProps {
  */
 export function RefundsBlock({ refunds }: RefundsBlockProps): React.JSX.Element {
   return (
-    <StayBlock title="Refunds">
+    <StayBlock title="Refunds" icon={<ReplayOutlinedIcon />} tone="secondary">
       {refunds.length === 0 ? (
         <Typography color="text.secondary">No refunds recorded</Typography>
       ) : (
@@ -56,7 +59,7 @@ export function RefundsBlock({ refunds }: RefundsBlockProps): React.JSX.Element 
                 <Typography sx={{ fontWeight: 600 }}>
                   {refundKindLabel(refund.kind)}: {formatCents(refund.amountCents, refund.currencyCode)} ({String(refund.percent)}%)
                 </Typography>
-                <Chip size="small" color={refundStatusColor(refund.status)} label={refundStatusLabel(refund.status)} />
+                <StatusChip status={refundStyle(refund.status)} />
               </Stack>
               <Typography variant="body2" color="text.secondary">
                 {refund.provider === 'manual' ? 'To be sent by hand' : `Via ${refund.provider}`} · asked by{' '}
@@ -85,7 +88,7 @@ interface HistoryBlockProps {
  */
 export function HistoryBlock({ stay }: HistoryBlockProps): React.JSX.Element {
   return (
-    <StayBlock title="History">
+    <StayBlock title="History" icon={<HistoryOutlinedIcon />} tone="info">
       {stay.replacedByReference !== null ? (
         <Typography>Replaced by {stay.replacedByReference}</Typography>
       ) : null}

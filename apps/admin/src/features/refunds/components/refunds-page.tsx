@@ -8,30 +8,37 @@
 
 import type { PropertySummary, StaffRefund } from '@resort-booking/shared-types';
 import ClearIcon from '@mui/icons-material/Clear';
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import ReplayOutlinedIcon from '@mui/icons-material/ReplayOutlined';
+import SearchOffOutlinedIcon from '@mui/icons-material/SearchOffOutlined';
 import {
   Alert,
   Box,
   Chip,
-  CircularProgress,
   IconButton,
   InputAdornment,
   MenuItem,
+  Paper,
   Select,
+  Skeleton,
   Snackbar,
   Stack,
   Table,
   TableBody,
   TableCell,
+  TableContainer,
   TableHead,
   TableRow,
   TextField,
-  Typography,
 } from '@mui/material';
 import { useEffect, useState } from 'react';
 import { fetchStaffProperties } from '@/features/property/services/staff-property-api';
-import { reasonLabel, refundKindLabel, refundStatusColor, refundStatusLabel } from '@/shared/utils/booking-labels';
+import { EmptyState } from '@/shared/components/empty-state';
+import { PageHeader } from '@/shared/components/page-header';
+import { StatusChip } from '@/shared/components/status-chip';
+import { reasonLabel, refundKindLabel } from '@/shared/utils/booking-labels';
 import { formatCents } from '@/shared/utils/money';
+import { refundStyle } from '@/shared/utils/status-style';
 import { useRefunds } from '../hooks/use-refunds';
 import { REFUND_FILTERS } from '../utils/refund-filters';
 import { MarkRefundPaidDialog } from './mark-refund-paid-dialog';
@@ -63,16 +70,14 @@ export function RefundsPage(): React.JSX.Element {
 
   return (
     <Box>
-      <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 1 }}>
-        <ReplayOutlinedIcon color="primary" />
-        <Typography variant="h4" component="h1">
-          Refunds
-        </Typography>
-      </Stack>
-      <Typography color="text.secondary" sx={{ mb: 3 }}>
-        Refunds that need a person. Retry one that failed, or send a hand refund yourself and mark it as done.
-      </Typography>
-      <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems={{ md: 'center' }} sx={{ mb: 2 }}>
+      <PageHeader
+        icon={<ReplayOutlinedIcon />}
+        tone="secondary"
+        title="Refunds"
+        description="Refunds that need a person. Retry one that failed, or send a hand refund yourself and mark it as done."
+      />
+      <Paper elevation={1} sx={{ p: 2, mb: 3, borderRadius: 2 }}>
+      <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems={{ md: 'center' }}>
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap role="group" aria-label="Filter refunds">
           {REFUND_FILTERS.map((option): React.JSX.Element => (
             <Chip
@@ -119,27 +124,31 @@ export function RefundsPage(): React.JSX.Element {
           }}
         />
       </Stack>
+      </Paper>
       {state.error !== null ? (
         <Alert severity="error" sx={{ mb: 2 }}>
           {state.error}
         </Alert>
       ) : null}
       {state.loading ? (
-        <Stack direction="row" spacing={1} alignItems="center" aria-label="Loading refunds">
-          <CircularProgress size={20} />
-          <Typography color="text.secondary">Loading refunds…</Typography>
+        <Stack spacing={1} aria-label="Loading refunds" aria-busy="true">
+          <Skeleton variant="rounded" height={44} />
+          <Skeleton variant="rounded" height={44} />
+          <Skeleton variant="rounded" height={44} />
         </Stack>
       ) : null}
       {!state.loading && state.error === null && state.visible.length === 0 ? (
-        <Typography color="text.secondary">
-          {state.total > 0
-            ? 'No refund matches your search.'
-            : state.filter === 'attention'
-              ? 'Nothing needs your attention.'
-              : 'No refunds here.'}
-        </Typography>
+        state.total > 0 ? (
+          <EmptyState icon={<SearchOffOutlinedIcon />} title="No refund matches your search." hint="Clear the search or pick another filter." />
+        ) : state.filter === 'attention' ? (
+          <EmptyState icon={<CheckCircleOutlineIcon />} title="Nothing needs your attention." hint="Failed refunds and refunds to send by hand show up here." />
+        ) : (
+          <EmptyState icon={<ReplayOutlinedIcon />} title="No refunds here." hint="Try another status filter." />
+        )
       ) : null}
       {!state.loading && state.visible.length > 0 ? (
+        <Paper elevation={1} sx={{ borderRadius: 2, overflow: 'hidden' }}>
+        <TableContainer>
         <Table size="small" aria-label="Refunds">
           <TableHead>
             <TableRow>
@@ -157,17 +166,17 @@ export function RefundsPage(): React.JSX.Element {
           <TableBody>
             {state.visible.map((refund: StaffRefund): React.JSX.Element => (
               <TableRow key={refund.id} hover sx={{ cursor: 'pointer' }} onClick={(): void => setOpenId(refund.id)}>
-                <TableCell>{refund.reference}</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>{refund.reference}</TableCell>
                 <TableCell>{refund.bookerName}</TableCell>
                 <TableCell>
                   {refund.stayName}, {refund.propertyName}
                 </TableCell>
-                <TableCell>
+                <TableCell sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
                   {formatCents(refund.amountCents, refund.currencyCode)} ({String(refund.percent)}%)
                 </TableCell>
                 <TableCell>{refundKindLabel(refund.kind)}</TableCell>
                 <TableCell>
-                  <Chip size="small" color={refundStatusColor(refund.status)} label={refundStatusLabel(refund.status)} />
+                  <StatusChip status={refundStyle(refund.status)} />
                 </TableCell>
                 <TableCell>{refund.provider === 'manual' ? 'By hand' : refund.provider}</TableCell>
                 <TableCell>{refund.failureReason ?? reasonLabel(refund.reason)}</TableCell>
@@ -176,6 +185,8 @@ export function RefundsPage(): React.JSX.Element {
             ))}
           </TableBody>
         </Table>
+        </TableContainer>
+        </Paper>
       ) : null}
       <RefundDetailDialog
         refund={open}

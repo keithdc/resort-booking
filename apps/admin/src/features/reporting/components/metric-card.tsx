@@ -4,13 +4,28 @@
  * @dependencies metric-info
  */
 
+import DonutLargeOutlinedIcon from '@mui/icons-material/DonutLargeOutlined';
+import EventAvailableOutlinedIcon from '@mui/icons-material/EventAvailableOutlined';
+import PaymentsOutlinedIcon from '@mui/icons-material/PaymentsOutlined';
+import SellOutlinedIcon from '@mui/icons-material/SellOutlined';
 import { Box, Paper, Typography } from '@mui/material';
+import type { ReactElement } from 'react';
+import { IconChip } from '@/shared/components/icon-chip';
+import type { AvatarTone } from '@/shared/utils/avatar-color';
 import type { GlanceCard } from '../utils/glance-cards';
 import { MetricInfo } from './metric-info';
 
 interface MetricCardProps {
   card: GlanceCard;
 }
+
+/** A distinct hue and icon per headline number; the label always says the same thing in words. */
+const CARD_LOOK: Record<GlanceCard['key'], { tone: AvatarTone; icon: ReactElement }> = {
+  revenue: { tone: 'success', icon: <PaymentsOutlinedIcon /> },
+  bookings: { tone: 'primary', icon: <EventAvailableOutlinedIcon /> },
+  occupancy: { tone: 'info', icon: <DonutLargeOutlinedIcon /> },
+  averageNightlyRate: { tone: 'secondary', icon: <SellOutlinedIcon /> },
+};
 
 const CHANGE_COLOR: Record<GlanceCard['change']['direction'], string> = {
   up: 'success.main',
@@ -25,13 +40,20 @@ const CHANGE_COLOR: Record<GlanceCard['change']['direction'], string> = {
  */
 export function MetricCard({ card }: MetricCardProps): React.JSX.Element {
   const { change } = card;
+  const look = CARD_LOOK[card.key];
   return (
-    <Paper variant="outlined" sx={{ p: 3, borderRadius: 2, height: '100%', breakInside: 'avoid' }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-        <Typography variant="overline" color="text.secondary" component="h3" sx={{ lineHeight: 1.6 }}>
-          {card.label}
-        </Typography>
-        <MetricInfo metric={card.metric} />
+    <Paper
+      elevation={1}
+      sx={{ p: 3, borderRadius: 2, height: '100%', breakInside: 'avoid', borderTop: 4, borderColor: `${look.tone}.main` }}
+    >
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+          <Typography variant="overline" color="text.secondary" component="h3" sx={{ lineHeight: 1.6 }}>
+            {card.label}
+          </Typography>
+          <MetricInfo metric={card.metric} />
+        </Box>
+        <IconChip icon={look.icon} tone={look.tone} size={36} />
       </Box>
       <Typography variant="h4" component="p" sx={{ fontWeight: 600, mt: 1, mb: 1.5 }}>
         {card.value}

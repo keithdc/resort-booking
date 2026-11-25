@@ -27,12 +27,15 @@ import {
 import type { StaffReport, StaffReservation } from '@resort-booking/shared-types';
 import { useMemo, useState } from 'react';
 import { StayDetailDialog } from '@/features/reservations/components/stay-detail-dialog';
+import { StatusChip, statusIcon } from '@/shared/components/status-chip';
+import { bookingFilterStyle } from '@/shared/utils/status-style';
 import { formatCents } from '@/shared/utils/money';
 import { formatIsoDate } from '@/shared/utils/format-date';
 import { countByStatus, filterBookings, withReportRefunds } from '../utils/bookings-filter';
 import {
   BOOKING_STATUS_OPTIONS,
   bookingNights,
+  bookingStatusKey,
   bookingStatusLabel,
   paymentMethodLabel,
   type BookingStatusKey,
@@ -113,6 +116,7 @@ export function BookingsTab({ report, status, onStatusChange, onChanged }: Booki
           {BOOKING_STATUS_OPTIONS.map((option): React.JSX.Element => (
             <Chip
               key={option.value}
+              icon={statusIcon(bookingFilterStyle(option.value).icon)}
               label={`${option.label} (${counts[option.value]})`}
               color={status === option.value ? 'primary' : 'default'}
               variant={status === option.value ? 'filled' : 'outlined'}
@@ -174,7 +178,9 @@ export function BookingsTab({ report, status, onStatusChange, onChanged }: Booki
                     <TableCell align="right">{row.guestCount}</TableCell>
                     <TableCell align="right">{formatCents(row.totalCents, row.currencyCode)}</TableCell>
                     <TableCell>{paymentMethodLabel(row.paymentMethod)}</TableCell>
-                    <TableCell>{bookingStatusLabel(row)}</TableCell>
+                    <TableCell>
+                      <StatusChip status={bookingFilterStyle(bookingStatusKey(row))} label={bookingStatusLabel(row)} />
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>

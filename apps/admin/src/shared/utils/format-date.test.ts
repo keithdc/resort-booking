@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { formatIsoDate } from './format-date';
+import { formatIsoDate, formatShortDate } from './format-date';
 
 describe('formatIsoDate', () => {
   it('formats a calendar date for staff', () => {
@@ -19,5 +19,13 @@ describe('formatIsoDate', () => {
   it('returns unreadable input unchanged', () => {
     expect(formatIsoDate('soon')).toBe('soon');
     expect(formatIsoDate('')).toBe('');
+  });
+});
+
+describe('formatShortDate', () => {
+  it('drops the year for dense rows and leaves bad input readable', () => {
+    expect(formatShortDate('2026-11-25')).toBe('25 Nov');
+    expect(formatShortDate('2027-01-01')).toBe('1 Jan');
+    expect(formatShortDate('nonsense')).toBe('nonsense');
   });
 });

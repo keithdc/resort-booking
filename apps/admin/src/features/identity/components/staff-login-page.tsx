@@ -8,7 +8,7 @@
 
 import type { FormEvent } from 'react';
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
-import { Alert, Box, Button, Stack, TextField, Typography } from '@mui/material';
+import { Alert, Box, Button, Paper, Stack, TextField, Typography } from '@mui/material';
 import { EmailField, isValidEmail } from '@resort-booking/ui/contact';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
@@ -44,8 +44,35 @@ export function StaffLoginPage(): React.JSX.Element {
   };
 
   return (
-    <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', p: 2 }}>
-      <Box sx={{ width: '100%', maxWidth: 420, border: 1, borderColor: 'divider', borderRadius: 1, p: 4 }}>
+    <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', p: 2, bgcolor: 'primary.dark' }}>
+      <Paper elevation={6} sx={{ width: '100%', maxWidth: 440, borderRadius: 2, p: 4 }}>
+        <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 3 }}>
+          <Box
+            aria-hidden
+            sx={{
+              width: 44,
+              height: 44,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: 2,
+              bgcolor: 'secondary.main',
+              color: 'secondary.contrastText',
+              fontWeight: 800,
+              fontSize: 24,
+            }}
+          >
+            H
+          </Box>
+          <Box>
+            <Typography variant="subtitle1" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
+              Humphreys
+            </Typography>
+            <Typography variant="overline" color="text.secondary" sx={{ lineHeight: 1.4 }}>
+              Staff
+            </Typography>
+          </Box>
+        </Stack>
         <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 1 }}>
           <LockOutlinedIcon color="primary" />
           <Typography variant="h4" component="h1">
@@ -76,7 +103,7 @@ export function StaffLoginPage(): React.JSX.Element {
             {pending ? 'Signing in…' : 'Sign in'}
           </Button>
         </Stack>
-      </Box>
+      </Paper>
     </Box>
   );
 }

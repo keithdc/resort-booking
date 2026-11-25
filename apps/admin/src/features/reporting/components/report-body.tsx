@@ -6,7 +6,13 @@
 
 'use client';
 
-import { Box, Tab, Tabs, Typography } from '@mui/material';
+import AccountBalanceWalletOutlinedIcon from '@mui/icons-material/AccountBalanceWalletOutlined';
+import EventAvailableOutlinedIcon from '@mui/icons-material/EventAvailableOutlined';
+import HolidayVillageOutlinedIcon from '@mui/icons-material/HolidayVillageOutlined';
+import InsightsOutlinedIcon from '@mui/icons-material/InsightsOutlined';
+import ReplayOutlinedIcon from '@mui/icons-material/ReplayOutlined';
+import { Box, Paper, Tab, Tabs, Typography } from '@mui/material';
+import type { ReactElement } from 'react';
 import type { StaffReport } from '@resort-booking/shared-types';
 import { TAB_PURPOSES, type ReportTabKey } from '../utils/metric-definitions';
 import type { BookingStatusKey } from '../utils/report-labels';
@@ -17,6 +23,14 @@ import { OverviewTab } from './overview-tab';
 import { PaymentsTab } from './payments-tab';
 import { PropertiesTab } from './properties-tab';
 import type { ReportDetail } from './report-detail-dialog';
+
+const TAB_ICONS: Record<ReportTabKey, ReactElement> = {
+  overview: <InsightsOutlinedIcon />,
+  properties: <HolidayVillageOutlinedIcon />,
+  bookings: <EventAvailableOutlinedIcon />,
+  cancellations: <ReplayOutlinedIcon />,
+  payments: <AccountBalanceWalletOutlinedIcon />,
+};
 
 interface ReportBodyProps {
   report: StaffReport;
@@ -44,18 +58,20 @@ export function ReportBody({
   return (
     <Box>
       <Box data-print="hide">
+        <Paper elevation={1} sx={{ borderRadius: 2 }}>
         <Tabs
           value={tab}
           onChange={(_event, next: ReportTabKey): void => onTabChange(next)}
           variant="scrollable"
           scrollButtons="auto"
           aria-label="Report sections"
-          sx={{ borderBottom: 1, borderColor: 'divider' }}
+          sx={{ px: 1 }}
         >
           {REPORT_TABS.map((option): React.JSX.Element => (
-            <Tab key={option.key} value={option.key} label={option.label} id={`report-tab-${option.key}`} aria-controls={`report-panel-${option.key}`} sx={{ textTransform: 'none' }} />
+            <Tab key={option.key} value={option.key} icon={TAB_ICONS[option.key]} iconPosition="start" label={option.label} id={`report-tab-${option.key}`} aria-controls={`report-panel-${option.key}`} sx={{ textTransform: 'none' }} />
           ))}
         </Tabs>
+        </Paper>
         <Typography color="text.secondary" sx={{ mt: 3, mb: 4, maxWidth: 680, lineHeight: 1.6 }}>
           {TAB_PURPOSES[tab]}
         </Typography>

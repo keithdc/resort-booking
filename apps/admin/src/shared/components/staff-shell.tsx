@@ -1,163 +1,127 @@
 /**
  * @file apps/admin/src/shared/components/staff-shell.tsx
- * @shared Admin sidebar and top bar
- * @dependencies @mui/material
+ * @shared Admin layout: sidebar (rail or full), mobile drawer, page area
+ * @dependencies @mui/material, staff-sidebar
  */
 
 'use client';
 
-import AccountCircleOutlinedIcon from '@mui/icons-material/AccountCircleOutlined';
-import AssessmentOutlinedIcon from '@mui/icons-material/AssessmentOutlined';
-import CalendarMonthOutlinedIcon from '@mui/icons-material/CalendarMonthOutlined';
-import HolidayVillageOutlinedIcon from '@mui/icons-material/HolidayVillageOutlined';
-import ReplayOutlinedIcon from '@mui/icons-material/ReplayOutlined';
-import LogoutOutlinedIcon from '@mui/icons-material/LogoutOutlined';
-import {
-  AppBar,
-  Box,
-  Button,
-  Drawer,
-  List,
-  ListItemButton,
-  ListItemIcon,
-  ListItemText,
-  Toolbar,
-  Typography,
-} from '@mui/material';
+import MenuIcon from '@mui/icons-material/Menu';
+import { AppBar, Box, Drawer, IconButton, Toolbar, Typography } from '@mui/material';
 import { BlurFade } from '@resort-booking/ui';
-import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import type { ReactNode } from 'react';
-import { clearStaffSession } from '@/shared/services/api-client';
+import { useState, type ReactNode } from 'react';
 import { logoutStaff } from '@/features/identity/services/staff-identity-api';
-
-const DRAWER_WIDTH = 280;
+import { useSidebarCollapsed } from '@/shared/hooks/use-sidebar-collapsed';
+import { useSidebarData } from '@/shared/hooks/use-sidebar-data';
+import { clearStaffSession } from '@/shared/services/api-client';
+import { SIDEBAR_RAIL_WIDTH, SIDEBAR_WIDTH, StaffSidebar } from './staff-sidebar';
 
 interface StaffShellProps {
   children: ReactNode;
 }
 
-interface NavItem {
-  href: string;
-  label: string;
-  hint: string;
-  icon: typeof CalendarMonthOutlinedIcon;
-}
-
-const NAV: NavItem[] = [
-  { href: '/', label: 'Calendar', hint: 'Who is staying', icon: CalendarMonthOutlinedIcon },
-  { href: '/properties', label: 'Properties', hint: 'Places and stays', icon: HolidayVillageOutlinedIcon },
-  { href: '/configuration', label: 'Account', hint: 'Owner, emails, bank', icon: AccountCircleOutlinedIcon },
-  { href: '/refunds', label: 'Refunds', hint: 'Money to send back', icon: ReplayOutlinedIcon },
-  { href: '/reports', label: 'Reports', hint: 'Nights and revenue', icon: AssessmentOutlinedIcon },
-];
-
 /**
- * Quiet staff chrome. Properties live on their own page, not duplicated here.
+ * Staff chrome. Desktop: a sidebar that can fold to an icon rail (remembered). Phone and tablet:
+ * a slim top bar with a menu button that opens the same sidebar as a drawer.
  */
 export function StaffShell({ children }: StaffShellProps): React.JSX.Element {
   const pathname = usePathname();
   const router = useRouter();
+  const { collapsed, toggle } = useSidebarCollapsed();
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const isLogin = pathname === '/login';
+  const { profile, refundsWaiting } = useSidebarData(!isLogin);
 
-  if (pathname === '/login') {
+  if (isLogin) {
     return <>{children}</>;
   }
 
-  const onLogout = async (): Promise<void> => {
-    try {
-      await logoutStaff();
-    } catch {
-      // Cookie/local session still cleared below.
-    }
-    await clearStaffSession();
-    router.replace('/login');
-    router.refresh();
+  const onLogout = (): void => {
+    void (async (): Promise<void> => {
+      try {
+        await logoutStaff();
+      } catch {
+        // Cookie/local session still cleared below.
+      }
+      await clearStaffSession();
+      router.replace('/login');
+      router.refresh();
+    })();
   };
+
+  const railWidth = collapsed ? SIDEBAR_RAIL_WIDTH : SIDEBAR_WIDTH;
 
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh' }}>
       <AppBar
         position="fixed"
-        color="inherit"
         elevation={0}
-        sx={{
-          borderBottom: 1,
-          borderColor: 'divider',
-          width: { sm: `calc(100% - ${DRAWER_WIDTH}px)` },
-          ml: { sm: `${DRAWER_WIDTH}px` },
-        }}
+        sx={{ display: { md: 'none' }, bgcolor: 'primary.dark', color: 'primary.contrastText' }}
+        data-print="hide"
       >
-        <Toolbar sx={{ justifyContent: 'space-between', px: { xs: 2, md: 4 } }}>
-          <Box>
-            <Typography variant="subtitle1" component="div" sx={{ lineHeight: 1.2 }}>
-              Humphreys staff
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              Direct booking
-            </Typography>
-          </Box>
-          <Button
-            color="inherit"
-            startIcon={<LogoutOutlinedIcon />}
-            onClick={(): void => {
-              void onLogout();
-            }}
-          >
-            Sign out
-          </Button>
+        <Toolbar>
+          <IconButton color="inherit" edge="start" aria-label="Open menu" onClick={(): void => setDrawerOpen(true)} sx={{ mr: 1 }}>
+            <MenuIcon />
+          </IconButton>
+          <Typography variant="subtitle1" component="div" sx={{ fontWeight: 700 }}>
+            Humphreys staff
+          </Typography>
         </Toolbar>
       </AppBar>
+
       <Drawer
         variant="permanent"
+        data-print="hide"
         sx={{
-          width: DRAWER_WIDTH,
+          display: { xs: 'none', md: 'block' },
+          width: railWidth,
           flexShrink: 0,
+          transition: 'width 150ms',
           '& .MuiDrawer-paper': {
-            width: DRAWER_WIDTH,
+            width: railWidth,
             boxSizing: 'border-box',
-            borderRight: 1,
-            borderColor: 'divider',
-            bgcolor: 'background.default',
-            px: 1.5,
+            border: 0,
+            overflowX: 'hidden',
+            transition: 'width 150ms',
           },
         }}
       >
-        <Toolbar />
-        <List sx={{ pt: 3 }}>
-          {NAV.map((item): React.JSX.Element => {
-            const selected =
-              item.href === '/'
-                ? pathname === '/'
-                : item.href === '/properties'
-                  ? pathname.startsWith('/properties')
-                  : pathname.startsWith(item.href);
-            const Icon = item.icon;
-            return (
-              <ListItemButton
-                key={item.href}
-                component={Link}
-                href={item.href}
-                selected={selected}
-                sx={{ borderRadius: 1, mb: 1, py: 1.25 }}
-              >
-                <ListItemIcon sx={{ minWidth: 40, color: selected ? 'primary.main' : 'text.secondary' }}>
-                  <Icon />
-                </ListItemIcon>
-                <ListItemText primary={item.label} secondary={item.hint} />
-              </ListItemButton>
-            );
-          })}
-        </List>
+        <StaffSidebar
+          pathname={pathname}
+          collapsed={collapsed}
+          onToggleCollapsed={toggle}
+          profile={profile}
+          refundsWaiting={refundsWaiting}
+          onLogout={onLogout}
+        />
       </Drawer>
+      <Drawer
+        variant="temporary"
+        open={drawerOpen}
+        onClose={(): void => setDrawerOpen(false)}
+        ModalProps={{ keepMounted: false }}
+        sx={{ display: { xs: 'block', md: 'none' }, '& .MuiDrawer-paper': { width: SIDEBAR_WIDTH, border: 0 } }}
+      >
+        <StaffSidebar
+          pathname={pathname}
+          collapsed={false}
+          profile={profile}
+          refundsWaiting={refundsWaiting}
+          onLogout={onLogout}
+          onNavigate={(): void => setDrawerOpen(false)}
+        />
+      </Drawer>
+
       <Box
         component="main"
         sx={{
           flexGrow: 1,
-          width: { sm: `calc(100% - ${DRAWER_WIDTH}px)` },
-          px: { xs: 3, md: 6 },
+          minWidth: 0,
+          px: { xs: 2, sm: 3, md: 6 },
           py: { xs: 3, md: 5 },
-          mt: 8,
-          maxWidth: 1280,
+          mt: { xs: 7, md: 0 },
+          maxWidth: 1360,
         }}
       >
         <BlurFade inView={false}>{children}</BlurFade>

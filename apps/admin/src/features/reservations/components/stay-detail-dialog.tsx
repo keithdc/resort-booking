@@ -6,6 +6,15 @@
 
 'use client';
 
+import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
+import ChecklistOutlinedIcon from '@mui/icons-material/ChecklistOutlined';
+import CloseIcon from '@mui/icons-material/Close';
+import EventNoteOutlinedIcon from '@mui/icons-material/EventNoteOutlined';
+import EventRepeatOutlinedIcon from '@mui/icons-material/EventRepeatOutlined';
+import LoginOutlinedIcon from '@mui/icons-material/LoginOutlined';
+import LogoutOutlinedIcon from '@mui/icons-material/LogoutOutlined';
+import PaymentsOutlinedIcon from '@mui/icons-material/PaymentsOutlined';
+import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
 import type { ArrivalStatus, StaffReservation } from '@resort-booking/shared-types';
 import {
   Alert,
@@ -16,17 +25,22 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  IconButton,
   Link as MuiLink,
   Snackbar,
   Stack,
   Typography,
 } from '@mui/material';
 import { useEffect, useState } from 'react';
+import { StatusChip } from '@/shared/components/status-chip';
+import { UserAvatar } from '@/shared/components/user-avatar';
 import { ApiRequestError } from '@/shared/services/api-client';
+import { formatIsoDate } from '@/shared/utils/format-date';
+import { stayStatusStyle } from '@/shared/utils/status-style';
 import { formatDateTime } from '@/shared/utils/booking-labels';
 import { formatCents } from '@/shared/utils/money';
 import { patchStaffReservationArrival } from '../services/staff-reservations-api';
-import { todayLocalIso } from '../utils/dates';
+import { nightsBetween, todayLocalIso } from '../utils/dates';
 import { canCancelStay, canChangeStayDates, cancelNotice, changeNotice } from '../utils/stay-actions';
 import { CancellationBlock, HistoryBlock, RefundsBlock } from './booking-records';
 import { StaffCancelDialog } from './staff-cancel-dialog';
@@ -92,17 +106,25 @@ export function StayDetailDialog({ stay, onClose, onUpdated, onChanged }: StayDe
       <Dialog open={stay !== null} onClose={onClose} fullWidth maxWidth="md">
         {stay !== null ? (
           <>
-            <DialogTitle sx={{ pb: 1 }}>
-              <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-                <Typography variant="h5" component="span">
-                  {stay.bookerName}
-                </Typography>
-                <Chip size="small" color={statusColor(stay)} label={statusLabel(stay)} />
-                <Chip size="small" variant="outlined" label={stay.reference} />
+            <DialogTitle sx={{ pb: 1.5, pr: 7 }}>
+              <Stack direction="row" spacing={2} alignItems="center">
+                <UserAvatar name={stay.bookerName} size={52} />
+                <Box sx={{ minWidth: 0 }}>
+                  <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                    <Typography variant="h5" component="span">
+                      {stay.bookerName}
+                    </Typography>
+                    <StatusChip status={stayStatusStyle(stay)} label={statusLabel(stay)} />
+                    <Chip size="small" variant="outlined" label={stay.reference} />
+                  </Stack>
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                    {stay.houseName} at {stay.propertyName}
+                  </Typography>
+                </Box>
               </Stack>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                {stay.houseName} at {stay.propertyName}
-              </Typography>
+              <IconButton aria-label="Close booking" onClick={onClose} sx={{ position: 'absolute', right: 12, top: 12 }}>
+                <CloseIcon />
+              </IconButton>
             </DialogTitle>
             <DialogContent>
               {error !== null ? (
@@ -110,15 +132,31 @@ export function StayDetailDialog({ stay, onClose, onUpdated, onChanged }: StayDe
                   {error}
                 </Alert>
               ) : null}
+              <SummaryStrip stay={stay} />
               <Box
                 sx={{
                   display: 'grid',
                   gap: 2,
                   gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
-                  pt: 1,
+                  pt: 2,
                 }}
               >
-                <StayBlock title="Booking">
+                <StayBlock title="Guest" icon={<PersonOutlineIcon />} tone="primary">
+                  <StayFact label="Name" value={stay.bookerName} />
+                  <Box>
+                    <Typography variant="caption" color="text.secondary" display="block" sx={{ textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
+                      Email
+                    </Typography>
+                    <MuiLink href={`mailto:${stay.bookerEmail}`}>{stay.bookerEmail}</MuiLink>
+                  </Box>
+                  <Box>
+                    <Typography variant="caption" color="text.secondary" display="block" sx={{ textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
+                      Phone
+                    </Typography>
+                    <MuiLink href={`tel:${stay.bookerPhone}`}>{stay.bookerPhone}</MuiLink>
+                  </Box>
+                </StayBlock>
+                <StayBlock title="Booking" icon={<EventNoteOutlinedIcon />} tone="info">
                   <StayFact label="Check-in" value={stay.checkIn} />
                   <StayFact label="Check-out" value={stay.checkOut} />
                   <StayFact label="Arrival" value={arrivalLabel(stay.arrivalStatus)} />
@@ -134,28 +172,13 @@ export function StayDetailDialog({ stay, onClose, onUpdated, onChanged }: StayDe
                     }
                   />
                 </StayBlock>
-                <StayBlock title="Guest">
-                  <StayFact label="Name" value={stay.bookerName} />
-                  <Box>
-                    <Typography variant="caption" color="text.secondary" display="block">
-                      Email
-                    </Typography>
-                    <MuiLink href={`mailto:${stay.bookerEmail}`}>{stay.bookerEmail}</MuiLink>
-                  </Box>
-                  <Box>
-                    <Typography variant="caption" color="text.secondary" display="block">
-                      Phone
-                    </Typography>
-                    <MuiLink href={`tel:${stay.bookerPhone}`}>{stay.bookerPhone}</MuiLink>
-                  </Box>
-                </StayBlock>
-                <StayBlock title="Payment">
+                <StayBlock title="Payment" icon={<PaymentsOutlinedIcon />} tone="success">
                   <StayFact label="Method" value={paymentLabel(stay)} />
                   <StayFact label="Total" value={formatCents(stay.totalCents, stay.currencyCode)} />
                   <StayFact label="Paid so far" value={formatCents(stay.paidCents, stay.currencyCode)} />
                   <StayFact label="Record" value={stay.kind === 'hold' ? 'Hold (not yet a booking)' : 'Reservation'} />
                 </StayBlock>
-                <StayBlock title="Requests and note">
+                <StayBlock title="Requests and note" icon={<ChecklistOutlinedIcon />} tone="secondary">
                   <Box>
                     <Typography variant="caption" color="text.secondary" display="block">
                       Other requests
@@ -184,40 +207,46 @@ export function StayDetailDialog({ stay, onClose, onUpdated, onChanged }: StayDe
                 {stay.kind === 'reservation' ? <HistoryBlock stay={stay} /> : null}
               </Box>
             </DialogContent>
-            <DialogActions>
-              {canCancel ? (
-                <Button color="error" disabled={pending !== null} onClick={(): void => setCancelOpen(true)}>
-                  Cancel booking
-                </Button>
-              ) : null}
-              {canChange ? (
-                <Button disabled={pending !== null} onClick={(): void => setChangeOpen(true)}>
-                  Change dates
-                </Button>
-              ) : null}
-              {canCheckIn ? (
-                <Button
-                  variant="contained"
-                  disabled={pending !== null}
-                  onClick={(): void => {
-                    void setArrival('checked_in');
-                  }}
-                >
-                  {pending === 'checked_in' ? 'Checking in…' : 'Check in'}
-                </Button>
-              ) : null}
-              {canCheckOut && stay.arrivalStatus !== 'checked_out' ? (
-                <Button
-                  variant={canCheckIn ? 'outlined' : 'contained'}
-                  disabled={pending !== null}
-                  onClick={(): void => {
-                    void setArrival('checked_out');
-                  }}
-                >
-                  {pending === 'checked_out' ? 'Checking out…' : 'Check out'}
-                </Button>
-              ) : null}
-              <Button onClick={onClose}>Close</Button>
+            <DialogActions sx={{ px: 3, py: 2, justifyContent: 'space-between', flexWrap: 'wrap', gap: 1, borderTop: 1, borderColor: 'divider' }}>
+              <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                {canCancel ? (
+                  <Button color="error" variant="outlined" startIcon={<CancelOutlinedIcon />} disabled={pending !== null} onClick={(): void => setCancelOpen(true)}>
+                    Cancel booking
+                  </Button>
+                ) : null}
+                {canChange ? (
+                  <Button variant="outlined" startIcon={<EventRepeatOutlinedIcon />} disabled={pending !== null} onClick={(): void => setChangeOpen(true)}>
+                    Change dates
+                  </Button>
+                ) : null}
+              </Stack>
+              <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                {canCheckIn ? (
+                  <Button
+                    variant="contained"
+                    startIcon={<LoginOutlinedIcon />}
+                    disabled={pending !== null}
+                    onClick={(): void => {
+                      void setArrival('checked_in');
+                    }}
+                  >
+                    {pending === 'checked_in' ? 'Checking in…' : 'Check in'}
+                  </Button>
+                ) : null}
+                {canCheckOut && stay.arrivalStatus !== 'checked_out' ? (
+                  <Button
+                    variant={canCheckIn ? 'outlined' : 'contained'}
+                    startIcon={<LogoutOutlinedIcon />}
+                    disabled={pending !== null}
+                    onClick={(): void => {
+                      void setArrival('checked_out');
+                    }}
+                  >
+                    {pending === 'checked_out' ? 'Checking out…' : 'Check out'}
+                  </Button>
+                ) : null}
+                <Button onClick={onClose}>Close</Button>
+              </Stack>
             </DialogActions>
           </>
         ) : null}
@@ -300,21 +329,48 @@ function statusLabel(stay: StaffReservation): string {
   return stay.status;
 }
 
-function statusColor(stay: StaffReservation): 'success' | 'warning' | 'info' | 'error' | 'default' {
-  if (stay.rebookOfId !== null && stay.status !== 'cancelled' && stay.status !== 'released') {
-    return 'info';
-  }
-  if (stay.status === 'confirmed' && stay.arrivalStatus === 'checked_out') {
-    return 'default';
-  }
-  if (stay.status === 'confirmed') {
-    return 'success';
-  }
-  if (stay.status === 'active') {
-    return 'warning';
-  }
-  if (stay.status === 'cancelled' || stay.status === 'released' || stay.status === 'expired') {
-    return 'error';
-  }
-  return 'default';
+interface SummaryStripProps {
+  stay: StaffReservation;
+}
+
+/**
+ * The four things staff look for first: dates, guests, money and arrival, as big tiles above the details.
+ */
+function SummaryStrip({ stay }: SummaryStripProps): React.JSX.Element {
+  const nights = nightsBetween(stay.checkIn, stay.checkOut);
+  const tiles: Array<{ label: string; value: string; note: string }> = [
+    {
+      label: 'Dates',
+      value: `${formatIsoDate(stay.checkIn)} → ${formatIsoDate(stay.checkOut)}`,
+      note: `${String(nights)} ${nights === 1 ? 'night' : 'nights'}`,
+    },
+    { label: 'Guests', value: String(stay.guestCount), note: stay.guestCount === 1 ? 'person' : 'people' },
+    {
+      label: 'Total',
+      value: formatCents(stay.totalCents, stay.currencyCode),
+      note: `${formatCents(stay.paidCents, stay.currencyCode)} paid`,
+    },
+    { label: 'Arrival', value: arrivalLabel(stay.arrivalStatus), note: paymentLabel(stay) },
+  ];
+  return (
+    <Box
+      component="dl"
+      aria-label="Booking summary"
+      sx={{ display: 'grid', gap: 1.5, m: 0, gridTemplateColumns: { xs: '1fr 1fr', md: '1.6fr 0.7fr 1fr 1fr' } }}
+    >
+      {tiles.map((tile): React.JSX.Element => (
+        <Box key={tile.label} sx={{ px: 1.75, py: 1.25, borderRadius: 2, bgcolor: 'action.hover', border: 1, borderColor: 'divider' }}>
+          <Typography component="dt" variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
+            {tile.label}
+          </Typography>
+          <Typography component="dd" variant="subtitle1" sx={{ m: 0, fontWeight: 700 }}>
+            {tile.value}
+          </Typography>
+          <Typography component="dd" variant="caption" color="text.secondary" sx={{ m: 0 }}>
+            {tile.note}
+          </Typography>
+        </Box>
+      ))}
+    </Box>
+  );
 }

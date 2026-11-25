@@ -4,17 +4,19 @@
  * @dependencies @mui/material
  */
 
-import { createTheme, type Theme } from '@mui/material/styles';
+import { createTheme, type Theme, type ThemeOptions } from '@mui/material/styles';
+import { adminThemeOptions } from './admin-theme-options';
 
 export type AppSurface = 'guest' | 'admin';
 
 /**
- * Builds the shared MUI theme. Guest uses a warmer paper; admin stays quieter.
+ * Builds the shared MUI theme. Guest uses a warmer paper. Admin layers its own, more confident tokens
+ * (`admin-theme-options.ts`) on top; the guest theme is unchanged by them.
  */
 export function createAppTheme(surface: AppSurface): Theme {
   const isGuest = surface === 'guest';
 
-  return createTheme({
+  const base: ThemeOptions = {
     shape: {
       borderRadius: 8,
     },
@@ -87,5 +89,7 @@ export function createAppTheme(surface: AppSurface): Theme {
         },
       },
     },
-  });
+  };
+
+  return isGuest ? createTheme(base) : createTheme(base, adminThemeOptions());
 }

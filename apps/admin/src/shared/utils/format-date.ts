@@ -14,3 +14,14 @@ export function formatIsoDate(isoDate: string): string {
   }
   return new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(date);
 }
+
+/**
+ * "25 Nov" from an ISO date, for dense rows (the full date with the year goes in the tooltip).
+ */
+export function formatShortDate(isoDate: string): string {
+  const date = new Date(`${isoDate}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) {
+    return isoDate;
+  }
+  return new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }).format(date);
+}

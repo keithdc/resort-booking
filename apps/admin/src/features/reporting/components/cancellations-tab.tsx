@@ -4,12 +4,14 @@
  * @dependencies cancellation-summary
  */
 
-import { Box, Chip, Link as MuiLink, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Typography } from '@mui/material';
+import { Box, Link as MuiLink, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Typography } from '@mui/material';
 import type { StaffRefund, StaffReport } from '@resort-booking/shared-types';
 import NextLink from 'next/link';
-import { reasonLabel, refundStatusColor, refundStatusLabel } from '@/shared/utils/booking-labels';
+import { StatusChip } from '@/shared/components/status-chip';
+import { reasonLabel } from '@/shared/utils/booking-labels';
 import { formatIsoDate } from '@/shared/utils/format-date';
 import { formatCents } from '@/shared/utils/money';
+import { refundStyle } from '@/shared/utils/status-style';
 import { summarizeCancellations, type ReasonBar } from '../utils/cancellation-summary';
 import type { MetricKey } from '../utils/metric-definitions';
 import { MetricInfo } from './metric-info';
@@ -116,7 +118,7 @@ export function CancellationsTab({ report }: CancellationsTabProps): React.JSX.E
                       {formatCents(refund.amountCents, refund.currencyCode)} ({refund.percent}%)
                     </TableCell>
                     <TableCell>
-                      <Chip size="small" label={refundStatusLabel(refund.status)} color={refundStatusColor(refund.status)} variant="outlined" />
+                      <StatusChip status={refundStyle(refund.status)} />
                     </TableCell>
                     <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatIsoDate(refund.createdAt.slice(0, 10))}</TableCell>
                   </TableRow>

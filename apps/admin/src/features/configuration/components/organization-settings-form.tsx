@@ -6,32 +6,44 @@
 
 'use client';
 
+import AccountBalanceOutlinedIcon from '@mui/icons-material/AccountBalanceOutlined';
+import AlternateEmailOutlinedIcon from '@mui/icons-material/AlternateEmailOutlined';
+import StorefrontOutlinedIcon from '@mui/icons-material/StorefrontOutlined';
 import type { OrganizationSettings } from '@resort-booking/shared-types';
-import { Alert, Button, Card, CardContent, Snackbar, Stack, TextField, Typography } from '@mui/material';
+import { Alert, Box, Snackbar, Stack, TextField } from '@mui/material';
 import { EmailField, isValidEmail, isValidPhone, PhoneField } from '@resort-booking/ui/contact';
 import { useState } from 'react';
-import { ApiRequestError } from '@/shared/services/api-client';
 import { saveOrganizationSettings } from '@/features/property/services/staff-property-api';
+import { SectionCard } from '@/shared/components/section-card';
+import { ApiRequestError } from '@/shared/services/api-client';
+import { isFormDirty, organizationProblem } from '../utils/form-dirty';
+import { SaveBar } from './save-bar';
 
 interface OrganizationSettingsFormProps {
   initial: OrganizationSettings;
 }
 
+const TWO_COLUMNS = { display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' } } as const;
+
 /**
- * Org-wide legal identity and bank details for transfers.
+ * Org-wide identity, the emails and phone guests see, and the legal and bank details for transfers:
+ * three cards, one form, one sticky save bar.
  */
 export function OrganizationSettingsForm({ initial }: OrganizationSettingsFormProps): React.JSX.Element {
+  const [saved, setSaved] = useState<OrganizationSettings>(initial);
   const [form, setForm] = useState<OrganizationSettings>(initial);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
+  const [notice, setNotice] = useState(false);
+
+  const set = (patch: Partial<OrganizationSettings>): void => {
+    setForm((current): OrganizationSettings => ({ ...current, ...patch }));
+  };
 
   // The phone is optional; the three inboxes are required. The API re-checks all of it.
-  const contactValid =
-    isValidEmail(form.bookingEmail) &&
-    isValidEmail(form.guestReplyEmail) &&
-    isValidEmail(form.contactEmail) &&
-    (form.contactPhone === '' || isValidPhone(form.contactPhone));
+  const emailsValid = isValidEmail(form.bookingEmail) && isValidEmail(form.guestReplyEmail) && isValidEmail(form.contactEmail);
+  const phoneValid = form.contactPhone === '' || isValidPhone(form.contactPhone);
+  const problem = organizationProblem({ emailsValid, phoneValid });
 
   const onSave = async (): Promise<void> => {
     setPending(true);
@@ -51,8 +63,9 @@ export function OrganizationSettingsForm({ initial }: OrganizationSettingsFormPr
         bookingEmail: form.bookingEmail,
         guestReplyEmail: form.guestReplyEmail,
       });
+      setSaved(next);
       setForm(next);
-      setSaved(true);
+      setNotice(true);
     } catch (err: unknown) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not save organization');
     } finally {
@@ -63,132 +76,87 @@ export function OrganizationSettingsForm({ initial }: OrganizationSettingsFormPr
   return (
     <Stack spacing={3}>
       {error !== null ? <Alert severity="error">{error}</Alert> : null}
-      <Card>
-        <CardContent>
-          <Typography variant="overline" color="secondary.main">
-            2 · Guest contact
-          </Typography>
-          <Typography variant="h6" gutterBottom>
-            Emails and phone guests see
-          </Typography>
-          <Typography color="text.secondary" sx={{ mb: 2 }}>
-            Booking alerts go to the notification inbox. The reply email and phone appear on the public listing.
-          </Typography>
-          <Stack spacing={2}>
-            <TextField
-              label="Public operator name"
-              helperText="Shown as the brand on the guest site."
-              value={form.name}
-              onChange={(event): void => {
-                setForm((current): OrganizationSettings => ({ ...current, name: event.target.value }));
-              }}
-            />
-            <TextField
-              label="Owner name"
-              value={form.ownerName}
-              onChange={(event): void => {
-                setForm((current): OrganizationSettings => ({ ...current, ownerName: event.target.value }));
-              }}
-            />
-            <EmailField
-              label="Booking notifications email"
-              required
-              helperText="New bookings and bank-transfer receipts."
-              value={form.bookingEmail}
-              onChange={(bookingEmail): void => {
-                setForm((current): OrganizationSettings => ({ ...current, bookingEmail }));
-              }}
-            />
-            <EmailField
-              label="Guest-facing reply email"
-              required
-              helperText="Shown on listings and in booking emails."
-              value={form.guestReplyEmail}
-              onChange={(guestReplyEmail): void => {
-                setForm((current): OrganizationSettings => ({ ...current, guestReplyEmail }));
-              }}
-            />
-            <EmailField
-              label="Ops email"
-              required
-              helperText="Internal operations inbox."
-              value={form.contactEmail}
-              onChange={(contactEmail): void => {
-                setForm((current): OrganizationSettings => ({ ...current, contactEmail }));
-              }}
-            />
-            <PhoneField
-              label="Ops phone"
-              value={form.contactPhone}
-              onChange={(contactPhone): void => {
-                setForm((current): OrganizationSettings => ({ ...current, contactPhone }));
-              }}
-            />
-          </Stack>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardContent>
-          <Typography variant="overline" color="secondary.main">
-            3 · Legal and bank
-          </Typography>
-          <Typography variant="h6" gutterBottom>
-            Transfer details
-          </Typography>
-          <Typography color="text.secondary" sx={{ mb: 2 }}>
-            Printed on bank-transfer instructions. Not shown on the guest homepage.
-          </Typography>
-          <Stack spacing={2}>
-            <TextField
-              label="Legal name"
-              value={form.legalName}
-              onChange={(event): void => {
-                setForm((current): OrganizationSettings => ({ ...current, legalName: event.target.value }));
-              }}
-            />
-            <TextField
-              label="Legal address"
-              value={form.legalAddress}
-              onChange={(event): void => {
-                setForm((current): OrganizationSettings => ({ ...current, legalAddress: event.target.value }));
-              }}
-            />
-            <TextField
-              label="VAT number"
-              value={form.vatNumber}
-              onChange={(event): void => {
-                setForm((current): OrganizationSettings => ({ ...current, vatNumber: event.target.value }));
-              }}
-            />
-            <TextField
-              label="Account name"
-              value={form.bankAccountName}
-              onChange={(event): void => {
-                setForm((current): OrganizationSettings => ({ ...current, bankAccountName: event.target.value }));
-              }}
-            />
-            <TextField
-              label="IBAN"
-              value={form.iban}
-              onChange={(event): void => {
-                setForm((current): OrganizationSettings => ({ ...current, iban: event.target.value }));
-              }}
-            />
-            <TextField
-              label="BIC"
-              value={form.bic}
-              onChange={(event): void => {
-                setForm((current): OrganizationSettings => ({ ...current, bic: event.target.value }));
-              }}
-            />
-            <Button variant="contained" disabled={pending || !contactValid} onClick={(): void => void onSave()}>
-              {pending ? 'Saving…' : 'Save business details'}
-            </Button>
-          </Stack>
-        </CardContent>
-      </Card>
-      <Snackbar open={saved} autoHideDuration={3000} onClose={(): void => setSaved(false)}>
-        <Alert severity="success" onClose={(): void => setSaved(false)}>
+      <SectionCard
+        eyebrow="2 · Your business"
+        icon={<StorefrontOutlinedIcon />}
+        tone="primary"
+        title="Business name and owner"
+        description="The brand guests see on the website, and who owns the account."
+      >
+        <Box sx={TWO_COLUMNS}>
+          <TextField
+            label="Public operator name"
+            helperText="Shown as the brand on the guest site."
+            value={form.name}
+            onChange={(event): void => set({ name: event.target.value })}
+          />
+          <TextField label="Owner name" value={form.ownerName} onChange={(event): void => set({ ownerName: event.target.value })} />
+        </Box>
+      </SectionCard>
+      <SectionCard
+        eyebrow="3 · Guest emails"
+        icon={<AlternateEmailOutlinedIcon />}
+        tone="info"
+        title="Emails and phone guests see"
+        description="Booking alerts go to the notification inbox. The reply email and phone appear on the public listing."
+      >
+        <Box sx={TWO_COLUMNS}>
+          <EmailField
+            label="Booking notifications email"
+            required
+            helperText="New bookings and bank-transfer receipts."
+            value={form.bookingEmail}
+            onChange={(bookingEmail): void => set({ bookingEmail })}
+          />
+          <EmailField
+            label="Guest-facing reply email"
+            required
+            helperText="Shown on listings and in booking emails."
+            value={form.guestReplyEmail}
+            onChange={(guestReplyEmail): void => set({ guestReplyEmail })}
+          />
+          <EmailField
+            label="Ops email"
+            required
+            helperText="Internal operations inbox."
+            value={form.contactEmail}
+            onChange={(contactEmail): void => set({ contactEmail })}
+          />
+          <PhoneField label="Ops phone" value={form.contactPhone} onChange={(contactPhone): void => set({ contactPhone })} />
+        </Box>
+      </SectionCard>
+      <SectionCard
+        eyebrow="4 · Legal and bank"
+        icon={<AccountBalanceOutlinedIcon />}
+        tone="secondary"
+        title="Transfer details"
+        description="Printed on bank-transfer instructions. Not shown on the guest homepage."
+      >
+        <Box sx={TWO_COLUMNS}>
+          <TextField label="Legal name" value={form.legalName} onChange={(event): void => set({ legalName: event.target.value })} />
+          <TextField label="VAT number" value={form.vatNumber} onChange={(event): void => set({ vatNumber: event.target.value })} />
+          <TextField
+            label="Legal address"
+            value={form.legalAddress}
+            onChange={(event): void => set({ legalAddress: event.target.value })}
+            sx={{ gridColumn: { md: '1 / -1' } }}
+          />
+          <TextField label="Account name" value={form.bankAccountName} onChange={(event): void => set({ bankAccountName: event.target.value })} />
+          <TextField label="IBAN" value={form.iban} onChange={(event): void => set({ iban: event.target.value })} />
+          <TextField label="BIC" value={form.bic} onChange={(event): void => set({ bic: event.target.value })} />
+        </Box>
+      </SectionCard>
+      <SaveBar
+        sticky
+        dirty={isFormDirty(saved, form)}
+        pending={pending}
+        problem={problem}
+        saveLabel="Save business details"
+        onSave={(): void => void onSave()}
+        onDiscard={(): void => setForm(saved)}
+      />
+      <Snackbar open={notice} autoHideDuration={3000} onClose={(): void => setNotice(false)}>
+        <Alert severity="success" onClose={(): void => setNotice(false)}>
           Organization saved
         </Alert>
       </Snackbar>

@@ -16,13 +16,14 @@ import {
   FormControl,
   InputLabel,
   MenuItem,
+  Paper,
   Select,
   Stack,
   TextField,
   ToggleButton,
   ToggleButtonGroup,
-  Typography,
 } from '@mui/material';
+import { PageHeader } from '@/shared/components/page-header';
 import type { PropertySummary } from '@resort-booking/shared-types';
 import type { ReportPeriod } from '../hooks/use-report-period';
 import { isRangePreset, REPORT_RANGE_OPTIONS } from '../utils/report-range';
@@ -59,16 +60,14 @@ export function ReportHeader({
 }: ReportHeaderProps): React.JSX.Element {
   return (
     <Box data-print="hide" sx={{ mb: 6 }}>
-      <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 0.5 }}>
-        <AssessmentOutlinedIcon color="primary" aria-hidden />
-        <Typography variant="h4" component="h1">
-          Reports
-        </Typography>
-      </Stack>
-      <Typography color="text.secondary" sx={{ mb: 4, maxWidth: 680 }}>
-        How your properties are doing. Choose a period and a property; everything below follows.
-      </Typography>
+      <PageHeader
+        icon={<AssessmentOutlinedIcon />}
+        tone="info"
+        title="Reports"
+        description="How your properties are doing. Choose a period and a property; everything below follows."
+      />
 
+      <Paper elevation={1} sx={{ p: 2.5, borderRadius: 2 }}>
       <Stack direction={{ xs: 'column', lg: 'row' }} spacing={3} alignItems={{ lg: 'center' }} useFlexGap flexWrap="wrap">
         <ToggleButtonGroup
           exclusive
@@ -142,6 +141,7 @@ export function ReportHeader({
           />
         </Stack>
       ) : null}
+      </Paper>
     </Box>
   );
 }

@@ -13,9 +13,19 @@ import type {
   PropertyBookingConfig,
   PropertyDetail,
 } from '@resort-booking/shared-types';
-import { Box, Button, Chip, Stack, Tab, Tabs, Typography } from '@mui/material';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import BedOutlinedIcon from '@mui/icons-material/BedOutlined';
+import ExtensionOutlinedIcon from '@mui/icons-material/ExtensionOutlined';
+import GavelOutlinedIcon from '@mui/icons-material/GavelOutlined';
+import HolidayVillageOutlinedIcon from '@mui/icons-material/HolidayVillageOutlined';
+import LocalOfferOutlinedIcon from '@mui/icons-material/LocalOfferOutlined';
+import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
+import VisibilityOffOutlinedIcon from '@mui/icons-material/VisibilityOffOutlined';
+import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
+import { Box, Button, Chip, Paper, Tab, Tabs } from '@mui/material';
 import Link from 'next/link';
 import { useState } from 'react';
+import { PageHeader } from '@/shared/components/page-header';
 import { PropertyGuestExtrasPanel } from './property-guest-extras-panel';
 import { PropertyDiscountsPanel } from './property-discounts-panel';
 import { PropertyHousesForm } from './property-houses-form';
@@ -46,32 +56,39 @@ export function PropertyWorkspace({
 
   return (
     <Box>
-      <Button component={Link} href="/properties" size="small" sx={{ mb: 1 }}>
+      <Button component={Link} href="/properties" size="small" startIcon={<ArrowBackIcon />} sx={{ mb: 2 }}>
         All properties
       </Button>
-      <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 1 }} flexWrap="wrap" useFlexGap>
-        <Typography variant="h4" component="h1">
-          {property.name}
-        </Typography>
-        <Chip size="small" label={property.published ? 'On the website' : 'Hidden from guests'} />
-      </Stack>
-      <Typography color="text.secondary" sx={{ mb: 2 }}>
-        Work through the tabs in order: pin the place, add stays, then extras, cancellation, and discounts.
-      </Typography>
-      <Tabs
-        value={tab}
-        onChange={(_event, value: WorkspaceTab): void => {
-          setTab(value);
-        }}
-        variant="scrollable"
-        sx={{ mb: 3 }}
-      >
-        <Tab value="place" label="1. Place & map" />
-        <Tab value="houses" label="2. Stays" />
-        <Tab value="extras" label="3. Guest extras" />
-        <Tab value="cancel" label="4. If they cancel" />
-        <Tab value="discounts" label="5. Discounts" />
-      </Tabs>
+      <PageHeader
+        icon={<HolidayVillageOutlinedIcon />}
+        title={property.name}
+        description="Work through the tabs in order: pin the place, add stays, then extras, cancellation, and discounts."
+        badges={
+          <Chip
+            size="small"
+            icon={property.published ? <VisibilityOutlinedIcon /> : <VisibilityOffOutlinedIcon />}
+            color={property.published ? 'success' : 'default'}
+            label={property.published ? 'On the website' : 'Hidden from guests'}
+          />
+        }
+      />
+      <Paper elevation={1} sx={{ borderRadius: 2, mb: 3, px: 1 }}>
+        <Tabs
+          value={tab}
+          onChange={(_event, value: WorkspaceTab): void => {
+            setTab(value);
+          }}
+          variant="scrollable"
+          scrollButtons="auto"
+          aria-label="Property sections"
+        >
+          <Tab value="place" icon={<MapOutlinedIcon />} iconPosition="start" label="1. Place & map" />
+          <Tab value="houses" icon={<BedOutlinedIcon />} iconPosition="start" label="2. Stays" />
+          <Tab value="extras" icon={<ExtensionOutlinedIcon />} iconPosition="start" label="3. Guest extras" />
+          <Tab value="cancel" icon={<GavelOutlinedIcon />} iconPosition="start" label="4. If they cancel" />
+          <Tab value="discounts" icon={<LocalOfferOutlinedIcon />} iconPosition="start" label="5. Discounts" />
+        </Tabs>
+      </Paper>
       {tab === 'place' ? <PropertyListingForm property={property} /> : null}
       {tab === 'houses' ? <PropertyHousesForm propertyId={property.id} initial={houses} /> : null}
       {tab === 'extras' ? (

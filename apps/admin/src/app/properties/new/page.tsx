@@ -4,8 +4,9 @@
  * @dependencies PropertyListingForm
  */
 
-import { Typography } from '@mui/material';
+import AddHomeWorkOutlinedIcon from '@mui/icons-material/AddHomeWorkOutlined';
 import { PropertyListingForm } from '@/features/property/components/property-listing-form';
+import { PageHeader } from '@/shared/components/page-header';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,12 +16,11 @@ export const dynamic = 'force-dynamic';
 export default function NewPropertyRoute(): React.JSX.Element {
   return (
     <>
-      <Typography variant="h4" component="h1" gutterBottom>
-        Add a property
-      </Typography>
-      <Typography color="text.secondary" sx={{ mb: 3 }}>
-        Search the street to place it on the guest map. You can add stays after this step.
-      </Typography>
+      <PageHeader
+        icon={<AddHomeWorkOutlinedIcon />}
+        title="Add a property"
+        description="Search the street to place it on the guest map. You can add stays after this step."
+      />
       <PropertyListingForm property={null} />
     </>
   );

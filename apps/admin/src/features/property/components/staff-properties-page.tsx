@@ -6,7 +6,13 @@
 
 import type { PropertySummary } from '@resort-booking/shared-types';
 import HolidayVillageOutlinedIcon from '@mui/icons-material/HolidayVillageOutlined';
+import AddIcon from '@mui/icons-material/Add';
+import PlaceOutlinedIcon from '@mui/icons-material/PlaceOutlined';
+import VisibilityOffOutlinedIcon from '@mui/icons-material/VisibilityOffOutlined';
+import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
 import { Box, Button, Card, CardActionArea, CardContent, CardMedia, Chip, Stack, Typography } from '@mui/material';
+import { EmptyState } from '@/shared/components/empty-state';
+import { PageHeader } from '@/shared/components/page-header';
 import Link from 'next/link';
 import { fetchStaffProperties } from '../services/staff-property-api';
 
@@ -18,35 +24,33 @@ export async function StaffPropertiesPage(): Promise<React.JSX.Element> {
 
   return (
     <>
-      <Stack
-        direction={{ xs: 'column', sm: 'row' }}
-        spacing={2}
-        justifyContent="space-between"
-        alignItems={{ sm: 'center' }}
-        sx={{ mb: 3 }}
-      >
-        <Box>
-          <Stack direction="row" spacing={1.5} alignItems="center">
-            <HolidayVillageOutlinedIcon color="primary" />
-            <Typography variant="h4" component="h1">
-              Properties
-            </Typography>
-          </Stack>
-          <Typography color="text.secondary">
-            Open a place to edit the map pin, stays, extras, and cancellations.
-          </Typography>
-        </Box>
-        <Button component={Link} href="/properties/new" variant="contained">
-          Add a property
-        </Button>
-      </Stack>
+      <PageHeader
+        icon={<HolidayVillageOutlinedIcon />}
+        tone="primary"
+        title="Properties"
+        description="Open a place to edit the map pin, stays, extras, and cancellations."
+        actions={
+          <Button component={Link} href="/properties/new" variant="contained" startIcon={<AddIcon />}>
+            Add a property
+          </Button>
+        }
+      />
       {properties.length === 0 ? (
-        <Typography>No properties yet. Add the first one to start taking bookings.</Typography>
+        <EmptyState
+          icon={<HolidayVillageOutlinedIcon />}
+          title="No properties yet"
+          hint="Add the first one to start taking bookings."
+          action={
+            <Button component={Link} href="/properties/new" variant="contained" startIcon={<AddIcon />}>
+              Add a property
+            </Button>
+          }
+        />
       ) : (
         <Box
           sx={{
             display: 'grid',
-            gap: 2,
+            gap: 3,
             gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
           }}
         >
@@ -61,11 +65,15 @@ export async function StaffPropertiesPage(): Promise<React.JSX.Element> {
                     <Typography variant="h6">{property.name}</Typography>
                     <Chip
                       size="small"
+                      icon={property.published ? <VisibilityOutlinedIcon /> : <VisibilityOffOutlinedIcon />}
                       label={property.published ? 'On the website' : 'Hidden'}
-                      color={property.published ? 'primary' : 'default'}
+                      color={property.published ? 'success' : 'default'}
                     />
                   </Stack>
-                  <Typography color="text.secondary">{property.city}</Typography>
+                  <Stack direction="row" spacing={0.5} alignItems="center" sx={{ color: 'text.secondary' }}>
+                    <PlaceOutlinedIcon fontSize="small" aria-hidden />
+                    <Typography color="text.secondary">{property.city}</Typography>
+                  </Stack>
                 </CardContent>
               </CardActionArea>
             </Card>

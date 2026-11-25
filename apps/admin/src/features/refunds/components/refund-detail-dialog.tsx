@@ -7,7 +7,7 @@
 'use client';
 
 import type { StaffRefund } from '@resort-booking/shared-types';
-import { Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Stack, Typography } from '@mui/material';
+import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Stack, Typography } from '@mui/material';
 import {
   canMarkRefundPaid,
   canRetryRefund,
@@ -15,11 +15,11 @@ import {
   initiatorLabel,
   reasonLabel,
   refundKindLabel,
-  refundStatusColor,
-  refundStatusLabel,
   resolvedByHandText,
 } from '@/shared/utils/booking-labels';
+import { StatusChip } from '@/shared/components/status-chip';
 import { formatCents } from '@/shared/utils/money';
+import { refundStyle } from '@/shared/utils/status-style';
 
 interface RefundDetailDialogProps {
   refund: StaffRefund | null;
@@ -45,7 +45,7 @@ export function RefundDetailDialog({ refund, busy, error, onClose, onRetry, onMa
               <Typography variant="h6" component="span">
                 {formatCents(refund.amountCents, refund.currencyCode)} · {refund.reference}
               </Typography>
-              <Chip size="small" color={refundStatusColor(refund.status)} label={refundStatusLabel(refund.status)} />
+              <StatusChip status={refundStyle(refund.status)} />
             </Stack>
           </DialogTitle>
           <DialogContent>
