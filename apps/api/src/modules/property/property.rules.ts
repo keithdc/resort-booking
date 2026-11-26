@@ -4,6 +4,33 @@
  * @dependencies none
  */
 
+import type { ExtraServiceWrite } from '@resort-booking/shared-types';
+
+/**
+ * The guest extras every NEW property starts with. The data model has no pricing unit: an extra is a name, a
+ * description, a kind (instant = priced and paid at checkout, on_request = staff confirm), a price and a published
+ * flag. Both start as "on request" at price 0, published, so a guest can ask for them and staff confirm; the owner sets
+ * a price (and may switch the kind to instant) in the property's Extras tab. Existing properties are not touched.
+ */
+export const DEFAULT_PROPERTY_EXTRAS: readonly ExtraServiceWrite[] = [
+  {
+    name: 'Baby mattress / travel cot',
+    description: 'Ask for a baby mattress or travel cot to be ready when you arrive. Staff confirm after the stay is booked.',
+    kind: 'on_request',
+    priceCents: 0,
+    currencyCode: 'EUR',
+    published: true,
+  },
+  {
+    name: 'Extra pillows',
+    description: 'Ask for extra pillows in the house. Staff confirm after the stay is booked.',
+    kind: 'on_request',
+    priceCents: 0,
+    currencyCode: 'EUR',
+    published: true,
+  },
+];
+
 /**
  * URL slug from a property name. Uniqueness is enforced in Postgres.
  */

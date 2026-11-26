@@ -24,8 +24,14 @@ export interface TwoFactorSetup {
   accountName: string;
 }
 
-/** POST /staff/me/two-factor/enable */
+/** POST /staff/me/two-factor/setup: the current password (a session alone is not enough). */
+export interface TwoFactorSetupRequest {
+  currentPassword: string;
+}
+
+/** POST /staff/me/two-factor/enable: the current password plus the first code. Other sessions are signed out. */
 export interface TwoFactorEnableRequest {
+  currentPassword: string;
   code: string;
 }
 

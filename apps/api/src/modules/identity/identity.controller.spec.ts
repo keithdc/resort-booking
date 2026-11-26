@@ -7,6 +7,8 @@ import { Test } from '@nestjs/testing';
 import type { TwoFactorChallenge } from '@resort-booking/shared-types';
 import type { StaffSessionResult } from '../../shared/roles/staff-role';
 import type { RequestWithId } from '../../shared/http/request-id';
+import type { AuditChangeCarrier } from '../../shared/audit/audit.types';
+import type { UpdateOrganizationDto } from './dto/update-organization.dto';
 import { IdentityController } from './identity.controller';
 import { IdentityService, type LoginContext } from './identity.service';
 import { StaffGuard, type StaffRequest } from './staff.guard';
@@ -14,7 +16,7 @@ import { StaffGuard, type StaffRequest } from './staff.guard';
 const RESULT: StaffSessionResult = {
   token: 't'.repeat(64),
   expiresAt: '2027-01-01T00:00:00.000Z',
-  staff: { id: 's1', organizationId: 'o1', fullName: 'Owner', email: 'owner@example.com', role: 'admin', organizationName: 'Humphreys' },
+  staff: { id: 's1', organizationId: 'o1', fullName: 'Owner', email: 'owner@example.com', role: 'admin', organizationName: 'Humphreys', canManageRefunds: true },
 };
 
 describe('IdentityController', () => {
@@ -22,13 +24,14 @@ describe('IdentityController', () => {
   const completeTwoFactorLogin = jest.fn<Promise<StaffSessionResult>, [string, string, LoginContext]>();
   const logoutAll = jest.fn<Promise<number>, [string]>();
   const changePassword = jest.fn<Promise<void>, [string, { currentPassword: string; newPassword: string }, string | undefined]>();
+  const updateSettings = jest.fn();
   let controller: IdentityController;
 
   beforeEach(async () => {
     jest.resetAllMocks();
     const moduleRef = await Test.createTestingModule({
       controllers: [IdentityController],
-      providers: [{ provide: IdentityService, useValue: { login, completeTwoFactorLogin, logoutAll, changePassword } }],
+      providers: [{ provide: IdentityService, useValue: { login, completeTwoFactorLogin, logoutAll, changePassword, updateSettings } }],
     })
       .overrideGuard(StaffGuard)
       .useValue({ canActivate: (): boolean => true })
@@ -67,6 +70,13 @@ describe('IdentityController', () => {
     expect(Reflect.getMetadata('__guards__', IdentityController.prototype.login)).toBeUndefined();
   });
 
+  it('GET /staff/me returns the account the guard loaded, including whether it has refund access', () => {
+    const employee = { ...RESULT.staff, role: 'employee' as const, canManageRefunds: true };
+
+    expect(controller.me({ staff: employee } as StaffRequest)).toEqual({ status: 'ok', data: employee });
+    expect(controller.me({ staff: { ...employee, canManageRefunds: false } } as StaffRequest)).toMatchObject({ data: { canManageRefunds: false } });
+  });
+
   it('signs the person out everywhere and says how many sessions ended', async () => {
     logoutAll.mockResolvedValue(3);
     const request: StaffRequest = Object.assign(Object.create(null) as StaffRequest, { staff: RESULT.staff });
@@ -90,5 +100,19 @@ describe('IdentityController', () => {
     await controller.changePassword(request, { currentPassword: 'old-pass-1', newPassword: 'new-pass-1234' }, 'my-token');
 
     expect(changePassword).toHaveBeenCalledWith('s1', { currentPassword: 'old-pass-1', newPassword: 'new-pass-1234' }, 'my-token');
+  });
+
+  it('hands the audit row the names of what changed (not the body) and answers only the saved settings', async () => {
+    const settings = { id: 'o1', name: 'Humphreys' };
+    const audit = { fields: ['iban'], bankDetailsChanged: true, notice: 'bank_details_changed' };
+    updateSettings.mockResolvedValue({ settings, audit });
+    const request: AuditChangeCarrier = {};
+    const body = { name: 'Humphreys', iban: 'FR76 0000' } as UpdateOrganizationDto;
+
+    const answer = await controller.patchOrganization(RESULT.staff, body, request);
+
+    expect(updateSettings).toHaveBeenCalledWith(body, 'o1');
+    expect(request.auditChanges).toEqual(audit);
+    expect(answer).toEqual({ status: 'ok', data: settings });
   });
 });

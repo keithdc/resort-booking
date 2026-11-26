@@ -19,6 +19,11 @@ describe('teamErrorMessage', () => {
     expect(isLastAdminError(new ApiRequestError('Odd', 409, { code: 'SOMETHING' }))).toBe(false);
   });
 
+  it('explains the refund-access refusals in plain words', () => {
+    expect(teamErrorMessage(new ApiRequestError('x', 400, { code: 'REFUND_ACCESS_NOT_FOR_ADMIN' }))).toContain('Admins always have refund access');
+    expect(teamErrorMessage(new ApiRequestError('x', 400, { code: 'CANNOT_CHANGE_OWN_REFUND_ACCESS' }))).toContain('your own refund access');
+  });
+
   it('says only admins can do it on a bare 403, and falls back for non-API errors', () => {
     expect(teamErrorMessage(new ApiRequestError('Forbidden', 403))).toBe('Only admins can do this.');
     expect(teamErrorMessage(new Error('x'))).toBe('Something went wrong. Try again.');

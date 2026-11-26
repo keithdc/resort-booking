@@ -78,6 +78,7 @@ describe('TeamRepository', () => {
         email: 'ada@example.com',
         role: 'admin',
         organizationName: 'Humphreys',
+        canManageRefunds: true,
       });
     });
 
@@ -104,8 +105,8 @@ describe('TeamRepository', () => {
     it('lists only the organization\'s members, marking the asker, in one statement', async () => {
       responder = (): Result => ({
         rows: [
-          { id: 's1', full_name: 'Ada', email: 'ada@example.com', role: 'admin', active: true, last_login_at: NOW, created_at: EARLIER },
-          { id: 's2', full_name: 'Bob', email: 'bob@example.com', role: 'surprise', active: false, last_login_at: null, created_at: EARLIER },
+          { id: 's1', full_name: 'Ada', email: 'ada@example.com', role: 'admin', active: true, can_manage_refunds: false, last_login_at: NOW, created_at: EARLIER },
+          { id: 's2', full_name: 'Bob', email: 'bob@example.com', role: 'surprise', active: false, can_manage_refunds: true, last_login_at: null, created_at: EARLIER },
         ],
         rowCount: 2,
       });
@@ -122,11 +123,27 @@ describe('TeamRepository', () => {
       expect(members[1]?.lastLoginAt).toBeNull();
     });
 
+    it('reports refund access: always for an admin, the stored flag for an employee', async () => {
+      responder = (): Result => ({
+        rows: [
+          { id: 's1', full_name: 'Ada', email: 'ada@example.com', role: 'admin', active: true, can_manage_refunds: false, last_login_at: null, created_at: EARLIER },
+          { id: 's2', full_name: 'Bob', email: 'bob@example.com', role: 'employee', active: true, can_manage_refunds: true, last_login_at: null, created_at: EARLIER },
+          { id: 's3', full_name: 'Cy', email: 'cy@example.com', role: 'employee', active: true, can_manage_refunds: false, last_login_at: null, created_at: EARLIER },
+        ],
+        rowCount: 3,
+      });
+
+      const members = await repository.listMembers(ORG, 's1');
+
+      expect(members.map((member) => member.canManageRefunds)).toEqual([true, true, false]);
+      expect(statements[0]?.sql).toContain('can_manage_refunds');
+    });
+
     it('lists open invitations (not used, not revoked) with who made them, flagging expired ones and reset links', async () => {
       responder = (): Result => ({
         rows: [
-          { id: 'i1', email: 'new@example.com', full_name: 'New', role: 'employee', staff_user_id: null, expires_at: LATER, accepted_at: null, revoked_at: null, created_at: EARLIER, created_by_name: 'Ada' },
-          { id: 'i2', email: 'old@example.com', full_name: 'Old', role: 'employee', staff_user_id: 's9', expires_at: EARLIER, accepted_at: null, revoked_at: null, created_at: EARLIER, created_by_name: null },
+          { id: 'i1', email: 'new@example.com', full_name: 'New', role: 'employee', can_manage_refunds: true, staff_user_id: null, expires_at: LATER, accepted_at: null, revoked_at: null, created_at: EARLIER, created_by_name: 'Ada' },
+          { id: 'i2', email: 'old@example.com', full_name: 'Old', role: 'employee', can_manage_refunds: false, staff_user_id: 's9', expires_at: EARLIER, accepted_at: null, revoked_at: null, created_at: EARLIER, created_by_name: null },
         ],
         rowCount: 2,
       });
@@ -140,6 +157,7 @@ describe('TeamRepository', () => {
         [false, false, 'Ada'],
         [true, true, null],
       ]);
+      expect(invites.map((invite) => invite.canManageRefunds)).toEqual([true, false]);
     });
   });
 
@@ -167,6 +185,7 @@ describe('TeamRepository', () => {
       email: 'New@Example.com',
       fullName: 'New Person',
       role: 'employee' as const,
+      canManageRefunds: false,
       staffUserId: null,
       tokenHash: 'hash-of-token',
       expiresAt: LATER,
@@ -192,8 +211,23 @@ describe('TeamRepository', () => {
       expect(sqlOf()[3]).toBe('COMMIT');
       // The token itself never reaches the database: only its hash.
       expect(JSON.stringify(statements.map((statement) => statement.params))).toContain('hash-of-token');
-      expect(statements[2]?.params).toEqual([ORG, 'new@example.com', 'New Person', 'employee', null, 'hash-of-token', LATER.toISOString(), 's1']);
+      expect(statements[2]?.params).toEqual([ORG, 'new@example.com', 'New Person', 'employee', null, 'hash-of-token', LATER.toISOString(), 's1', false]);
       expect(invite).toMatchObject({ id: 'i1', expired: false, isReset: false, createdByName: 'Ada' });
+    });
+
+    it('stores the refund permission on an employee invitation, and never on an admin one', async () => {
+      responder = (sql): Result | undefined =>
+        sql.includes('INSERT INTO staff_invites')
+          ? { rows: [{ id: 'i1', email: 'new@example.com', full_name: 'New Person', role: 'employee', can_manage_refunds: true, staff_user_id: null, expires_at: LATER, accepted_at: null, revoked_at: null, created_at: NOW, created_by_name: 'Ada' }], rowCount: 1 }
+          : undefined;
+
+      const invite = await repository.issueInvite({ ...input, canManageRefunds: true });
+      expect(statements[2]?.params?.[8]).toBe(true);
+      expect(invite.canManageRefunds).toBe(true);
+
+      statements.length = 0;
+      await repository.issueInvite({ ...input, role: 'admin', canManageRefunds: true });
+      expect(statements[2]?.params?.[8]).toBe(false);
     });
 
     it('rolls back when the insert fails, so the old invitation is not lost', async () => {
@@ -248,6 +282,7 @@ describe('TeamRepository', () => {
       email: 'New@Example.com',
       full_name: 'New Person',
       role: 'employee',
+      can_manage_refunds: false,
       staff_user_id: null as string | null,
       expires_at: LATER,
       accepted_at: null as Date | null,
@@ -265,7 +300,7 @@ describe('TeamRepository', () => {
           return { rows: [{ id: 'new-staff' }], rowCount: 1 };
         }
         if (sql.includes('UPDATE staff_users SET password_hash')) {
-          return { rows: [{ id: 's9', full_name: 'Existing', email: 'existing@example.com', role: 'employee', active: true }], rowCount: 1 };
+          return { rows: [{ id: 's9', full_name: 'Existing', email: 'existing@example.com', role: 'employee', active: true, can_manage_refunds: false }], rowCount: 1 };
         }
         return undefined;
       };
@@ -282,10 +317,23 @@ describe('TeamRepository', () => {
       expect(sqlOf()[0]).toBe('BEGIN');
       expect(sqlOf()[1]).toContain('FOR UPDATE OF i');
       expect(sqlOf()[2]).toContain('INSERT INTO staff_users');
-      expect(statements[2]?.params).toEqual([ORG, 'New Person', 'new@example.com', 'salt:hash', 'employee']);
+      expect(statements[2]?.params).toEqual([ORG, 'New Person', 'new@example.com', 'salt:hash', 'employee', false]);
       expect(sqlOf()[3]).toContain('UPDATE staff_invites SET accepted_at = now()');
       expect(sqlOf()[4]).toBe('COMMIT');
       expect(result).toMatchObject({ inviteId: 'i1', reset: false, account: { id: 'new-staff', role: 'employee', organizationName: 'Humphreys' } });
+    });
+
+    it('copies the invited refund permission to the new employee account, and never to an admin', async () => {
+      responder = lockedWith({ can_manage_refunds: true });
+      const employee = await accept();
+      expect(statements[2]?.params?.[5]).toBe(true);
+      expect(employee?.account.canManageRefunds).toBe(true);
+
+      statements.length = 0;
+      responder = lockedWith({ can_manage_refunds: true, role: 'admin' });
+      const admin = await accept();
+      expect(statements[2]?.params?.[5]).toBe(false);
+      expect(admin?.account).toMatchObject({ role: 'admin', canManageRefunds: true });
     });
 
     it('uses the name the person typed instead of the invited one', async () => {
@@ -340,8 +388,8 @@ describe('TeamRepository', () => {
 
   describe('changeMember', () => {
     const members = [
-      { id: 'ada', role: 'admin', active: true },
-      { id: 'eve', role: 'employee', active: true },
+      { id: 'ada', role: 'admin', active: true, can_manage_refunds: false },
+      { id: 'eve', role: 'employee', active: true, can_manage_refunds: false },
     ];
 
     function withMembers(): Responder {
@@ -362,11 +410,26 @@ describe('TeamRepository', () => {
 
       const outcome = await repository.changeMember(ORG, 'ada', 'eve', { role: 'admin' });
 
-      expect(outcome).toEqual({ kind: 'changed', before: { id: 'eve', role: 'employee', active: true }, after: { role: 'admin', active: true } });
+      expect(outcome).toEqual({
+        kind: 'changed',
+        before: { id: 'eve', role: 'employee', active: true, canManageRefunds: false },
+        after: { role: 'admin', active: true, canManageRefunds: false },
+      });
       const update = statements.find((statement) => statement.sql.startsWith('UPDATE staff_users SET role'));
-      expect(update?.sql).toContain('AND organization_id = $4');
-      expect(update?.params).toEqual(['eve', 'admin', true, ORG]);
+      expect(update?.sql).toContain('AND organization_id = $5');
+      expect(update?.params).toEqual(['eve', 'admin', true, false, ORG]);
       expect(sqlOf()[sqlOf().length - 1]).toBe('COMMIT');
+    });
+
+    it('grants refund access inside the organization, keeping sessions (it applies on the next request)', async () => {
+      responder = withMembers();
+
+      const outcome = await repository.changeMember(ORG, 'ada', 'eve', { canManageRefunds: true });
+
+      expect(outcome).toMatchObject({ kind: 'changed', after: { role: 'employee', active: true, canManageRefunds: true } });
+      const update = statements.find((statement) => statement.sql.startsWith('UPDATE staff_users SET role'));
+      expect(update?.params).toEqual(['eve', 'employee', true, true, ORG]);
+      expect(sqlOf().some((sql) => sql.includes('DELETE FROM staff_sessions'))).toBe(false);
     });
 
     it('removes a switched-off member\'s sessions in the same transaction', async () => {
@@ -393,6 +456,8 @@ describe('TeamRepository', () => {
       ['switching yourself off', 'ada', 'ada', { active: false }, 'CANNOT_DEACTIVATE_SELF'],
       ['someone outside the organization', 'ada', 'stranger', { active: false }, 'STAFF_NOT_FOUND'],
       ['a change that changes nothing', 'ada', 'eve', { role: 'employee' as const }, 'NOTHING_TO_CHANGE'],
+      ['refund access on an admin', 'ada', 'ada', { canManageRefunds: true }, 'CANNOT_CHANGE_OWN_REFUND_ACCESS'],
+      ['refund access on another admin', 'eve', 'ada', { canManageRefunds: true }, 'REFUND_ACCESS_NOT_FOR_ADMIN'],
     ])('refuses %s without writing anything', async (_label, actor, target, change, code) => {
       responder = withMembers();
 

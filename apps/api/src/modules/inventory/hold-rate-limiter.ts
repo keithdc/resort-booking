@@ -6,7 +6,7 @@
 
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { readIntEnv } from '../../shared/config/environment';
+import { readIntEnv, resolveIpHashSalt } from '../../shared/config/environment';
 import { fingerprint } from '../../shared/http/client-ip';
 import { enforceWindowLimit, limitSettingFromConfig, type LimitSetting } from '../../shared/redis/rate-limit';
 import { RedisService } from '../../shared/redis/redis.service';
@@ -39,7 +39,7 @@ export class HoldRateLimiter {
     this.perIp = limitSettingFromConfig(config, 'HOLD_IP', HOLD_PER_IP_DEFAULT);
     this.perEmail = limitSettingFromConfig(config, 'HOLD_EMAIL', HOLD_PER_EMAIL_DEFAULT);
     this.browse = limitSettingFromConfig(config, 'BROWSE', BROWSE_DEFAULT);
-    this.ipSalt = config.get<string>('IP_HASH_SALT') ?? '';
+    this.ipSalt = resolveIpHashSalt(config.get<string>('IP_HASH_SALT'));
     this.capPerEmail = readIntEnv(
       { v: config.get<string>('MAX_ACTIVE_HOLDS_PER_EMAIL') },
       'v',

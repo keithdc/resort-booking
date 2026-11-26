@@ -1,7 +1,7 @@
 /**
  * @file apps/admin/src/features/account/components/two-factor-section.tsx
  * @feature account
- * @dependencies staff-identity-api, TwoFactorSetupPanel, RecoveryCodesPanel, TwoFactorConfirmDialog
+ * @dependencies staff-identity-api, TwoFactorSetupPanel, RecoveryCodesPanel, TwoFactorConfirmDialog, TwoFactorPasswordDialog
  */
 
 'use client';
@@ -18,19 +18,20 @@ import {
 import { ApiRequestError } from '@/shared/services/api-client';
 import { RecoveryCodesPanel } from './recovery-codes-panel';
 import { TwoFactorConfirmDialog } from './two-factor-confirm-dialog';
+import { TwoFactorPasswordDialog } from './two-factor-password-dialog';
 import { TwoFactorSetupPanel } from './two-factor-setup';
 
 /** Warn when this few recovery codes are left. */
 const LOW_RECOVERY_CODES = 3;
 
-type Dialog = 'disable' | 'regenerate' | null;
+type Dialog = 'start' | 'disable' | 'regenerate' | null;
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
 /**
- * Optional two-step verification (authenticator app) for the signed-in person: status, setup with a copyable key,
+ * Optional two-step verification (authenticator app) for the signed-in person: status, setup (password first) with a copyable key,
  * recovery codes shown once, and turning it off or replacing the codes with password and code.
  */
 export function TwoFactorSection(): React.JSX.Element {
@@ -40,7 +41,8 @@ export function TwoFactorSection(): React.JSX.Element {
   const [dialog, setDialog] = useState<Dialog>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [starting, setStarting] = useState(false);
+  /** Typed to start the setup, needed again by the server with the first code; dropped as soon as the setup ends. */
+  const [setupPassword, setSetupPassword] = useState('');
 
   const load = useCallback(async (): Promise<void> => {
     try {
@@ -54,21 +56,22 @@ export function TwoFactorSection(): React.JSX.Element {
     void load();
   }, [load]);
 
-  const onStart = async (): Promise<void> => {
-    setStarting(true);
+  const onStart = async (currentPassword: string): Promise<void> => {
     setError(null);
-    try {
-      setSetup(await startTwoFactorSetup());
-    } catch (err: unknown) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not start the setup');
-    } finally {
-      setStarting(false);
-    }
+    setSetup(await startTwoFactorSetup(currentPassword));
+    setSetupPassword(currentPassword);
+    setDialog(null);
+  };
+
+  const endSetup = (): void => {
+    setSetup(null);
+    setSetupPassword('');
   };
 
   const onEnabled = (result: TwoFactorRecoveryCodes): void => {
-    setSetup(null);
+    endSetup();
     setCodes(result.recoveryCodes);
+    setNotice('Two-step verification is on. Your other signed-in devices were signed out.');
     void load();
   };
 
@@ -108,7 +111,7 @@ export function TwoFactorSection(): React.JSX.Element {
           }}
         />
       ) : setup !== null ? (
-        <TwoFactorSetupPanel setup={setup} onEnabled={onEnabled} onCancel={(): void => setSetup(null)} />
+        <TwoFactorSetupPanel setup={setup} currentPassword={setupPassword} onEnabled={onEnabled} onCancel={endSetup} />
       ) : status !== null && !status.enabled ? (
         <>
           <Typography color="text.secondary">
@@ -116,8 +119,8 @@ export function TwoFactorSection(): React.JSX.Element {
             off at any time.
           </Typography>
           <Box>
-            <Button variant="outlined" disabled={starting} onClick={(): void => void onStart()}>
-              {starting ? 'Starting…' : 'Turn on two-step verification'}
+            <Button variant="outlined" onClick={(): void => setDialog('start')}>
+              Turn on two-step verification
             </Button>
           </Box>
         </>
@@ -142,6 +145,11 @@ export function TwoFactorSection(): React.JSX.Element {
         </>
       ) : null}
 
+      <TwoFactorPasswordDialog
+        open={dialog === 'start'}
+        onConfirm={onStart}
+        onClose={(): void => setDialog(null)}
+      />
       <TwoFactorConfirmDialog
         open={dialog === 'disable'}
         title="Turn off two-step verification?"

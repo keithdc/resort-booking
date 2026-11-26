@@ -8,7 +8,7 @@ import { Injectable } from '@nestjs/common';
 import type { PoolClient } from 'pg';
 import { DatabaseService } from '../../shared/database/database.service';
 import { isStaffRole, type StaffAccount, type StaffRole } from '../../shared/roles/staff-role';
-import { planMemberChange, type MemberState } from './team.rules';
+import { planMemberChange, type MemberRefusal, type MemberState } from './team.rules';
 import type { MemberChange, TeamInvite, TeamMember } from './team.types';
 
 interface MemberRow {
@@ -17,6 +17,7 @@ interface MemberRow {
   email: string;
   role: string;
   active: boolean;
+  can_manage_refunds: boolean;
   last_login_at: Date | null;
   created_at: Date;
 }
@@ -32,6 +33,7 @@ interface InviteRow {
   revoked_at: Date | null;
   created_at: Date;
   created_by_name: string | null;
+  can_manage_refunds: boolean;
   organization_id?: string;
   organization_name?: string;
 }
@@ -44,6 +46,8 @@ export interface InviteRecord {
   email: string;
   fullName: string;
   role: StaffRole;
+  /** The refund permission the new account starts with. */
+  canManageRefunds: boolean;
   /** Set for an access-reset link: the existing account whose password it sets. */
   staffUserId: string | null;
   expiresAt: Date;
@@ -53,10 +57,10 @@ export interface InviteRecord {
 
 /** What a member change did, for the audit log. */
 export type MemberChangeOutcome =
-  | { kind: 'changed'; before: MemberState; after: { role: StaffRole; active: boolean } }
-  | { kind: 'refused'; code: 'STAFF_NOT_FOUND' | 'LAST_ADMIN' | 'CANNOT_DEACTIVATE_SELF' | 'NOTHING_TO_CHANGE' };
+  | { kind: 'changed'; before: MemberState; after: { role: StaffRole; active: boolean; canManageRefunds: boolean } }
+  | { kind: 'refused'; code: MemberRefusal };
 
-const MEMBER_COLUMNS = 'id, full_name, email, role, active, last_login_at, created_at';
+const MEMBER_COLUMNS = 'id, full_name, email, role, active, can_manage_refunds, last_login_at, created_at';
 
 @Injectable()
 export class TeamRepository {
@@ -103,6 +107,7 @@ export class TeamRepository {
           email: input.email.toLowerCase(),
           role: 'admin',
           organizationName: input.organizationName,
+          canManageRefunds: true,
         };
       } catch (error: unknown) {
         await client.query('ROLLBACK');
@@ -124,7 +129,7 @@ export class TeamRepository {
     const result = await this.database.query<InviteRow>(
       `
       SELECT i.id, i.email, i.full_name, i.role, i.staff_user_id, i.expires_at, i.accepted_at, i.revoked_at,
-        i.created_at, c.full_name AS created_by_name
+        i.created_at, i.can_manage_refunds, c.full_name AS created_by_name
       FROM staff_invites i
       LEFT JOIN staff_users c ON c.id = i.created_by_staff_id
       WHERE i.organization_id = $1 AND i.accepted_at IS NULL AND i.revoked_at IS NULL
@@ -143,7 +148,14 @@ export class TeamRepository {
     const row = result.rows[0];
     return row === undefined
       ? null
-      : { id: row.id, role: toRole(row.role), active: row.active, email: row.email, fullName: row.full_name };
+      : {
+          id: row.id,
+          role: toRole(row.role),
+          active: row.active,
+          canManageRefunds: row.can_manage_refunds,
+          email: row.email,
+          fullName: row.full_name,
+        };
   }
 
   /** Is this email already a staff account anywhere? (Emails are unique across the whole system.) */
@@ -161,6 +173,8 @@ export class TeamRepository {
     email: string;
     fullName: string;
     role: StaffRole;
+    /** Employees only; stored false for an admin invite. */
+    canManageRefunds: boolean;
     staffUserId: string | null;
     tokenHash: string;
     expiresAt: Date;
@@ -180,12 +194,12 @@ export class TeamRepository {
         const inserted = await client.query<InviteRow>(
           `
           WITH i AS (
-            INSERT INTO staff_invites (organization_id, email, full_name, role, staff_user_id, token_hash, expires_at, created_by_staff_id)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            INSERT INTO staff_invites (organization_id, email, full_name, role, staff_user_id, token_hash, expires_at, created_by_staff_id, can_manage_refunds)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             RETURNING *
           )
           SELECT i.id, i.email, i.full_name, i.role, i.staff_user_id, i.expires_at, i.accepted_at, i.revoked_at,
-            i.created_at, c.full_name AS created_by_name
+            i.created_at, i.can_manage_refunds, c.full_name AS created_by_name
           FROM i LEFT JOIN staff_users c ON c.id = i.created_by_staff_id
           `,
           [
@@ -197,6 +211,7 @@ export class TeamRepository {
             input.tokenHash,
             input.expiresAt.toISOString(),
             input.createdBy,
+            input.role === 'employee' && input.canManageRefunds,
           ],
         );
         await client.query('COMMIT');
@@ -230,7 +245,7 @@ export class TeamRepository {
     const result = await this.database.query<InviteRow>(
       `
       SELECT i.id, i.organization_id, o.name AS organization_name, i.email, i.full_name, i.role, i.staff_user_id,
-        i.expires_at, i.accepted_at, i.revoked_at, i.created_at, NULL::text AS created_by_name
+        i.expires_at, i.accepted_at, i.revoked_at, i.created_at, i.can_manage_refunds, NULL::text AS created_by_name
       FROM staff_invites i
       INNER JOIN organizations o ON o.id = i.organization_id
       WHERE i.token_hash = $1
@@ -248,6 +263,7 @@ export class TeamRepository {
       email: row.email,
       fullName: row.full_name,
       role: toRole(row.role),
+      canManageRefunds: row.can_manage_refunds,
       staffUserId: row.staff_user_id,
       expiresAt: row.expires_at,
       acceptedAt: row.accepted_at,
@@ -272,7 +288,7 @@ export class TeamRepository {
         const locked = await client.query<InviteRow>(
           `
           SELECT i.id, i.organization_id, o.name AS organization_name, i.email, i.full_name, i.role, i.staff_user_id,
-            i.expires_at, i.accepted_at, i.revoked_at, i.created_at, NULL::text AS created_by_name
+            i.expires_at, i.accepted_at, i.revoked_at, i.created_at, i.can_manage_refunds, NULL::text AS created_by_name
           FROM staff_invites i
           INNER JOIN organizations o ON o.id = i.organization_id
           WHERE i.token_hash = $1
@@ -320,11 +336,13 @@ export class TeamRepository {
     return this.database.withClient(async (client): Promise<MemberChangeOutcome> => {
       await client.query('BEGIN');
       try {
-        const rows = await client.query<{ id: string; role: string; active: boolean }>(
-          'SELECT id, role, active FROM staff_users WHERE organization_id = $1 FOR UPDATE',
+        const rows = await client.query<{ id: string; role: string; active: boolean; can_manage_refunds: boolean }>(
+          'SELECT id, role, active, can_manage_refunds FROM staff_users WHERE organization_id = $1 FOR UPDATE',
           [organizationId],
         );
-        const members: MemberState[] = rows.rows.map((row): MemberState => ({ id: row.id, role: toRole(row.role), active: row.active }));
+        const members: MemberState[] = rows.rows.map(
+          (row): MemberState => ({ id: row.id, role: toRole(row.role), active: row.active, canManageRefunds: row.can_manage_refunds }),
+        );
         const verdict = planMemberChange(members, actorId, targetId, change);
         if (!verdict.ok) {
           await client.query('ROLLBACK');
@@ -335,17 +353,15 @@ export class TeamRepository {
           await client.query('ROLLBACK');
           return { kind: 'refused', code: 'STAFF_NOT_FOUND' };
         }
-        await client.query('UPDATE staff_users SET role = $2, active = $3 WHERE id = $1 AND organization_id = $4', [
-          targetId,
-          verdict.role,
-          verdict.active,
-          organizationId,
-        ]);
+        await client.query(
+          'UPDATE staff_users SET role = $2, active = $3, can_manage_refunds = $4 WHERE id = $1 AND organization_id = $5',
+          [targetId, verdict.role, verdict.active, verdict.canManageRefunds, organizationId],
+        );
         if (!verdict.active) {
           await client.query('DELETE FROM staff_sessions WHERE staff_user_id = $1', [targetId]);
         }
         await client.query('COMMIT');
-        return { kind: 'changed', before, after: { role: verdict.role, active: verdict.active } };
+        return { kind: 'changed', before, after: { role: verdict.role, active: verdict.active, canManageRefunds: verdict.canManageRefunds } };
       } catch (error: unknown) {
         await client.query('ROLLBACK');
         throw error;
@@ -364,11 +380,11 @@ async function insertInvitedUser(
   const name = fullName ?? invite.full_name;
   const inserted = await client.query<{ id: string }>(
     `
-    INSERT INTO staff_users (organization_id, full_name, email, password_hash, role)
-    VALUES ($1, $2, $3, $4, $5)
+    INSERT INTO staff_users (organization_id, full_name, email, password_hash, role, can_manage_refunds)
+    VALUES ($1, $2, $3, $4, $5, $6)
     RETURNING id
     `,
-    [organizationId, name, invite.email.toLowerCase(), passwordHash, invite.role],
+    [organizationId, name, invite.email.toLowerCase(), passwordHash, invite.role, invite.role === 'employee' && invite.can_manage_refunds],
   );
   const id = inserted.rows[0]?.id;
   if (id === undefined) {
@@ -381,15 +397,16 @@ async function insertInvitedUser(
     email: invite.email.toLowerCase(),
     role: toRole(invite.role),
     organizationName: invite.organization_name ?? '',
+    canManageRefunds: invite.role === 'admin' || invite.can_manage_refunds,
   };
 }
 
 async function resetExistingUser(client: PoolClient, invite: InviteRow, passwordHash: string): Promise<StaffAccount> {
-  const updated = await client.query<{ id: string; full_name: string; email: string; role: string; active: boolean }>(
+  const updated = await client.query<{ id: string; full_name: string; email: string; role: string; active: boolean; can_manage_refunds: boolean }>(
     `
     UPDATE staff_users SET password_hash = $2
     WHERE id = $1 AND organization_id = $3 AND active
-    RETURNING id, full_name, email, role, active
+    RETURNING id, full_name, email, role, active, can_manage_refunds
     `,
     [invite.staff_user_id, passwordHash, invite.organization_id],
   );
@@ -406,6 +423,7 @@ async function resetExistingUser(client: PoolClient, invite: InviteRow, password
     email: row.email,
     role: toRole(row.role),
     organizationName: invite.organization_name ?? '',
+    canManageRefunds: row.role === 'admin' || row.can_manage_refunds,
   };
 }
 
@@ -422,6 +440,8 @@ function mapMember(row: MemberRow, actorId: string): TeamMember {
     active: row.active,
     lastLoginAt: row.last_login_at === null ? null : row.last_login_at.toISOString(),
     createdAt: row.created_at.toISOString(),
+    // An admin always has money access; for an employee it is the stored permission.
+    canManageRefunds: row.role === 'admin' || row.can_manage_refunds,
     isYou: row.id === actorId,
   };
 }
@@ -437,5 +457,6 @@ function mapInvite(row: InviteRow, now: Date): TeamInvite {
     createdByName: row.created_by_name,
     expired: row.expires_at.getTime() <= now.getTime(),
     isReset: row.staff_user_id !== null,
+    canManageRefunds: row.role === 'employee' && row.can_manage_refunds,
   };
 }

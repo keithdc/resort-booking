@@ -18,3 +18,11 @@ export function fetchStaffAccount(): Promise<StaffAccount> {
 export function isAdminRole(role: StaffRole | null | undefined): boolean {
   return role === 'admin';
 }
+
+/**
+ * True when this person may decide refunds and other money actions: an admin, or an employee an admin gave "can handle
+ * refunds and money actions". Hiding buttons is comfort; the API enforces it on every request.
+ */
+export function hasRefundAccess(account: Pick<StaffAccount, 'role' | 'canManageRefunds'> | null | undefined): boolean {
+  return account !== null && account !== undefined && (account.role === 'admin' || account.canManageRefunds);
+}

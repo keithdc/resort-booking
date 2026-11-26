@@ -12,6 +12,11 @@ describe('actionLabel', () => {
     expect(actionLabel('refund.marked_paid')).toBe('Marked a refund as paid');
   });
 
+  it('names the refund-access changes', () => {
+    expect(actionLabel('team.refund_access_granted')).toBe('Gave someone refund access');
+    expect(actionLabel('team.refund_access_removed')).toBe('Removed someone’s refund access');
+  });
+
   it('makes an unknown action readable instead of showing the code', () => {
     expect(actionLabel('widget.frobnicated_twice')).toBe('Widget frobnicated twice');
     expect(actionLabel('')).toBe('Unknown action');

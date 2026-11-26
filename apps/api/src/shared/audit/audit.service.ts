@@ -6,6 +6,7 @@
 
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { resolveIpHashSalt } from '../config/environment';
 import { fingerprint } from '../http/client-ip';
 import { AuditRepository } from './audit.repository';
 import type { AuditActor, AuditEntry, AuditFilters, AuditPage } from './audit.types';
@@ -24,7 +25,7 @@ export class AuditService {
     private readonly audit: AuditRepository,
     config: ConfigService,
   ) {
-    this.salt = config.get<string>('IP_HASH_SALT') ?? '';
+    this.salt = resolveIpHashSalt(config.get<string>('IP_HASH_SALT'));
   }
 
   /**

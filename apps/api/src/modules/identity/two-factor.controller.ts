@@ -5,7 +5,7 @@
  * The signed-in person manages their OWN two-factor (any role). The id always comes from the session.
  */
 
-import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Post, Req, UseGuards } from '@nestjs/common';
 import type { ApiOkBody, TwoFactorRecoveryCodes, TwoFactorSetup, TwoFactorStatus } from '@resort-booking/shared-types';
 import { clientIp } from '../../shared/http/client-ip';
 import type { RequestWithId } from '../../shared/http/request-id';
@@ -14,7 +14,7 @@ import { AllowRoles } from '../../shared/roles/roles.decorator';
 import type { StaffAccount } from '../../shared/roles/staff-role';
 import { CurrentStaff } from '../../shared/tenancy/current-staff.decorator';
 import { TenantExempt } from '../../shared/tenancy/tenant-scope.decorator';
-import { ConfirmTwoFactorDto, EnableTwoFactorDto } from './dto/two-factor.dto';
+import { ConfirmTwoFactorDto, EnableTwoFactorDto, SetupTwoFactorDto } from './dto/two-factor.dto';
 import { StaffGuard } from './staff.guard';
 import { TwoFactorService, type TwoFactorContext } from './two-factor.service';
 
@@ -40,16 +40,21 @@ export class TwoFactorController {
   }
 
   /**
-   * Issues a secret (base32 + otpauth URI). Not enabled until a code is confirmed.
+   * Issues a secret (base32 + otpauth URI). Needs the current password. Not enabled until a code is confirmed.
    */
   @Post('setup')
   @TenantExempt(SELF_ONLY)
-  public async setup(@CurrentStaff() staff: StaffAccount): Promise<ApiOkBody<TwoFactorSetup>> {
-    return { status: 'ok', data: await this.twoFactor.setup(staff) };
+  public async setup(
+    @CurrentStaff() staff: StaffAccount,
+    @Body() body: SetupTwoFactorDto,
+    @Req() request: RequestWithId,
+  ): Promise<ApiOkBody<TwoFactorSetup>> {
+    return { status: 'ok', data: await this.twoFactor.setup(staff, body.currentPassword, contextOf(request)) };
   }
 
   /**
-   * Confirms the first code and switches two-factor on. The recovery codes are in the answer once.
+   * Confirms password and first code and switches two-factor on; every other session of this person is signed
+   * out. The recovery codes are in the answer once.
    */
   @Post('enable')
   @TenantExempt(SELF_ONLY)
@@ -57,8 +62,12 @@ export class TwoFactorController {
     @CurrentStaff() staff: StaffAccount,
     @Body() body: EnableTwoFactorDto,
     @Req() request: RequestWithId,
+    @Headers('x-staff-token') token: string | undefined,
   ): Promise<ApiOkBody<TwoFactorRecoveryCodes>> {
-    return { status: 'ok', data: await this.twoFactor.enable(staff, body.code, contextOf(request)) };
+    return {
+      status: 'ok',
+      data: await this.twoFactor.enable(staff, body.currentPassword, body.code, contextOf(request), token ?? ''),
+    };
   }
 
   /**

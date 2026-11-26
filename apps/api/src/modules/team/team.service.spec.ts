@@ -25,7 +25,7 @@ const CONTEXT: PublicContext = { ip: '203.0.113.7', requestId: 'req-1' };
 const GOOD_PASSWORD = 'Correct-Horse-9';
 const TOKEN = 'a'.repeat(64);
 
-const ADMIN: StaffAccount = { id: 'admin-1', organizationId: ORG, fullName: 'Ada', email: 'ada@example.com', role: 'admin', organizationName: 'Humphreys' };
+const ADMIN: StaffAccount = { id: 'admin-1', organizationId: ORG, fullName: 'Ada', email: 'ada@example.com', role: 'admin', organizationName: 'Humphreys', canManageRefunds: true };
 const ACTOR: TeamActor = { staff: ADMIN, ip: '203.0.113.7', requestId: 'req-2' };
 
 const INVITE: TeamInvite = {
@@ -38,6 +38,7 @@ const INVITE: TeamInvite = {
   createdByName: 'Ada',
   expired: false,
   isReset: false,
+  canManageRefunds: false,
 };
 
 function inviteRecord(overrides: Partial<InviteRecord> = {}): InviteRecord {
@@ -48,6 +49,7 @@ function inviteRecord(overrides: Partial<InviteRecord> = {}): InviteRecord {
     email: 'new@example.com',
     fullName: 'New Person',
     role: 'employee',
+    canManageRefunds: false,
     staffUserId: null,
     expiresAt: new Date(Date.now() + 3_600_000),
     acceptedAt: null,
@@ -64,6 +66,7 @@ const MEMBER: TeamMember = {
   active: true,
   lastLoginAt: null,
   createdAt: '2026-11-01T00:00:00.000Z',
+  canManageRefunds: true,
   isYou: false,
 };
 
@@ -72,7 +75,7 @@ describe('TeamService', () => {
     registerWorkspace: jest.fn<Promise<StaffAccount>, [Record<string, unknown>]>(),
     listMembers: jest.fn<Promise<TeamMember[]>, [string, string]>(),
     listOpenInvites: jest.fn<Promise<TeamInvite[]>, [string, Date]>(),
-    findMember: jest.fn<Promise<{ id: string; role: 'admin' | 'employee'; active: boolean; email: string; fullName: string } | null>, [string, string]>(),
+    findMember: jest.fn<Promise<{ id: string; role: 'admin' | 'employee'; active: boolean; canManageRefunds: boolean; email: string; fullName: string } | null>, [string, string]>(),
     emailInUse: jest.fn<Promise<boolean>, [string]>(),
     issueInvite: jest.fn<Promise<TeamInvite>, [Record<string, unknown>]>(),
     revokeInvite: jest.fn<Promise<{ email: string } | null>, [string, string]>(),
@@ -148,7 +151,7 @@ describe('TeamService', () => {
 
   describe('registration', () => {
     const input = { organizationName: ' Humphreys ', fullName: ' Ada Lovelace ', email: ' Ada@Example.com ', password: GOOD_PASSWORD };
-    const created: StaffAccount = { id: 's1', organizationId: ORG, fullName: 'Ada Lovelace', email: 'ada@example.com', role: 'admin', organizationName: 'Humphreys' };
+    const created: StaffAccount = { id: 's1', organizationId: ORG, fullName: 'Ada Lovelace', email: 'ada@example.com', role: 'admin', organizationName: 'Humphreys', canManageRefunds: true };
 
     it('reports whether it is open', async () => {
       expect(service.status()).toEqual({ open: true });
@@ -164,6 +167,23 @@ describe('TeamService', () => {
         expect((await build()).status()).toEqual({ open: false });
         env = { ALLOW_REGISTRATION: 'true' };
         expect((await build()).status()).toEqual({ open: true });
+      } finally {
+        process.env.NODE_ENV = before;
+      }
+    });
+
+    it('is CLOSED by default when NODE_ENV is unset or staging (fail safe), open only when ALLOW_REGISTRATION=true', async () => {
+      const before = process.env.NODE_ENV;
+      try {
+        for (const value of [undefined, 'staging', 'prod']) {
+          if (value === undefined) {
+            delete process.env.NODE_ENV;
+          } else {
+            process.env.NODE_ENV = value;
+          }
+          env = {};
+          expect((await build()).status()).toEqual({ open: false });
+        }
       } finally {
         process.env.NODE_ENV = before;
       }
@@ -191,7 +211,7 @@ describe('TeamService', () => {
       expect(passed).toMatchObject({ organizationName: 'Humphreys', fullName: 'Ada Lovelace', email: 'ada@example.com' });
       expect(passed?.passwordHash).toMatch(/^[0-9a-f]+:[0-9a-f]+$/);
       expect(JSON.stringify(passed)).not.toContain(GOOD_PASSWORD);
-      expect(session.staff).toMatchObject({ role: 'admin', organizationName: 'Humphreys' });
+      expect(session.staff).toMatchObject({ role: 'admin', organizationName: 'Humphreys', canManageRefunds: true });
       expect(recordBy).toHaveBeenCalledWith(
         { organizationId: ORG, staffUserId: 's1', ip: '203.0.113.7', requestId: 'req-1' },
         'auth.register',
@@ -298,7 +318,7 @@ describe('TeamService', () => {
       expect(recordBy).toHaveBeenCalledWith(
         { organizationId: ORG, staffUserId: 'admin-1', ip: '203.0.113.7', requestId: 'req-2' },
         'team.invite_created',
-        { targetType: 'staff_invite', targetId: 'inv-1', metadata: { role: 'employee', emailed: false } },
+        { targetType: 'staff_invite', targetId: 'inv-1', metadata: { role: 'employee', canManageRefunds: false, emailed: false } },
       );
       expect(JSON.stringify(recordBy.mock.calls)).not.toContain('example.com');
     });
@@ -330,7 +350,21 @@ describe('TeamService', () => {
     it('can invite another admin', async () => {
       await service.createInvite(ACTOR, { ...input, role: 'admin' });
 
-      expect(repo.issueInvite.mock.calls[0]?.[0]).toMatchObject({ role: 'admin' });
+      expect(repo.issueInvite.mock.calls[0]?.[0]).toMatchObject({ role: 'admin', canManageRefunds: false });
+    });
+
+    it('starts an employee with refund access when the admin ticks it, and audits that choice', async () => {
+      await service.createInvite(ACTOR, { ...input, canManageRefunds: true });
+
+      expect(repo.issueInvite.mock.calls[0]?.[0]).toMatchObject({ role: 'employee', canManageRefunds: true });
+      expect(recordBy.mock.calls[0]?.[2]).toMatchObject({ metadata: { role: 'employee', canManageRefunds: true } });
+    });
+
+    it('never stores refund access on an admin invitation, whatever was sent', async () => {
+      await service.createInvite(ACTOR, { ...input, role: 'admin', canManageRefunds: true });
+
+      expect(repo.issueInvite.mock.calls[0]?.[0]).toMatchObject({ role: 'admin', canManageRefunds: false });
+      expect(recordBy.mock.calls[0]?.[2]).toMatchObject({ metadata: { role: 'admin', canManageRefunds: false } });
     });
   });
 
@@ -417,7 +451,7 @@ describe('TeamService', () => {
     });
 
     it('emails an access reset as a reset (to the member, link to the same route)', async () => {
-      repo.findMember.mockResolvedValue({ id: 'eve-1', role: 'employee', active: true, email: 'eve@example.com', fullName: 'Eve' });
+      repo.findMember.mockResolvedValue({ id: 'eve-1', role: 'employee', active: true, canManageRefunds: false, email: 'eve@example.com', fullName: 'Eve' });
 
       const issued = await service.resetAccess(ACTOR, 'eve-1', { sendEmail: true });
 
@@ -430,7 +464,7 @@ describe('TeamService', () => {
     });
 
     it('keeps the reset (sessions ended, token returned) when the email fails', async () => {
-      repo.findMember.mockResolvedValue({ id: 'eve-1', role: 'employee', active: true, email: 'eve@example.com', fullName: 'Eve' });
+      repo.findMember.mockResolvedValue({ id: 'eve-1', role: 'employee', active: true, canManageRefunds: false, email: 'eve@example.com', fullName: 'Eve' });
       mail.send.mockResolvedValue({ status: 'failed', errorClass: 'network' });
 
       const issued = await service.resetAccess(ACTOR, 'eve-1', { sendEmail: true });
@@ -461,7 +495,7 @@ describe('TeamService', () => {
   });
 
   describe('updateMember', () => {
-    const before = { id: 'eve-1', role: 'employee' as const, active: true };
+    const before = { id: 'eve-1', role: 'employee' as const, active: true, canManageRefunds: false };
 
     beforeEach(() => {
       repo.listMembers.mockResolvedValue([{ ...MEMBER, role: 'admin' }]);
@@ -474,7 +508,7 @@ describe('TeamService', () => {
     });
 
     it('promotes, audits the role change and answers with the updated member', async () => {
-      repo.changeMember.mockResolvedValue({ kind: 'changed', before, after: { role: 'admin', active: true } });
+      repo.changeMember.mockResolvedValue({ kind: 'changed', before, after: { role: 'admin', active: true, canManageRefunds: false } });
 
       const member = await service.updateMember(ACTOR, 'eve-1', { role: 'admin' });
 
@@ -484,12 +518,43 @@ describe('TeamService', () => {
     });
 
     it('audits a switch off as team.deactivated and a switch on as team.reactivated', async () => {
-      repo.changeMember.mockResolvedValueOnce({ kind: 'changed', before, after: { role: 'employee', active: false } });
+      repo.changeMember.mockResolvedValueOnce({ kind: 'changed', before, after: { role: 'employee', active: false, canManageRefunds: false } });
       await service.updateMember(ACTOR, 'eve-1', { active: false });
-      repo.changeMember.mockResolvedValueOnce({ kind: 'changed', before: { ...before, active: false }, after: { role: 'employee', active: true } });
+      repo.changeMember.mockResolvedValueOnce({ kind: 'changed', before: { ...before, active: false }, after: { role: 'employee', active: true, canManageRefunds: false } });
       await service.updateMember(ACTOR, 'eve-1', { active: true });
 
       expect(recordBy.mock.calls.map((call) => call[1])).toEqual(['team.deactivated', 'team.reactivated']);
+    });
+
+    it('grants refund access: audits WHO changed WHOSE access, with the new value and no secrets', async () => {
+      repo.changeMember.mockResolvedValue({ kind: 'changed', before, after: { role: 'employee', active: true, canManageRefunds: true } });
+      repo.listMembers.mockResolvedValue([{ ...MEMBER, role: 'employee', canManageRefunds: true }]);
+
+      const member = await service.updateMember(ACTOR, 'eve-1', { canManageRefunds: true });
+
+      expect(repo.changeMember).toHaveBeenCalledWith(ORG, 'admin-1', 'eve-1', { canManageRefunds: true });
+      expect(recordBy.mock.calls).toHaveLength(1);
+      expect(recordBy.mock.calls[0]?.[0]).toMatchObject({ organizationId: ORG, staffUserId: 'admin-1' });
+      expect(recordBy.mock.calls[0]?.[1]).toBe('team.refund_access_granted');
+      expect(recordBy.mock.calls[0]?.[2]).toEqual({
+        targetType: 'staff_user',
+        targetId: 'eve-1',
+        metadata: { role: 'employee', canManageRefunds: true, memberName: 'Eve', changedByName: 'Ada', changedByRole: 'admin' },
+      });
+      expect(member.canManageRefunds).toBe(true);
+    });
+
+    it('removes refund access and audits it as team.refund_access_removed', async () => {
+      repo.changeMember.mockResolvedValue({
+        kind: 'changed',
+        before: { ...before, canManageRefunds: true },
+        after: { role: 'employee', active: true, canManageRefunds: false },
+      });
+      repo.listMembers.mockResolvedValue([{ ...MEMBER, role: 'employee', canManageRefunds: false }]);
+
+      await service.updateMember(ACTOR, 'eve-1', { canManageRefunds: false });
+
+      expect(recordBy.mock.calls.map((call) => call[1])).toEqual(['team.refund_access_removed']);
     });
 
     it.each([
@@ -497,6 +562,8 @@ describe('TeamService', () => {
       ['CANNOT_DEACTIVATE_SELF', 409],
       ['STAFF_NOT_FOUND', 404],
       ['NOTHING_TO_CHANGE', 400],
+      ['REFUND_ACCESS_NOT_FOR_ADMIN', 400],
+      ['CANNOT_CHANGE_OWN_REFUND_ACCESS', 400],
     ] as const)('turns the refusal %s into HTTP %s and audits nothing', async (code, status) => {
       repo.changeMember.mockResolvedValue({ kind: 'refused', code });
 
@@ -508,7 +575,7 @@ describe('TeamService', () => {
 
   describe('resetAccess', () => {
     it('ends the person\'s sessions, issues a reset link for THAT account and audits it', async () => {
-      repo.findMember.mockResolvedValue({ id: 'eve-1', role: 'employee', active: true, email: 'eve@example.com', fullName: 'Eve' });
+      repo.findMember.mockResolvedValue({ id: 'eve-1', role: 'employee', active: true, canManageRefunds: false, email: 'eve@example.com', fullName: 'Eve' });
 
       const issued = await service.resetAccess(ACTOR, 'eve-1');
 
@@ -533,7 +600,7 @@ describe('TeamService', () => {
     });
 
     it('asks for a switched-off member to be switched on first', async () => {
-      repo.findMember.mockResolvedValue({ id: 'eve-1', role: 'employee', active: false, email: 'eve@example.com', fullName: 'Eve' });
+      repo.findMember.mockResolvedValue({ id: 'eve-1', role: 'employee', active: false, canManageRefunds: false, email: 'eve@example.com', fullName: 'Eve' });
 
       await expect(service.resetAccess(ACTOR, 'eve-1')).rejects.toMatchObject({ status: 409, response: { code: 'MEMBER_INACTIVE' } });
 
@@ -606,7 +673,7 @@ describe('TeamService', () => {
 
   describe('accept', () => {
     const input = { token: TOKEN, password: GOOD_PASSWORD, fullName: ' Chosen Name ' };
-    const account: StaffAccount = { id: 'new-1', organizationId: ORG, fullName: 'Chosen Name', email: 'new@example.com', role: 'employee', organizationName: 'Humphreys' };
+    const account: StaffAccount = { id: 'new-1', organizationId: ORG, fullName: 'Chosen Name', email: 'new@example.com', role: 'employee', organizationName: 'Humphreys', canManageRefunds: false };
 
     beforeEach(() => {
       repo.findInviteByTokenHash.mockResolvedValue(inviteRecord());

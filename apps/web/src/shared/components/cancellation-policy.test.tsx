@@ -126,10 +126,11 @@ describe('CancellationPolicySection', () => {
     expect((section().textContent ?? '').replace(/\s/g, ' ')).toContain('fee of 25,00 €');
   });
 
-  it('shows the summary "No refund after booking" when nothing is refunded', () => {
+  it('shows the summary "No refund when cancelling" when nothing is refunded (also the default of a new property)', () => {
     render(<CancellationPolicySection policy={policy({ tiers: [{ minDaysBeforeCheckIn: 0, refundPercent: 0 }] })} currencyCode="EUR" />);
 
-    expect(screen.getByText('No refund after booking')).toBeTruthy();
+    expect(screen.getByText('No refund when cancelling')).toBeTruthy();
+    expect(section().textContent).toContain('Any time before check-in');
   });
 
   it('always states the property-cancels refund and the missing 14-day withdrawal right', () => {

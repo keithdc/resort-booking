@@ -51,10 +51,13 @@ export interface BookingRow {
 /** The row as the database returns it: `payments` is JSON until it is read safely. */
 type RawBookingRow = Omit<BookingRow, 'payments'> & { payments: unknown };
 
-export type RefundKind = 'cancellation' | 'rebook_difference';
+export type RefundKind = 'cancellation' | 'rebook_difference' | 'late_payment';
 
 /** Why a booking was cancelled, kept on the booking. `dates_changed` is a cancel-and-replace. */
 export type CancelReasonCode = StaffCancelReason | 'dates_changed';
+
+/** The reason kept on a refund: a cancel reason, or `late_payment` (a payment that arrived after the hold ended). */
+export type RefundReasonCode = CancelReasonCode | 'late_payment';
 
 /** Who cancelled, why, and any note. Guests leave `staffId` and `note` empty. */
 export interface CancelMeta {
@@ -85,7 +88,7 @@ export interface InsertRefundInput {
   reason: string;
   kind?: RefundKind;
   /** Machine-readable reason shown to staff. Defaults from the refund kind when left out. */
-  reasonCode?: CancelReasonCode;
+  reasonCode?: RefundReasonCode;
   /** Defaults to the guest. */
   initiatedBy?: ActionInitiator;
   /** The staff member who made the refund, when staff did. */
@@ -236,8 +239,12 @@ export class BookingsRepository {
       INSERT INTO refunds (
         organization_id, property_id, inventory_block_id, payment_id, provider,
         amount_cents, percent, currency_code, status, reason, initiated_by, kind,
-        reason_code, created_by_staff_id
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        reason_code, created_by_staff_id, processing_started_at, attempts
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
+        CASE WHEN $9 = 'pending' AND $5 <> 'manual' THEN now() END,
+        CASE WHEN $9 = 'pending' AND $5 <> 'manual' THEN 1 ELSE 0 END
+      )
       ON CONFLICT (inventory_block_id, kind) DO NOTHING
       RETURNING id
       `,
@@ -262,17 +269,37 @@ export class BookingsRepository {
   }
 
   /**
-   * Settles a pending refund after the provider answered.
+   * Settles a refund after the provider answered, and lets go of the lease. A refund that already succeeded is never
+   * touched again (false). `bumpKeyGeneration` is for a DEFINITIVE refusal: the next attempt then sends a fresh
+   * idempotency key (a provider caches the refusal for the old one).
    */
   public async completeRefund(
     refundId: string,
     status: 'succeeded' | 'failed',
     providerRef: string,
     failureReason: string | null,
-  ): Promise<void> {
+    options: { bumpKeyGeneration?: boolean } = {},
+  ): Promise<boolean> {
+    const result = await this.database.query(
+      `
+      UPDATE refunds
+      SET status = $2, provider_ref = $3, failure_reason = $4, processing_started_at = NULL,
+        key_generation = key_generation + $5::int, updated_at = now()
+      WHERE id = $1 AND status <> 'succeeded'
+      `,
+      [refundId, status, providerRef, failureReason, options.bumpKeyGeneration === true ? 1 : 0],
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  /**
+   * The provider could not say what happened (timeout, dropped connection): the refund stays pending, keeps its lease
+   * until it runs out, and says why. The reconciler asks again with the same idempotency key.
+   */
+  public async noteRefundOutcomeUnknown(refundId: string, note: string): Promise<void> {
     await this.database.query(
-      `UPDATE refunds SET status = $2, provider_ref = $3, failure_reason = $4, updated_at = now() WHERE id = $1`,
-      [refundId, status, providerRef, failureReason],
+      `UPDATE refunds SET failure_reason = $2, updated_at = now() WHERE id = $1 AND status = 'pending'`,
+      [refundId, note.slice(0, 500)],
     );
   }
 

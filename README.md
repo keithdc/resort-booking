@@ -71,7 +71,7 @@ Default owner (from `apps/api/.env.example`, created on API boot if no staff row
 
 The login page does not prefill them: type the email. Change these in `apps/api/.env` before any shared or production use.
 
-Registration is open by default outside production (set `ALLOW_REGISTRATION=false` to close it; in production it must be `true` to open): while open, the login page shows "Create an account" (http://localhost:3001/register) to create a new workspace through the UI. An admin invites teammates from **Team** (a one-time link to hand over); employees see no Team, Audit log or Properties.
+Registration is open by default on a development run only (`NODE_ENV=development` or `test`; set `ALLOW_REGISTRATION=false` to close it; on any other run it must be `true` to open): while open, the login page shows "Create an account" (http://localhost:3001/register) to create a new workspace through the UI. An admin invites teammates from **Team** (a one-time link to hand over); employees see no Team, Audit log or Properties.
 
 ## Seed catalog
 
@@ -98,7 +98,8 @@ Migrations publish two destinations (Alpine Lake and Pine Coast) with stays, pho
 
 Do not commit filled `.env` files. Examples:
 
-- `apps/api/.env.example` — **copy it to `apps/api/.env`: the API reads only `.env`.** `DATABASE_URL`, `REDIS_URL`, `PORT`, `CORS_ORIGINS`, staff owner email/password (first start only), `TRUST_PROXY`, `IP_HASH_SALT`, the abuse-limit settings, `PAYMENT_PROVIDER` (`mock` until the client picks a provider; the API refuses `mock` in production), and optional email for team invitations (`RESEND_API_KEY`, `MAIL_FROM`, `ADMIN_APP_URL`; without them the admin copies the link; see `docs/12-email.md`)
+- `apps/api/.env.example` — **copy it to `apps/api/.env`: the API reads only `.env`.** `DATABASE_URL`, `REDIS_URL`, `PORT`, `CORS_ORIGINS`, staff owner email/password (first start only), `TRUST_PROXY`, `IP_HASH_SALT`, the abuse-limit settings, `PAYMENT_PROVIDER` (`mock` until the client picks a provider; the mock also needs `ALLOW_MOCK_PAYMENTS=true` and is refused on any production-like run), and optional email for team invitations (`RESEND_API_KEY`, `MAIL_FROM`, `ADMIN_APP_URL`; without them the admin copies the link; see `docs/12-email.md`)
+- **Environment modes (strict by default).** Only an explicit `NODE_ENV=development` or `NODE_ENV=test` turns development conveniences on (mock payments with `ALLOW_MOCK_PAYMENTS=true`, open registration, the development two-factor key, unsalted hashes, localhost CORS). Anything else (unset, `staging`, `prod`, a typo) behaves like production, and the API **refuses to start** with a list of what is missing: `NODE_ENV` set to `production`, real `CORS_ORIGINS`, a real payment provider, `TWO_FACTOR_ENCRYPTION_KEY`, `IP_HASH_SALT` (32+ characters) and the database settings. `npm run start:dev` sets `NODE_ENV=development` itself, and your `apps/api/.env` needs `ALLOW_MOCK_PAYMENTS=true` while `PAYMENT_PROVIDER=mock`. On a server set `NODE_ENV=production` and never set `ALLOW_MOCK_PAYMENTS` (the API refuses to start if it is). Rotating `IP_HASH_SALT` changes every stored IP and email hash, so older audit rows no longer match newer ones. `next dev`, `next start` and `vitest` set `NODE_ENV` themselves for the two web apps.
 - `apps/web/.env.example` — `NEXT_PUBLIC_API_URL=http://localhost:3002`
 - `apps/admin/.env.example` — `NEXT_PUBLIC_API_URL` (never put a secret in a `NEXT_PUBLIC_` variable: it is published in the browser)
 

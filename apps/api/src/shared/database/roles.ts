@@ -104,6 +104,68 @@ export function roleOptionsFromEnv(env: Env, database: string): RoleSetupOptions
   };
 }
 
+/** A table whose runtime rights are narrower than the blanket "read and write rows". */
+export interface RestrictedTable {
+  table: string;
+  /** Columns the app role may UPDATE. Empty: no UPDATE at all. */
+  updatableColumns: readonly string[];
+}
+
+/**
+ * Tables the runtime role may only INSERT into and read, plus a short list of columns it may still UPDATE (docs/13 R2-05).
+ * Nothing here is ever DELETEd by the API. The triggers of migration 032 enforce the same rules for any other role.
+ * `payments.inventory_block_id` stays updatable because a date change moves the paid money to the new booking.
+ */
+export const RESTRICTED_TABLES: readonly RestrictedTable[] = [
+  { table: 'audit_log', updatableColumns: [] },
+  { table: 'booking_changes', updatableColumns: [] },
+  { table: 'payments', updatableColumns: ['status', 'failure_reason', 'inventory_block_id', 'updated_at'] },
+  {
+    table: 'refunds',
+    updatableColumns: [
+      'status',
+      'provider',
+      'provider_ref',
+      'failure_reason',
+      'resolution_note',
+      'resolved_by_staff_id',
+      'resolved_at',
+      'updated_at',
+      'processing_started_at',
+      'attempts',
+      'key_generation',
+    ],
+  },
+  { table: 'payment_webhook_events', updatableColumns: ['status', 'attempts', 'error', 'updated_at', 'processed_at'] },
+];
+
+/**
+ * The statements that give the app role its narrow rights on RESTRICTED_TABLES: everything is taken away first, then
+ * SELECT and INSERT (and UPDATE of named columns) are granted. A table that does not exist yet is skipped, and so is
+ * one the connected role may not change, so the statements are safe to run after any migration and again later.
+ */
+export function restrictedTableStatements(appRole: string): string[] {
+  const app = assertIdentifier(appRole, 'The app role');
+  return RESTRICTED_TABLES.map((entry: RestrictedTable): string => {
+    const table = assertIdentifier(entry.table, 'The table name');
+    const columns = entry.updatableColumns.map((column: string): string => `"${assertIdentifier(column, 'The column name')}"`);
+    const update = columns.length === 0 ? '' : `GRANT UPDATE (${columns.join(', ')}) ON public.${table} TO "${app}";`;
+    return `
+      DO $$
+      BEGIN
+        IF to_regclass('public.${table}') IS NOT NULL
+           AND pg_has_role(current_user, (SELECT relowner FROM pg_class WHERE oid = to_regclass('public.${table}')), 'MEMBER')
+           AND EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${app}') THEN
+          REVOKE ALL ON public.${table} FROM "${app}";
+          GRANT SELECT, INSERT ON public.${table} TO "${app}";
+          ${update}
+        END IF;
+      END
+      $$
+    `.replace(/\s+/g, ' ').trim();
+  });
+}
+
 /**
  * Every statement that sets the roles up, in order. Safe to run again: roles are created only if missing and then
  * altered to the wanted shape, privileges are reset before they are granted, and ownership moves only where it differs.
@@ -211,6 +273,11 @@ export function buildRoleStatements(options: RoleSetupOptions): RoleStatement[] 
     END
     $$
   `);
+  // The audit log, the money tables and their history are append-only for the app: INSERT and read, UPDATE of a few
+  // columns, never DELETE (docs/13 R2-05). Done after the blanket grant so it wins.
+  for (const sql of restrictedTableStatements(app)) {
+    plain(sql);
+  }
   // Tables created by FUTURE migrations (run as the owner) are covered without another run of this script.
   plain(`ALTER DEFAULT PRIVILEGES FOR ROLE "${owner}" IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO "${app}"`);
   plain(`ALTER DEFAULT PRIVILEGES FOR ROLE "${owner}" IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO "${app}"`);

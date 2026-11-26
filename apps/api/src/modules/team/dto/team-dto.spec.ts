@@ -1,7 +1,7 @@
 /**
  * @file apps/api/src/modules/team/dto/team-dto.spec.ts
  * @feature team
- * The team DTOs through the app's real ValidationPipe (implicit conversion included): sizes, shapes, no extras.
+ * The team DTOs through the app's real ValidationPipe (no implicit conversion): sizes, shapes, no extras.
  */
 
 import 'reflect-metadata';
@@ -66,6 +66,26 @@ describe('CreateInviteDto', () => {
     ['an extra field', { ...good, organizationId: 'o2' }],
   ])('refuses %s', async (_label, payload) => {
     expect(accepted(await run(CreateInviteDto, payload))).toBe(false);
+  });
+});
+
+describe('canManageRefunds (refund access) on CreateInviteDto and UpdateMemberDto', () => {
+  const good = { email: 'new@example.com', fullName: 'New Person', role: 'employee' };
+
+  it('accepts a real boolean, or nothing', async () => {
+    expect(accepted(await run(CreateInviteDto, { ...good, canManageRefunds: true }))).toBe(true);
+    expect(accepted(await run(CreateInviteDto, { ...good, canManageRefunds: false }))).toBe(true);
+    expect(accepted(await run(UpdateMemberDto, { canManageRefunds: true }))).toBe(true);
+    expect(accepted(await run(UpdateMemberDto, { canManageRefunds: false }))).toBe(true);
+  });
+
+  it.each([['"true" as text', 'true'], ['"false" as text', 'false'], ['1', 1], ['an object', {}]])('refuses %s (no loose conversion)', async (_label, value) => {
+    expect(accepted(await run(CreateInviteDto, { ...good, canManageRefunds: value }))).toBe(false);
+    expect(accepted(await run(UpdateMemberDto, { canManageRefunds: value }))).toBe(false);
+  });
+
+  it('keeps a real JSON false as false', async () => {
+    expect(await run(UpdateMemberDto, { canManageRefunds: false })).toMatchObject({ canManageRefunds: false });
   });
 });
 

@@ -56,13 +56,11 @@ export class UpsertPropertyDto {
   @MaxLength(LIMITS.postalCode)
   public postalCode!: string;
 
-  @Type((): NumberConstructor => Number)
   @IsNumber()
   @Min(-90)
   @Max(90)
   public latitude!: number;
 
-  @Type((): NumberConstructor => Number)
   @IsNumber()
   @Min(-180)
   @Max(180)
@@ -81,11 +79,9 @@ export class UpsertPropertyDto {
   @MaxLength(LIMITS.timezone)
   public timezone!: string;
 
-  @Type((): BooleanConstructor => Boolean)
   @IsBoolean()
   public published!: boolean;
 
-  @Type((): BooleanConstructor => Boolean)
   @IsBoolean()
   public customRequestsEnabled!: boolean;
 

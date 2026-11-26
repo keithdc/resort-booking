@@ -28,6 +28,10 @@ import { StaffQuoteSummary } from './staff-quote-summary';
 interface StaffChangeDatesDialogProps {
   open: boolean;
   stay: Pick<StaffReservation, 'id' | 'reference' | 'checkIn' | 'checkOut'>;
+  /** Waiving the fee and confirming an outside payment need an admin or refund access (the API answers 403 otherwise). */
+  canManageRefunds: boolean;
+  /** Set for someone without refund access when check-in is today or past: the dialog shows this and offers nothing to submit. */
+  lockedReason?: string | null;
   onClose: () => void;
   onChanged: (result: StaffChangeResult) => void;
 }
@@ -36,7 +40,7 @@ interface StaffChangeDatesDialogProps {
  * Move a guest to other dates, even when guests cannot change their own. Staff see the exact price
  * difference first; if the guest owes money, staff confirm it was paid outside the system.
  */
-export function StaffChangeDatesDialog({ open, stay, onClose, onChanged }: StaffChangeDatesDialogProps): React.JSX.Element {
+export function StaffChangeDatesDialog({ open, stay, canManageRefunds, lockedReason = null, onClose, onChanged }: StaffChangeDatesDialogProps): React.JSX.Element {
   const state = useStaffChangeDates({ stay, open, onChanged });
   const { quote } = state;
 
@@ -45,6 +49,7 @@ export function StaffChangeDatesDialog({ open, stay, onClose, onChanged }: Staff
       <DialogTitle id="staff-change-title">Change the dates of {stay.reference}</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ mt: 1 }}>
+          {lockedReason !== null ? <Alert severity="warning">{lockedReason}</Alert> : null}
           <Alert severity="info">
             You can do this even when guests cannot change their own dates. The old booking is cancelled and replaced by a new
             booking with a new reference.
@@ -72,11 +77,13 @@ export function StaffChangeDatesDialog({ open, stay, onClose, onChanged }: Staff
           <Typography variant="body2" color="text.secondary">
             New check-out: {state.checkOut}
           </Typography>
-          <FormControlLabel
-            control={<Checkbox checked={state.waiveFee} onChange={(event): void => state.setWaiveFee(event.target.checked)} />}
-            label="Waive the change fee"
-          />
-          <Button variant="outlined" disabled={state.quoting || state.saving || state.unchanged} onClick={(): void => void state.seePrice()}>
+          {canManageRefunds ? (
+            <FormControlLabel
+              control={<Checkbox checked={state.waiveFee} onChange={(event): void => state.setWaiveFee(event.target.checked)} />}
+              label="Waive the change fee"
+            />
+          ) : null}
+          <Button variant="outlined" disabled={lockedReason !== null || state.quoting || state.saving || state.unchanged} onClick={(): void => void state.seePrice()}>
             {state.quoting ? 'Working out the price…' : 'See price'}
           </Button>
           {state.unchanged ? (
@@ -85,7 +92,10 @@ export function StaffChangeDatesDialog({ open, stay, onClose, onChanged }: Staff
             </Typography>
           ) : null}
           {quote !== null ? <StaffQuoteSummary quote={quote} /> : null}
-          {quote !== null && quote.available && state.needsOutsidePayment ? (
+          {quote !== null && quote.available && state.needsOutsidePayment && !canManageRefunds ? (
+            <Alert severity="warning">The guest owes more for these dates. An admin or someone with refund access has to confirm that the guest paid it.</Alert>
+          ) : null}
+          {quote !== null && quote.available && state.needsOutsidePayment && canManageRefunds ? (
             <FormControlLabel
               control={<Checkbox checked={state.outsidePaid} onChange={(event): void => state.setOutsidePaid(event.target.checked)} />}
               label={outsidePaymentLabel(quote)}
@@ -112,7 +122,7 @@ export function StaffChangeDatesDialog({ open, stay, onClose, onChanged }: Staff
         <Button autoFocus onClick={onClose} disabled={state.saving}>
           Keep the current dates
         </Button>
-        <Button variant="contained" disabled={!state.canConfirm} onClick={(): void => void state.confirm()}>
+        <Button variant="contained" disabled={lockedReason !== null || !state.canConfirm} onClick={(): void => void state.confirm()}>
           {state.saving ? 'Changing…' : quote === null ? 'Change dates' : confirmChangeLabel(quote)}
         </Button>
       </DialogActions>

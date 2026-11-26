@@ -22,6 +22,9 @@ const propertyApi = vi.hoisted(() => ({
   fetchStaffProperties: vi.fn<() => Promise<PropertySummary[]>>(),
 }));
 
+const role = vi.hoisted(() => ({ canManageRefunds: true }));
+
+vi.mock('@/shared/hooks/use-staff-role', () => ({ useCanManageRefunds: (): boolean => role.canManageRefunds }));
 vi.mock('../services/staff-refunds-api', () => refundsApi);
 vi.mock('@/features/property/services/staff-property-api', () => propertyApi);
 
@@ -54,6 +57,7 @@ function property(id: string, name: string): PropertySummary {
 
 describe('RefundsPage', () => {
   beforeEach(() => {
+    role.canManageRefunds = true;
     Object.values(refundsApi).forEach((mock) => mock.mockReset());
     propertyApi.fetchStaffProperties.mockReset();
     refundsApi.fetchStaffRefunds.mockResolvedValue([HAND, FAILED]);
@@ -169,6 +173,16 @@ describe('RefundsPage', () => {
     async function openRow(reference: string): Promise<void> {
       await userEvent.click(within(await screen.findByRole('table')).getByText(reference));
     }
+
+    it('hides Retry from an employee WITHOUT refund access who opens a failed refund', async () => {
+      role.canManageRefunds = false;
+      render(<RefundsPage />);
+
+      await openRow('BK-BBB0000000');
+
+      expect(plain((await screen.findByRole('dialog')).textContent)).toContain('Grace Hopper');
+      expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+    });
 
     it('opens a refund with its details when its row is clicked', async () => {
       render(<RefundsPage />);

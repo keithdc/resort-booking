@@ -15,7 +15,7 @@ import { PropertyService } from './property.service';
 describe('PropertyService staff catalog is scoped to the caller organization', () => {
   const listProperties = jest.fn<Promise<PropertySummary[]>, [boolean, (string | null)?]>();
   const createProperty = jest.fn<Promise<PropertyDetail>, [string, CreatePropertyRequest]>();
-  const slugTaken = jest.fn<Promise<boolean>, [string, string, string | null]>();
+  const slugTaken = jest.fn<Promise<boolean>, [string, string | null]>();
   let service: PropertyService;
 
   const REQUEST: CreatePropertyRequest = {
@@ -68,7 +68,7 @@ describe('PropertyService staff catalog is scoped to the caller organization', (
 
     await expect(service.createStaffProperty('org-B', REQUEST)).resolves.toBe(created);
 
-    expect(slugTaken.mock.calls[0]?.[0]).toBe('org-B');
+    expect(slugTaken.mock.calls[0]).toEqual(['lake-house', null]);
     expect(createProperty.mock.calls[0]?.[0]).toBe('org-B');
   });
 });

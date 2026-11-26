@@ -5,6 +5,7 @@
  */
 
 import { IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min } from 'class-validator';
+import { QueryNumber } from '../../../shared/validation/query-number';
 
 export class AuditQueryDto {
   /** e.g. "team." or "refund.": lower-case letters, dots and underscores only (checked again by the service). */
@@ -28,6 +29,7 @@ export class AuditQueryDto {
   public cursor?: string;
 
   @IsOptional()
+  @QueryNumber()
   @IsInt()
   @Min(1)
   @Max(100)

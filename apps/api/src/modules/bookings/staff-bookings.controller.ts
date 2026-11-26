@@ -11,18 +11,19 @@ import type {
   StaffCancelPreview,
   StaffCancelResult,
   StaffChangeResult,
-  StaffProfile,
   StaffRefund,
 } from '@resort-booking/shared-types';
+import type { StaffAccount } from '../../shared/roles/staff-role';
 import { StaffGuard, type StaffRequest } from '../identity/staff.guard';
 import { ParseUuidLikePipe } from '../../shared/validation/parse-uuid-like.pipe';
 import { MarkRefundPaidDto, StaffCancelDto, StaffChangeDatesDto, StaffChangeQuoteDto } from './dto/staff-actions.dto';
 import { StaffRefundsQueryDto } from './dto/staff-refunds-query.dto';
+import { cancelAuditDetails, changeDatesAuditDetails, refundActionAuditDetails } from './staff-audit-details';
 import { StaffBookingsService } from './staff-bookings.service';
 import { StaffRefundsService } from './staff-refunds.service';
 import { Audited } from '../../shared/audit/audited.decorator';
 import { RoleGuard } from '../../shared/roles/role.guard';
-import { AllowRoles, RequireRole } from '../../shared/roles/roles.decorator';
+import { AllowRoles, RequireMoneyAccess } from '../../shared/roles/roles.decorator';
 import { TenantGuard } from '../../shared/tenancy/tenant.guard';
 import { TenantScoped } from '../../shared/tenancy/tenant-scope.decorator';
 
@@ -51,7 +52,7 @@ export class StaffBookingsController {
   /** Cancels a booking for the guest and refunds per the chosen reason. */
   @Post('reservations/:id/cancel')
   @AllowRoles('admin', 'employee')
-  @Audited({ action: 'booking.cancelled_by_staff', targetType: 'booking', targetParam: 'id' })
+  @Audited({ action: 'booking.cancelled_by_staff', targetType: 'booking', targetParam: 'id', details: cancelAuditDetails })
   @HttpCode(200)
   @TenantScoped({ resource: 'booking', from: 'param', key: 'id' })
   public async cancel(
@@ -78,7 +79,7 @@ export class StaffBookingsController {
   /** Moves the booking to new dates. */
   @Post('reservations/:id/change-dates')
   @AllowRoles('admin', 'employee')
-  @Audited({ action: 'booking.dates_changed_by_staff', targetType: 'booking', targetParam: 'id' })
+  @Audited({ action: 'booking.dates_changed_by_staff', targetType: 'booking', targetParam: 'id', details: changeDatesAuditDetails })
   @HttpCode(200)
   @TenantScoped({ resource: 'booking', from: 'param', key: 'id' })
   public async changeDates(
@@ -98,20 +99,20 @@ export class StaffBookingsController {
     return { status: 'ok', data };
   }
 
-  /** Asks the payment provider to send a failed refund again. */
+  /** Asks the payment provider to send a failed refund again. Needs money access (an admin, or an employee with refund access). */
   @Post('refunds/:id/retry')
-  @RequireRole('admin')
-  @Audited({ action: 'refund.retried', targetType: 'refund', targetParam: 'id' })
+  @RequireMoneyAccess()
+  @Audited({ action: 'refund.retried', targetType: 'refund', targetParam: 'id', details: refundActionAuditDetails })
   @HttpCode(200)
   @TenantScoped({ resource: 'refund', from: 'param', key: 'id' })
   public async retry(@Param('id', ParseUuidLikePipe) id: string, @Req() request: StaffRequest): Promise<ApiOkBody<StaffRefund>> {
     return { status: 'ok', data: await this.refunds.retry(this.staff(request), id) };
   }
 
-  /** Staff sent the money themselves. */
+  /** Staff sent the money themselves. Needs money access (an admin, or an employee with refund access). */
   @Post('refunds/:id/mark-paid')
-  @RequireRole('admin')
-  @Audited({ action: 'refund.marked_paid', targetType: 'refund', targetParam: 'id' })
+  @RequireMoneyAccess()
+  @Audited({ action: 'refund.marked_paid', targetType: 'refund', targetParam: 'id', details: refundActionAuditDetails })
   @HttpCode(200)
   @TenantScoped({ resource: 'refund', from: 'param', key: 'id' })
   public async markPaid(
@@ -123,7 +124,7 @@ export class StaffBookingsController {
   }
 
   /** The signed-in staff member the guard attached. */
-  private staff(request: StaffRequest): StaffProfile {
+  private staff(request: StaffRequest): StaffAccount {
     const staff = request.staff;
     if (staff === undefined) {
       // The guard always sets it; this only narrows the type.

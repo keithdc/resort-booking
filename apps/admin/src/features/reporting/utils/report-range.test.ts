@@ -137,3 +137,22 @@ describe('day, week, quarter and year presets (NOW is Thursday 15 Jul 2027)', ()
     expect(describePreset('custom', NOW)).toBe('');
   });
 });
+
+describe('every period stays inside the API cap (400 nights, R2-03)', () => {
+  it.each([2023, 2024, 2027, 2028])('no preset asks for more than 400 nights in %i, on any day of the year', (year) => {
+    const presets = REPORT_RANGE_OPTIONS.filter((option) => option.value !== 'custom');
+    for (let dayOfYear = 0; dayOfYear < 366; dayOfYear += 1) {
+      const now = new Date(year, 0, 1 + dayOfYear);
+      for (const option of presets) {
+        if (option.value !== 'custom') {
+          const { from, to } = rangeFromPreset(option.value, now);
+          expect(periodNights(from, to)).toBeLessThanOrEqual(400);
+        }
+      }
+    }
+  });
+
+  it('a custom period is capped at the same number', () => {
+    expect(MAX_CUSTOM_RANGE_DAYS).toBe(400);
+  });
+});

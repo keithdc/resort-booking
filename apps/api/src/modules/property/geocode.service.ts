@@ -6,9 +6,11 @@
 
 import { Injectable } from '@nestjs/common';
 import type { GeocodeHit } from '@resort-booking/shared-types';
+import { fetchBoundedJson } from './geocode-fetch';
 import { mergeReverseHits } from './geocode.rules';
 
 const USER_AGENT = 'resort-booking-admin/0.1 (direct-booking prototype)';
+const GEOCODE_HEADERS = { Accept: 'application/json', 'User-Agent': USER_AGENT };
 
 interface PhotonProperties {
   name?: string;
@@ -83,18 +85,10 @@ export class GeocodeService {
     url.searchParams.set('lang', 'en');
     url.searchParams.set('lat', '46.6');
     url.searchParams.set('lon', '2.2');
-    let response: Response;
-    try {
-      response = await fetch(url, {
-        headers: { Accept: 'application/json', 'User-Agent': USER_AGENT },
-      });
-    } catch {
+    const payload = await fetchBoundedJson(url, GEOCODE_HEADERS);
+    if (payload === null) {
       return [];
     }
-    if (!response.ok) {
-      return [];
-    }
-    const payload: unknown = await response.json();
     if (typeof payload !== 'object' || payload === null || !('features' in payload)) {
       return [];
     }
@@ -110,18 +104,10 @@ export class GeocodeService {
     url.searchParams.set('lat', String(latitude));
     url.searchParams.set('lon', String(longitude));
     url.searchParams.set('lang', 'en');
-    let response: Response;
-    try {
-      response = await fetch(url, {
-        headers: { Accept: 'application/json', 'User-Agent': USER_AGENT },
-      });
-    } catch {
+    const payload = await fetchBoundedJson(url, GEOCODE_HEADERS);
+    if (payload === null) {
       return null;
     }
-    if (!response.ok) {
-      return null;
-    }
-    const payload: unknown = await response.json();
     if (typeof payload !== 'object' || payload === null || !('features' in payload)) {
       if (isPhotonFeature(payload)) {
         const hit = mapPhoton(payload);
@@ -143,18 +129,10 @@ export class GeocodeService {
     url.searchParams.set('lon', String(longitude));
     url.searchParams.set('format', 'json');
     url.searchParams.set('addressdetails', '1');
-    let response: Response;
-    try {
-      response = await fetch(url, {
-        headers: { Accept: 'application/json', 'User-Agent': USER_AGENT },
-      });
-    } catch {
+    const payload = await fetchBoundedJson(url, GEOCODE_HEADERS);
+    if (payload === null) {
       return null;
     }
-    if (!response.ok) {
-      return null;
-    }
-    const payload: unknown = await response.json();
     if (!isNominatimHit(payload)) {
       return null;
     }
@@ -168,18 +146,10 @@ export class GeocodeService {
     url.searchParams.set('format', 'json');
     url.searchParams.set('addressdetails', '1');
     url.searchParams.set('limit', '6');
-    let response: Response;
-    try {
-      response = await fetch(url, {
-        headers: { Accept: 'application/json', 'User-Agent': USER_AGENT },
-      });
-    } catch {
+    const payload = await fetchBoundedJson(url, GEOCODE_HEADERS);
+    if (payload === null) {
       return [];
     }
-    if (!response.ok) {
-      return [];
-    }
-    const payload: unknown = await response.json();
     if (!Array.isArray(payload)) {
       return [];
     }

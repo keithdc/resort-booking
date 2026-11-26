@@ -75,6 +75,26 @@ export class PaymentsRepository {
   }
 
   /**
+   * The payment a provider event is about, by the provider's own reference. Null when we never created it.
+   */
+  public async findByProviderRef(provider: string, providerRef: string): Promise<PaymentRow | null> {
+    const result = await this.database.query<PaymentRow>(
+      `SELECT ${COLUMNS} FROM payments WHERE provider = $1 AND provider_ref = $2`,
+      [provider, providerRef],
+    );
+    return result.rows[0] ?? null;
+  }
+
+  /**
+   * Re-reads a payment and locks it for the rest of the caller's transaction, so two deliveries (or a delivery and
+   * the mock button) cannot both settle it.
+   */
+  public async lockById(client: PoolClient, paymentId: string): Promise<PaymentRow | null> {
+    const result = await client.query<PaymentRow>(`SELECT ${COLUMNS} FROM payments WHERE id = $1 FOR UPDATE`, [paymentId]);
+    return result.rows[0] ?? null;
+  }
+
+  /**
    * Starts a payment attempt. A unique index allows only one open attempt per hold, so two taps
    * cannot start two charges (the caller handles the 23505 by reading the open one).
    */
@@ -153,6 +173,34 @@ export class PaymentsRepository {
       `,
       [paymentId],
     );
+  }
+
+  /**
+   * The provider reports a success for a payment our records had open, failed or cancelled and whose stay could not be
+   * given to the guest: the money WAS taken. The payment becomes `succeeded` with the reason `late_success`, so reports
+   * count the money in (the automatic refund counts it out). It is not credited to any booking. False if it was
+   * already succeeded.
+   */
+  public async markLateSucceeded(client: PoolClient, paymentId: string): Promise<boolean> {
+    const result = await client.query(
+      `
+      UPDATE payments SET status = 'succeeded', failure_reason = 'late_success', updated_at = now()
+      WHERE id = $1 AND status IN ('requires_payment', 'failed', 'cancelled')
+      `,
+      [paymentId],
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  /**
+   * Like markEnded, inside the caller's transaction (a webhook ends the attempt together with finishing its event).
+   */
+  public async markEndedIn(client: PoolClient, paymentId: string, status: 'failed' | 'cancelled', reason: string): Promise<boolean> {
+    const result = await client.query(
+      `UPDATE payments SET status = $2, failure_reason = $3, updated_at = now() WHERE id = $1 AND status = 'requires_payment'`,
+      [paymentId, status, reason],
+    );
+    return (result.rowCount ?? 0) > 0;
   }
 
   /**

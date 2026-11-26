@@ -14,7 +14,7 @@ import { TenantGuard } from '../../shared/tenancy/tenant.guard';
 import { StaffGuard } from '../identity/staff.guard';
 import { AuditController } from './audit.controller';
 
-const STAFF: StaffAccount = { id: 's1', organizationId: 'o1', fullName: 'Ada', email: 'ada@example.com', role: 'admin', organizationName: 'Humphreys' };
+const STAFF: StaffAccount = { id: 's1', organizationId: 'o1', fullName: 'Ada', email: 'ada@example.com', role: 'admin', organizationName: 'Humphreys', canManageRefunds: true };
 const PAGE: AuditPage = { items: [], nextCursor: null };
 
 describe('AuditController', () => {

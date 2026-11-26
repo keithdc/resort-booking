@@ -26,6 +26,7 @@ const PREVIEW: StaffCancelPreview = {
   currencyCode: 'EUR',
   canCancel: true,
   blockedReason: null,
+  notice: null,
   policyRefund: { paidCents: 96000, refundPercent: 75, refundCents: 72000, currencyCode: 'EUR', daysBeforeCheckIn: 4 },
 };
 
@@ -33,9 +34,9 @@ const RESULT: StaffCancelResult = { reservation: staffReservation({ status: 'can
 
 const plain = (text: string | null | undefined): string => (text ?? '').replace(/\s/g, ' ');
 
-function renderDialog(): { onClose: () => void; onCancelled: (result: StaffCancelResult) => void } {
+function renderDialog(canManageRefunds = true): { onClose: () => void; onCancelled: (result: StaffCancelResult) => void } {
   const handlers = { onClose: vi.fn<() => void>(), onCancelled: vi.fn<(result: StaffCancelResult) => void>() };
-  render(<StaffCancelDialog open reservationId="r1" reference="BK-ABC1234567" {...handlers} />);
+  render(<StaffCancelDialog open reservationId="r1" reference="BK-ABC1234567" canManageRefunds={canManageRefunds} {...handlers} />);
   return handlers;
 }
 
@@ -55,6 +56,68 @@ describe('StaffCancelDialog', () => {
   });
 
   afterEach(cleanup);
+
+  it('offers an employee only the policy refund, not full refund or goodwill', async () => {
+    renderDialog(false);
+    await loaded();
+
+    expect(screen.getByRole('radio', { name: /Guest asked/ })).toBeTruthy();
+    expect(screen.queryByRole('radio', { name: /We cannot host/ })).toBeNull();
+    expect(screen.queryByRole('radio', { name: /Goodwill/ })).toBeNull();
+    expect(screen.getByText(/decided by an admin or someone with refund access/)).toBeTruthy();
+  });
+
+  it('shows an employee the exact policy refund before confirming, for an allowed booking', async () => {
+    renderDialog(false);
+    await loaded();
+
+    expect(plain(screen.getByRole('radio', { name: /Guest asked/ }).closest('label')?.textContent)).toContain('720,00');
+    expect(plain(confirmButton().textContent)).toContain('720,00');
+  });
+
+  it('shows an employee the same-day message and no way to confirm when the API says it is blocked', async () => {
+    api.fetchStaffCancelPreview.mockResolvedValue({
+      ...PREVIEW,
+      canCancel: false,
+      blockedReason: 'Check-in is today (or has passed). An admin has to cancel or change this booking.',
+      policyRefund: null,
+    });
+    renderDialog(false);
+
+    expect(await screen.findByText('Check-in is today (or has passed). An admin has to cancel or change this booking.')).toBeTruthy();
+    expect(screen.queryByRole('radio')).toBeNull();
+    expect((confirmButton() as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('on the check-in day an employee without refund access can cancel: the note says no refund applies and the button shows the zero refund', async () => {
+    api.fetchStaffCancelPreview.mockResolvedValue({
+      ...PREVIEW,
+      notice: 'Check-in is today: no refund applies. An admin or someone with refund access can decide otherwise.',
+      policyRefund: { paidCents: 96000, refundPercent: 0, refundCents: 0, currencyCode: 'EUR', daysBeforeCheckIn: 0 },
+    });
+    renderDialog(false);
+    await loaded();
+
+    expect(screen.getByText('Check-in is today: no refund applies. An admin or someone with refund access can decide otherwise.')).toBeTruthy();
+    expect(plain(screen.getByRole('radio', { name: /Guest asked/ }).closest('label')?.textContent)).toContain('no refund (check-in is today)');
+    expect(plain(confirmButton().textContent)).toBe('Cancel with no refund');
+    expect(screen.queryByRole('radio', { name: /We cannot host/ })).toBeNull();
+  });
+
+  it('offers an employee with refund access every reason, like an admin', async () => {
+    renderDialog(true);
+    await loaded();
+
+    expect(screen.getAllByRole('radio')).toHaveLength(3);
+    expect(screen.queryByText(/decided by an admin or someone with refund access/)).toBeNull();
+  });
+
+  it('offers an admin all three reasons', async () => {
+    renderDialog(true);
+    await loaded();
+
+    expect(screen.getAllByRole('radio')).toHaveLength(3);
+  });
 
   it('shows a loading state while it checks what was paid', () => {
     api.fetchStaffCancelPreview.mockImplementation(() => new Promise<StaffCancelPreview>(() => undefined));

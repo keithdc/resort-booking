@@ -38,8 +38,9 @@ const PROFILE: StaffAccount = {
   email: 'marie@humphreys.example',
   role: 'admin',
   organizationName: 'Humphreys',
+  canManageRefunds: true,
 };
-const EMPLOYEE: StaffAccount = { ...PROFILE, id: 's2', fullName: 'Paul Martin', email: 'paul@humphreys.example', role: 'employee' };
+const EMPLOYEE: StaffAccount = { ...PROFILE, id: 's2', fullName: 'Paul Martin', email: 'paul@humphreys.example', role: 'employee', canManageRefunds: false };
 
 function refunds(count: number): StaffRefund[] {
   return Array.from({ length: count }, (_, index) => staffRefund({ id: `r${String(index)}` }));

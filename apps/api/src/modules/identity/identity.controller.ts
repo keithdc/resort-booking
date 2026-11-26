@@ -17,6 +17,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { ApiOkBody, Organization, OrganizationSettings, TwoFactorChallenge } from '@resort-booking/shared-types';
+import type { AuditChangeCarrier } from '../../shared/audit/audit.types';
 import { Audited } from '../../shared/audit/audited.decorator';
 import { clientIp } from '../../shared/http/client-ip';
 import { RoleGuard } from '../../shared/roles/role.guard';
@@ -168,12 +169,16 @@ export class IdentityController {
   @Patch('staff/organization')
   @UseGuards(StaffGuard, RoleGuard)
   @RequireRole('admin')
-  @Audited({ action: 'org.settings_changed', targetType: 'organization', fieldNames: true })
+  @Audited({ action: 'org.settings_changed', targetType: 'organization', changeSet: true })
   @TenantExempt('reads and writes the caller organization, taken from the session')
   public async patchOrganization(
     @CurrentStaff() staff: StaffAccount,
     @Body() body: UpdateOrganizationDto,
+    @Req() request: AuditChangeCarrier,
   ): Promise<ApiOkBody<OrganizationSettings>> {
-    return { status: 'ok', data: await this.identity.updateSettings(body, staff.organizationId) };
+    const saved = await this.identity.updateSettings(body, staff.organizationId);
+    // The audit row names what really changed (never the values) and carries the bank-details signal.
+    request.auditChanges = saved.audit;
+    return { status: 'ok', data: saved.settings };
   }
 }

@@ -17,11 +17,45 @@ type Env = Readonly<Record<string, string | undefined>>;
 
 const LOCAL_HOST = /(^|\/\/)(localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)(:|\/|$)/i;
 
+/** The only NODE_ENV values that switch development conveniences on (mock payments, open sign-up, dev keys). */
+const DEVELOPMENT_MODES: readonly string[] = ['development', 'test'];
+
+/** Every NODE_ENV value the API accepts. Anything else (unset, "staging", "prod", a typo) stops the start. */
+const KNOWN_MODES: readonly string[] = [...DEVELOPMENT_MODES, 'production'];
+
+/** Shortest accepted payment webhook secret (a shared HMAC key). */
+export const WEBHOOK_SECRET_MIN_LENGTH = 16;
+
+/** Shortest accepted IP_HASH_SALT outside development. */
+export const IP_HASH_SALT_MIN_LENGTH = 32;
+
 /**
- * True when this process runs as production (NODE_ENV=production).
+ * True only on an explicit developer or test run (NODE_ENV=development or NODE_ENV=test). Every other value,
+ * including an unset NODE_ENV, counts as "not a development run" so a forgotten or mistyped setting fails safe.
+ */
+export function isDevelopmentMode(env: Env): boolean {
+  return env.NODE_ENV !== undefined && DEVELOPMENT_MODES.includes(env.NODE_ENV);
+}
+
+/**
+ * True when this process must behave like production: everything except an explicit development or test run.
+ * (So NODE_ENV unset, "staging" and "Production" are strict too; startup then refuses the unknown values.)
  */
 export function isProduction(env: Env): boolean {
-  return env.NODE_ENV === 'production';
+  return !isDevelopmentMode(env);
+}
+
+/**
+ * The salt for the one-way IP and email hashes (IP_HASH_SALT). Required outside development; a development run
+ * without one keeps hashing with an empty salt (as before, so existing development rows stay comparable).
+ * Rotating the salt changes every hash: old audit rows are no longer matched to new ones.
+ */
+export function resolveIpHashSalt(value: string | undefined, env: Env = process.env): string {
+  const salt = value?.trim() ?? '';
+  if (salt === '' && isProduction(env)) {
+    throw new Error('IP_HASH_SALT is not set: it is required outside development (32+ random characters).');
+  }
+  return salt;
 }
 
 /**
@@ -68,9 +102,46 @@ export function validateEnvironment(env: Env): EnvironmentReport {
     errors.push('CORS_ORIGINS contains a non-https origin.');
   }
 
+  if (env.NODE_ENV === undefined || !KNOWN_MODES.includes(env.NODE_ENV)) {
+    errors.push(
+      env.NODE_ENV === undefined || env.NODE_ENV.trim() === ''
+        ? 'NODE_ENV is not set: use NODE_ENV=production on a server (NODE_ENV=development only on a developer machine). Anything but development or test is treated as production.'
+        : `NODE_ENV is "${env.NODE_ENV}": use production, development or test. Anything but development or test is treated as production.`,
+    );
+  }
+
   const provider = (env.PAYMENT_PROVIDER ?? 'mock').trim().toLowerCase();
+  const mockAllowed = (env.ALLOW_MOCK_PAYMENTS ?? '').trim().toLowerCase() === 'true';
   if (provider === 'mock') {
     unsafe('PAYMENT_PROVIDER is "mock": payments are simulated and no money moves.');
+    if (!production && !mockAllowed) {
+      errors.push('PAYMENT_PROVIDER is "mock": set ALLOW_MOCK_PAYMENTS=true to opt in to simulated payments (development only).');
+    }
+  }
+  if (production && mockAllowed) {
+    errors.push('ALLOW_MOCK_PAYMENTS=true is set on a production-like run (NODE_ENV is not development or test): remove it, anyone could confirm a stay without paying.');
+  }
+
+  // Payment webhooks (docs/14): a real provider cannot be trusted without a signed webhook, and a weak secret is no secret.
+  const webhookSecret = env.PAYMENT_WEBHOOK_SECRET?.trim() ?? '';
+  if (provider !== 'mock' && webhookSecret === '') {
+    errors.push(`PAYMENT_WEBHOOK_SECRET is not set: a real payment provider ("${provider}") needs it to verify the signature of its webhooks.`);
+  }
+  for (const name of ['PAYMENT_WEBHOOK_SECRET', 'PAYMENT_WEBHOOK_SECRET_PREVIOUS']) {
+    const value = env[name]?.trim() ?? '';
+    if (value !== '' && value.length < WEBHOOK_SECRET_MIN_LENGTH) {
+      errors.push(`${name} is too short: use at least ${String(WEBHOOK_SECRET_MIN_LENGTH)} random characters.`);
+    }
+  }
+  if ((env.PAYMENT_WEBHOOK_SECRET_PREVIOUS?.trim() ?? '') !== '' && webhookSecret === '') {
+    errors.push('PAYMENT_WEBHOOK_SECRET_PREVIOUS is set without PAYMENT_WEBHOOK_SECRET.');
+  }
+
+  const ipSalt = env.IP_HASH_SALT?.trim() ?? '';
+  if (production && ipSalt.length < IP_HASH_SALT_MIN_LENGTH) {
+    errors.push(`IP_HASH_SALT is ${ipSalt === '' ? 'not set' : 'too short'}: use ${String(IP_HASH_SALT_MIN_LENGTH)}+ random characters (it protects the stored IP and email hashes).`);
+  } else if (!production && ipSalt === '') {
+    warnings.push('IP_HASH_SALT is not set: IP and email hashes are unsalted (fine for development, required elsewhere).');
   }
 
   // Two-factor secrets are encrypted with this key. Production must set it; a malformed key is wrong anywhere.
@@ -94,10 +165,6 @@ export function validateEnvironment(env: Env): EnvironmentReport {
       'TRUST_PROXY is not set. Behind a reverse proxy set it to the number of proxy hops, or every guest looks like one IP and rate limits apply to all of them together.',
     );
   }
-  if (!production && env.NODE_ENV === undefined) {
-    warnings.push('NODE_ENV is not set: treated as development. Set NODE_ENV=production on a server.');
-  }
-
   return { errors, warnings };
 }
 

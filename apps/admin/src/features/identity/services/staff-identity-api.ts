@@ -38,12 +38,14 @@ export function fetchTwoFactorStatus(): Promise<TwoFactorStatus> {
   return getStaffApiOk<TwoFactorStatus>('/staff/me/two-factor');
 }
 
-export function startTwoFactorSetup(): Promise<TwoFactorSetup> {
-  return mutateStaffApiOk<TwoFactorSetup>('/staff/me/two-factor/setup', 'POST', {});
+/** Needs the current password: a session alone cannot plant an authenticator (docs/13 R2-07). */
+export function startTwoFactorSetup(currentPassword: string): Promise<TwoFactorSetup> {
+  return mutateStaffApiOk<TwoFactorSetup>('/staff/me/two-factor/setup', 'POST', { currentPassword });
 }
 
-export function enableTwoFactor(code: string): Promise<TwoFactorRecoveryCodes> {
-  return mutateStaffApiOk<TwoFactorRecoveryCodes>('/staff/me/two-factor/enable', 'POST', { code });
+/** Needs the current password and the first code. The server signs every other session of this person out. */
+export function enableTwoFactor(currentPassword: string, code: string): Promise<TwoFactorRecoveryCodes> {
+  return mutateStaffApiOk<TwoFactorRecoveryCodes>('/staff/me/two-factor/enable', 'POST', { currentPassword, code });
 }
 
 export function disableTwoFactor(body: TwoFactorConfirmRequest): Promise<{ disabled: true }> {

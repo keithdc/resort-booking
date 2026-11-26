@@ -24,8 +24,9 @@ const ME = '2ae67f87-fcbf-4904-850f-a915246e0fab';
 const OTHER = '3be67f87-fcbf-4904-850f-a915246e0fac';
 const CTX = { ip: '203.0.113.7', requestId: 'req-1' };
 const PASSWORD = 'Correct-horse-9';
+const TOKEN = 'a'.repeat(64);
 
-const STAFF: StaffAccount = { id: ME, organizationId: ORG, fullName: 'Ada', email: 'ada@example.com', role: 'admin', organizationName: 'Humphreys' };
+const STAFF: StaffAccount = { id: ME, organizationId: ORG, fullName: 'Ada', email: 'ada@example.com', role: 'admin', organizationName: 'Humphreys', canManageRefunds: true };
 
 /** The same rules as the SQL: single atomic checks, no read-then-write gaps. */
 class FakeStore {
@@ -133,6 +134,7 @@ describe('TwoFactorService', () => {
   const recordFailure = jest.fn<Promise<void>, [string | null, string | undefined]>();
   const recordSuccess = jest.fn<Promise<void>, [string]>();
   const findStaffById = jest.fn<Promise<StaffCredentials | null>, [string]>();
+  const deleteSessionsExcept = jest.fn<Promise<number>, [string, string | null]>();
   let passwordHash: string;
   let service: TwoFactorService;
 
@@ -151,8 +153,8 @@ describe('TwoFactorService', () => {
 
   /** Runs setup + enable for ME and returns the recovery codes. */
   async function enrolled(): Promise<string[]> {
-    await service.setup(STAFF);
-    const { recoveryCodes } = await service.enable(STAFF, codeNow(ME), CTX);
+    await service.setup(STAFF, PASSWORD, CTX);
+    const { recoveryCodes } = await service.enable(STAFF, PASSWORD, codeNow(ME), CTX, TOKEN);
     return recoveryCodes;
   }
 
@@ -171,6 +173,7 @@ describe('TwoFactorService', () => {
     assertAllowed.mockReset().mockResolvedValue(undefined);
     recordFailure.mockReset().mockResolvedValue(undefined);
     recordSuccess.mockReset().mockResolvedValue(undefined);
+    deleteSessionsExcept.mockReset().mockResolvedValue(2);
     findStaffById.mockReset().mockImplementation((id) => Promise.resolve({ ...STAFF, id, active: true, passwordHash }));
     passwordHash ??= await hashPassword(PASSWORD);
     findStaffById.mockImplementation((id) => Promise.resolve({ ...STAFF, id, active: true, passwordHash }));
@@ -181,7 +184,7 @@ describe('TwoFactorService', () => {
         { provide: TwoFactorRepository, useValue: store },
         { provide: TwoFactorCipher, useValue: new TwoFactorCipher(new ConfigService({ TWO_FACTOR_ENCRYPTION_KEY: 'ab'.repeat(32) })) },
         { provide: TwoFactorLimiter, useValue: { assertAllowed, recordFailure, recordSuccess } },
-        { provide: IdentityRepository, useValue: { findStaffById } },
+        { provide: IdentityRepository, useValue: { findStaffById, deleteSessionsExcept } },
         {
           provide: AuditService,
           useValue: {
@@ -203,7 +206,7 @@ describe('TwoFactorService', () => {
 
   describe('setup and enable', () => {
     it('setup returns a base32 secret and an otpauth URI, stores it encrypted and does not enable anything', async () => {
-      const setup = await service.setup(STAFF);
+      const setup = await service.setup(STAFF, PASSWORD, CTX);
 
       expect(setup.secret).toMatch(/^[A-Z2-7]{32}$/);
       expect(setup.otpauthUri).toContain(`secret=${setup.secret}`);
@@ -218,15 +221,15 @@ describe('TwoFactorService', () => {
     });
 
     it('calling setup again replaces the unconfirmed secret', async () => {
-      const first = await service.setup(STAFF);
-      const second = await service.setup(STAFF);
+      const first = await service.setup(STAFF, PASSWORD, CTX);
+      const second = await service.setup(STAFF, PASSWORD, CTX);
       expect(second.secret).not.toBe(first.secret);
     });
 
     it('enable with the right code turns it on and returns ten recovery codes, stored only as hashes', async () => {
-      await service.setup(STAFF);
+      await service.setup(STAFF, PASSWORD, CTX);
 
-      const { recoveryCodes } = await service.enable(STAFF, codeNow(ME), CTX);
+      const { recoveryCodes } = await service.enable(STAFF, PASSWORD, codeNow(ME), CTX, TOKEN);
 
       expect(recoveryCodes).toHaveLength(10);
       expect(store.states.get(ME)?.hashes).toHaveLength(10);
@@ -237,11 +240,11 @@ describe('TwoFactorService', () => {
     });
 
     it('enable with a wrong code keeps it off, counts the failure and audits it', async () => {
-      await service.setup(STAFF);
+      await service.setup(STAFF, PASSWORD, CTX);
       const right = codeNow(ME);
       const wrong = right === '000000' ? '000001' : '000000';
 
-      await expect(service.enable(STAFF, wrong, CTX)).rejects.toMatchObject({ status: 401, response: { code: 'TWO_FACTOR_CODE_INVALID' } });
+      await expect(service.enable(STAFF, PASSWORD, wrong, CTX, TOKEN)).rejects.toMatchObject({ status: 401, response: { code: 'TWO_FACTOR_CODE_INVALID' } });
 
       expect(await service.isEnabled(ME)).toBe(false);
       expect(recordFailure).toHaveBeenCalledWith(ME, CTX.ip);
@@ -249,18 +252,50 @@ describe('TwoFactorService', () => {
     });
 
     it('enable needs a setup first, and cannot be done twice', async () => {
-      await expect(service.enable(STAFF, '123456', CTX)).rejects.toMatchObject({ status: 409, response: { code: 'TWO_FACTOR_SETUP_REQUIRED' } });
+      await expect(service.enable(STAFF, PASSWORD, '123456', CTX, TOKEN)).rejects.toMatchObject({ status: 409, response: { code: 'TWO_FACTOR_SETUP_REQUIRED' } });
 
       await enrolled();
-      await expect(service.enable(STAFF, codeNow(ME, 1), CTX)).rejects.toMatchObject({ response: { code: 'TWO_FACTOR_ALREADY_ENABLED' } });
-      await expect(service.setup(STAFF)).rejects.toMatchObject({ status: 409, response: { code: 'TWO_FACTOR_ALREADY_ENABLED' } });
+      await expect(service.enable(STAFF, PASSWORD, codeNow(ME, 1), CTX, TOKEN)).rejects.toMatchObject({ response: { code: 'TWO_FACTOR_ALREADY_ENABLED' } });
+      await expect(service.setup(STAFF, PASSWORD, CTX)).rejects.toMatchObject({ status: 409, response: { code: 'TWO_FACTOR_ALREADY_ENABLED' } });
+    });
+
+    it('setup and enable need the current password: a wrong one changes nothing and counts as a failure', async () => {
+      await expect(service.setup(STAFF, 'wrong-password', CTX)).rejects.toMatchObject({ status: 401, response: { code: 'STAFF_PASSWORD_MISMATCH' } });
+      expect(store.states.has(ME)).toBe(false);
+
+      await service.setup(STAFF, PASSWORD, CTX);
+      await expect(service.enable(STAFF, 'wrong-password', codeNow(ME), CTX, TOKEN)).rejects.toMatchObject({
+        status: 401,
+        response: { code: 'STAFF_PASSWORD_MISMATCH' },
+      });
+
+      expect(await service.isEnabled(ME)).toBe(false);
+      expect(recordFailure).toHaveBeenCalledTimes(2);
+      expect(deleteSessionsExcept).not.toHaveBeenCalled();
+    });
+
+    it('enable signs the person out everywhere else, keeps the current session and audits how many', async () => {
+      await service.setup(STAFF, PASSWORD, CTX);
+
+      await service.enable(STAFF, PASSWORD, codeNow(ME), CTX, TOKEN);
+
+      expect(deleteSessionsExcept).toHaveBeenCalledWith(ME, hashSessionToken(TOKEN));
+      expect(audits.at(-1)).toMatchObject({ action: 'auth.two_factor_enabled', metadata: { otherSessionsRevoked: 2 } });
+    });
+
+    it('a wrong code does not end any session', async () => {
+      await service.setup(STAFF, PASSWORD, CTX);
+
+      await expect(service.enable(STAFF, PASSWORD, '000000', CTX, TOKEN)).rejects.toBeDefined();
+
+      expect(deleteSessionsExcept).not.toHaveBeenCalled();
     });
 
     it('is blocked by the limiter before any code is looked at', async () => {
-      await service.setup(STAFF);
+      await service.setup(STAFF, PASSWORD, CTX);
       assertAllowed.mockRejectedValue(new RateLimitedException('TWO_FACTOR_RATE_LIMITED', 'slow down', 60));
 
-      await expect(service.enable(STAFF, codeNow(ME), CTX)).rejects.toMatchObject({ status: 429 });
+      await expect(service.enable(STAFF, PASSWORD, codeNow(ME), CTX, TOKEN)).rejects.toMatchObject({ status: 429 });
 
       expect(await service.isEnabled(ME)).toBe(false);
       expect(store.findState).not.toHaveBeenCalled();
@@ -324,8 +359,8 @@ describe('TwoFactorService', () => {
     });
 
     it('the step used to enable two-factor cannot be used to sign in', async () => {
-      await service.setup(STAFF);
-      await service.enable(STAFF, codeNow(ME), CTX);
+      await service.setup(STAFF, PASSWORD, CTX);
+      await service.enable(STAFF, PASSWORD, codeNow(ME), CTX, TOKEN);
       const { challengeToken } = await service.createChallenge(ME);
 
       await expect(service.completeChallenge(challengeToken, codeNow(ME), CTX)).rejects.toMatchObject({

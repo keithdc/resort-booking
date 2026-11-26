@@ -37,6 +37,12 @@ interface FormState {
   tiers: CancellationTierWrite[];
 }
 
+/** True when the ladder is the one starting row of a new property: a single catch-all, 0 days before check-in, 0% back. */
+function isDefaultLadder(tiers: readonly CancellationTierWrite[]): boolean {
+  const [only] = tiers;
+  return tiers.length === 1 && only !== undefined && only.minDaysBeforeCheckIn === 0 && only.refundPercent === 0;
+}
+
 /**
  * Per-property refund ladder and rebook flags.
  */
@@ -97,6 +103,12 @@ export function PropertyRefundsForm({ propertyId, initial }: PropertyRefundsForm
         refund. This only applies to this property.
       </Typography>
       {error !== null ? <Alert severity="error">{error}</Alert> : null}
+      {isDefaultLadder(form.tiers) ? (
+        <Alert severity="info">
+          This property starts with no refund when a guest cancels (0 days before check-in: 0%). Add tiers to give money back to
+          guests who cancel earlier, then save.
+        </Alert>
+      ) : null}
       {warning !== null ? <Alert severity="warning">{warning}</Alert> : null}
       <FormControlLabel
         control={

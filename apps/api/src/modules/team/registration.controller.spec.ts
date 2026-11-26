@@ -16,7 +16,7 @@ import type { InvitePreview, RegistrationStatus } from './team.types';
 const SESSION: StaffSessionResult = {
   token: 't'.repeat(64),
   expiresAt: '2027-01-01T00:00:00.000Z',
-  staff: { id: 's1', organizationId: 'o1', fullName: 'Ada', email: 'ada@example.com', role: 'admin', organizationName: 'Humphreys' },
+  staff: { id: 's1', organizationId: 'o1', fullName: 'Ada', email: 'ada@example.com', role: 'admin', organizationName: 'Humphreys', canManageRefunds: true },
 };
 const TOKEN = 'b'.repeat(64);
 

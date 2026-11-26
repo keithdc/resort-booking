@@ -21,6 +21,7 @@ const MEMBER: TeamMember = {
   active: true,
   lastLoginAt: null,
   createdAt: '2026-11-01T09:00:00.000Z',
+  canManageRefunds: true,
   isYou: true,
 };
 const INVITE: TeamInvite = {
@@ -33,6 +34,7 @@ const INVITE: TeamInvite = {
   createdByName: 'Marie Dupont',
   expired: false,
   isReset: false,
+  canManageRefunds: false,
 };
 const RECORD: AuditRecord = {
   id: 'a1',

@@ -14,7 +14,7 @@ import { BulkRatePeriodDto } from '../../modules/rates/dto/rate-period-write.dto
 
 async function failedFields(cls: new () => object, payload: object): Promise<string[]> {
   // Same conversion setting as the app's global ValidationPipe (main.ts), so these tests see what production sees.
-  const errors = await validate(plainToInstance(cls, payload, { enableImplicitConversion: true }));
+  const errors = await validate(plainToInstance(cls, payload));
   return errors.map((error): string => error.property);
 }
 
@@ -72,7 +72,7 @@ describe('cancellation terms at checkout (CreateHoldDto)', () => {
   });
 
   it('tells the guest what to do', async () => {
-    const errors = await validate(plainToInstance(CreateHoldDto, { ...HOLD, termsAccepted: false }, { enableImplicitConversion: true }));
+    const errors = await validate(plainToInstance(CreateHoldDto, { ...HOLD, termsAccepted: false }));
     const messages = errors.flatMap((error): string[] => Object.values(error.constraints ?? {}));
 
     expect(messages.join(' ')).toContain('read the cancellation terms');

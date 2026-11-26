@@ -28,6 +28,33 @@ export interface RefundRequest {
   amountCents: number;
   currencyCode: string;
   reason: string;
+  /**
+   * Makes the call safe to repeat: asking again with the SAME key must return the same result and never move money a
+   * second time. Deterministic (refund id, key generation, chunk index; see refundIdempotencyKey), never random. The
+   * real provider takes it as its idempotency header (Stripe: `Idempotency-Key`). The same key with different
+   * parameters is a programming error and is refused.
+   */
+  idempotencyKey: string;
+}
+
+/**
+ * The provider could not say whether the refund happened: a timeout, a dropped connection, a 5xx. The money may
+ * or may not have moved. Callers must NOT treat it as a refusal: the refund stays pending and is asked again
+ * with the same idempotency key. Any other error means the provider definitively refused.
+ */
+export class ProviderOutcomeUnknownError extends Error {
+  public constructor(message: string) {
+    super(message);
+    this.name = 'ProviderOutcomeUnknownError';
+  }
+}
+
+/**
+ * The idempotency key of one provider refund call: the refund, the key generation (it goes up only after a definitive
+ * refusal, so a retry then sends a fresh key) and the chunk (a refund spread over two payments makes two calls).
+ */
+export function refundIdempotencyKey(refundId: string, keyGeneration: number, chunkIndex: number): string {
+  return `refund-${refundId}-g${String(keyGeneration)}-c${String(chunkIndex)}`;
 }
 
 /** What the provider hands back when a refund goes through. A refund that fails throws instead. */
@@ -47,7 +74,10 @@ export interface PaymentProvider {
   /** True when no real money moves. The guest UI says so plainly. */
   readonly simulated: boolean;
   createIntent(request: PaymentIntentRequest): Promise<PaymentIntent>;
-  /** Refunds part or all of a succeeded payment. Throws when the provider refuses or cannot be reached. */
+  /**
+   * Refunds part or all of a succeeded payment. Throws when the provider refuses (any Error) or cannot answer
+   * (ProviderOutcomeUnknownError). Repeating a call with the same `idempotencyKey` returns the first result.
+   */
   refund(request: RefundRequest): Promise<RefundResult>;
 }
 

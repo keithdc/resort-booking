@@ -7,8 +7,8 @@
 import { CanActivate, ExecutionContext, ForbiddenException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
-import { ALLOWED_ROLES } from './roles.decorator';
-import type { StaffAccount, StaffRole } from './staff-role';
+import { ALLOWED_ROLES, REQUIRES_MONEY_ACCESS } from './roles.decorator';
+import { hasMoneyAccess, type StaffAccount, type StaffRole } from './staff-role';
 
 interface RequestWithStaff extends Request {
   staff?: StaffAccount;
@@ -39,6 +39,16 @@ export class RoleGuard implements CanActivate {
     }
     if (!allowed.includes(staff.role)) {
       throw new ForbiddenException({ message: 'This action is not allowed for your role', code: 'FORBIDDEN_ROLE' });
+    }
+    const needsMoneyAccess = this.reflector.getAllAndOverride<boolean | undefined>(REQUIRES_MONEY_ACCESS, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (needsMoneyAccess === true && !hasMoneyAccess(staff)) {
+      throw new ForbiddenException({
+        message: 'You need refund access for this. Ask an admin to turn it on for you.',
+        code: 'FORBIDDEN_ROLE',
+      });
     }
     return true;
   }

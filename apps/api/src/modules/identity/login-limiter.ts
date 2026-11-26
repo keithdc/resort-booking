@@ -6,7 +6,7 @@
 
 import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { readIntEnv } from '../../shared/config/environment';
+import { readIntEnv, resolveIpHashSalt } from '../../shared/config/environment';
 import { fingerprint } from '../../shared/http/client-ip';
 import { RateLimitedException } from '../../shared/http/rate-limited.exception';
 import { RedisService } from '../../shared/redis/redis.service';
@@ -44,7 +44,7 @@ export class LoginLimiter {
     this.perEmail = readIntEnv(value('LOGIN_MAX_FAILURES_PER_EMAIL'), 'v', LOGIN_MAX_FAILURES_PER_EMAIL, 1, 1000);
     this.perIp = readIntEnv(value('LOGIN_MAX_FAILURES_PER_IP'), 'v', LOGIN_MAX_FAILURES_PER_IP, 1, 10_000);
     this.windowSeconds = readIntEnv(value('LOGIN_LOCK_WINDOW_SECONDS'), 'v', LOGIN_WINDOW_SECONDS, 30, 86_400);
-    this.salt = config.get<string>('IP_HASH_SALT') ?? '';
+    this.salt = resolveIpHashSalt(config.get<string>('IP_HASH_SALT'));
   }
 
   /**

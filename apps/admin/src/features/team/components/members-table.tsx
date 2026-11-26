@@ -15,6 +15,7 @@ import { useCompactLayout } from '@/shared/hooks/use-compact-layout';
 import { UserAvatar } from '@/shared/components/user-avatar';
 import { formatLastSignIn } from '../utils/format-time';
 import { MemberActions, type MemberAction } from './member-actions';
+import { MoneyAccessChip } from './money-access-chip';
 import { VISUALLY_HIDDEN } from '@/shared/utils/visually-hidden';
 
 interface MembersTableProps {
@@ -59,6 +60,7 @@ export function MembersTable({ members, busy, onAction }: MembersTableProps): Re
             </Stack>
             <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" alignItems="center" sx={{ mt: 1.5 }}>
               <RoleChip role={member.role} />
+              <MoneyAccessChip role={member.role} canManageRefunds={member.canManageRefunds} />
               {member.active ? (
                 <Chip size="small" color="success" icon={<CheckCircleOutlineIcon />} label="Active" />
               ) : (
@@ -80,6 +82,7 @@ export function MembersTable({ members, busy, onAction }: MembersTableProps): Re
           <TableRow>
             <TableCell>Person</TableCell>
             <TableCell>Role</TableCell>
+            <TableCell>Refunds and money</TableCell>
             <TableCell>Status</TableCell>
             <TableCell>Last sign-in</TableCell>
             <TableCell align="right">
@@ -113,6 +116,9 @@ export function MembersTable({ members, busy, onAction }: MembersTableProps): Re
               </TableCell>
               <TableCell>
                 <RoleChip role={member.role} />
+              </TableCell>
+              <TableCell>
+                <MoneyAccessChip role={member.role} canManageRefunds={member.canManageRefunds} />
               </TableCell>
               <TableCell>
                 {member.active ? (

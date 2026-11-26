@@ -349,6 +349,8 @@ Staff create extras per property (not hardcoded in the app).
 | `instant` | Add breakfast (etc.) with a price | Stay confirms when **payment** is confirmed | Included in card charge **or** in the bank-transfer amount |
 | `on_request` | Request (e.g. private dinner, special setup) | **Stay still confirms** | No extra charge until staff approve; then pay-later / extra Stripe charge |
 
+A **new property** starts with two guest extras so the owner has something to adjust instead of an empty list (created in the same transaction as the property, never on update): **Baby mattress / travel cot** and **Extra pillows**. Both are `on_request`, price 0 EUR, published: guests can ask, staff confirm after the stay is booked, nothing is charged. The owner sets a price (and may switch the kind to `instant`) in the property's extras tab. Existing properties are not touched. The model has no pricing unit: an extra is a name, description, kind, price, currency and a published flag.
+
 Rules:
 
 - Extras must **not** freeze the stay waiting for a human. Approval is only for the extra.
@@ -396,15 +398,17 @@ have several admins and always keeps at least one active one.
 | | Admin | Employee |
 | --- | --- | --- |
 | Calendar, booking list, check-in | yes | yes |
-| Cancel a booking, change its dates | yes | yes |
+| Cancel a booking, change its dates | yes, any reason and amount | yes, policy only (see below) |
 | Refund list | yes | read only |
 | Reports | all figures | activity only: nights, occupancy, bookings, arrivals; every money figure is withheld (`moneyHidden: true`) |
-| Pay out, retry or mark a refund as paid | yes | no |
+| Retry a refund, mark a hand refund as paid, choose any refund amount or reason, waive the rebook fee, mark a balance as paid outside, act on the check-in day | yes | only with the per-person permission **"Can handle refunds and money actions"** (below) |
 | Properties, stays, photos, extras, rates, discounts, cancellation rules | yes | no |
 | Bank and legal details | yes | no |
 | Team, invitations, audit log, system health | yes | no |
 
 An employee who calls an admin route gets `403 FORBIDDEN_ROLE`. The API decides; the admin screens will only hide what a role cannot use.
+
+**Refund access (per-person permission, migration 031).** An admin can give an employee **"Can handle refunds and money actions"** (`staff_users.can_manage_refunds`, default off; `canManageRefunds` in `GET /staff/me` and in the team list; admins always have it). It can be ticked in the invite dialog (employees only; copied to the account when the invitation is accepted) or granted/removed later from a member's menu in **Team** with a confirmation that says what changes. Only an admin can change it; it is tenant-scoped, never applies to an admin or to yourself, takes effect on the person's next request (the account is read from the database on every request, there is no cached session copy) and is audited (`team.refund_access_granted` / `team.refund_access_removed`, with who changed whose access). With it an employee has the same money powers as an admin on bookings and refunds (not on rates, discounts, properties, bank details or the team). Without it, an employee cancelling on the check-in day (or later) is allowed but the refund is forced to zero. The rules and the audit entries are in `docs/07-cancellation-policy.md`, "Staff cancellations".
 
 **Registration** (`GET /staff/register/status`, `POST /staff/register`): open in development; **closed in production** unless
 `ALLOW_REGISTRATION=true`. Registering creates the organization and its admin together and signs them in. The password follows the staff

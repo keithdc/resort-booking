@@ -157,10 +157,44 @@ describe('BookingsRepository', () => {
     expect(clientQuery.mock.calls[0]?.[1]).toEqual(expect.arrayContaining(['rebook_difference', 'dates_changed']));
   });
 
-  it('settles a refund with the provider\'s answer', async () => {
-    await repository.completeRefund('refund-1', 'failed', '', 'provider down');
+  it('takes the lease at insert time for an online pending refund, so nobody retries it while the first call is in flight', async () => {
+    clientQuery.mockResolvedValueOnce({ rows: [{ id: 'refund-4' }] });
 
-    expect(query.mock.calls[0]?.[1]).toEqual(['refund-1', 'failed', '', 'provider down']);
+    await repository.insertRefund(client, {
+      organizationId: 'o', propertyId: 'p', bookingId: 'b', paymentId: 'pay', provider: 'mock',
+      amountCents: 1000, percent: 100, currencyCode: 'EUR', status: 'pending', reason: 'x',
+    });
+
+    const sql = String(clientQuery.mock.calls[0]?.[0]);
+    expect(sql).toContain("CASE WHEN $9 = 'pending' AND $5 <> 'manual' THEN now() END");
+    expect(sql).toContain("CASE WHEN $9 = 'pending' AND $5 <> 'manual' THEN 1 ELSE 0 END");
+  });
+
+  it('settles a refund with the provider\'s answer, letting go of the lease and never touching a succeeded one', async () => {
+    query.mockResolvedValueOnce({ rows: [], rowCount: 1 });
+
+    expect(await repository.completeRefund('refund-1', 'failed', '', 'provider down')).toBe(true);
+
+    const [sql, params] = query.mock.calls[0] as [string, unknown[]];
+    expect(params).toEqual(['refund-1', 'failed', '', 'provider down', 0]);
+    expect(sql).toContain('processing_started_at = NULL');
+    expect(sql).toContain("status <> 'succeeded'");
+  });
+
+  it('raises the key generation only when asked (after a definitive refusal)', async () => {
+    query.mockResolvedValueOnce({ rows: [], rowCount: 1 }).mockResolvedValueOnce({ rows: [], rowCount: 0 });
+
+    await repository.completeRefund('refund-1', 'failed', '', 'refused', { bumpKeyGeneration: true });
+    expect(query.mock.calls[0]?.[1]).toEqual(['refund-1', 'failed', '', 'refused', 1]);
+    expect(await repository.completeRefund('refund-1', 'succeeded', 're', null)).toBe(false);
+  });
+
+  it('notes an unknown outcome on a pending refund only', async () => {
+    await repository.noteRefundOutcomeUnknown('refund-1', 'x'.repeat(900));
+
+    const [sql, params] = query.mock.calls[0] as [string, unknown[]];
+    expect(sql).toContain("status = 'pending'");
+    expect(String(params[1])).toHaveLength(500);
   });
 
   it('reads a booking\'s payments safely: a malformed entry becomes "refund by hand", never a wrong refund', async () => {

@@ -30,10 +30,12 @@ describe('readDatabaseSettings', () => {
     expect(readDatabaseSettings({ DATABASE_URL: APP, DATABASE_CONNECTION_TIMEOUT_MS: '1' }).connectionTimeoutMs).toBe(5000);
   });
 
-  it('runs migrations at start by default everywhere except production', () => {
+  it('runs migrations at start by default only on an explicit development or test run', () => {
     expect(readDatabaseSettings({ DATABASE_URL: APP, NODE_ENV: 'development' }).runMigrationsOnStart).toBe(true);
     expect(readDatabaseSettings({ DATABASE_URL: APP, NODE_ENV: 'test' }).runMigrationsOnStart).toBe(true);
-    expect(readDatabaseSettings({ DATABASE_URL: APP }).runMigrationsOnStart).toBe(true);
+    // An unset or unknown NODE_ENV is production-like: no automatic migrations.
+    expect(readDatabaseSettings({ DATABASE_URL: APP }).runMigrationsOnStart).toBe(false);
+    expect(readDatabaseSettings({ DATABASE_URL: APP, NODE_ENV: 'staging' }).runMigrationsOnStart).toBe(false);
     expect(readDatabaseSettings({ DATABASE_URL: APP, NODE_ENV: 'production' }).runMigrationsOnStart).toBe(false);
   });
 

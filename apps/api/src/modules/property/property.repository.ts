@@ -23,7 +23,7 @@ import type {
 import type { PoolClient } from 'pg';
 import { DatabaseService } from '../../shared/database/database.service';
 import { DEFAULT_CANCELLATION_TIERS } from '../reservations/reservations.rules';
-import { resolveMapPoint } from './property.rules';
+import { DEFAULT_PROPERTY_EXTRAS, resolveMapPoint } from './property.rules';
 
 interface PropertyRow {
   id: string;
@@ -301,17 +301,18 @@ export class PropertyRepository {
   }
 
   /**
-   * True when this org already uses the slug.
+   * True when another property (in ANY organization) already uses the slug, ignoring case. Public pages find a
+   * property by slug alone, so the slug is unique across the whole deployment (migration 030).
    */
-  public async slugTaken(organizationId: string, slug: string, exceptPropertyId: string | null): Promise<boolean> {
+  public async slugTaken(slug: string, exceptPropertyId: string | null): Promise<boolean> {
     const result = await this.database.query<{ exists: boolean }>(
       `
       SELECT EXISTS (
         SELECT 1 FROM properties
-        WHERE organization_id = $1 AND slug = $2 AND ($3::uuid IS NULL OR id <> $3)
+        WHERE lower(slug) = lower($1) AND ($2::uuid IS NULL OR id <> $2)
       ) AS exists
       `,
-      [organizationId, slug, exceptPropertyId],
+      [slug, exceptPropertyId],
     );
     return result.rows[0]?.exists === true;
   }
@@ -328,7 +329,8 @@ export class PropertyRepository {
   }
 
   /**
-   * Inserts a property, seed refund ladder, and rebook flags in one transaction.
+   * Inserts a property with its starting defaults in ONE transaction: rebook flags, a single catch-all refund tier
+   * (0 days, 0%), and the default guest extras. Defaults are for new properties only; updates never touch them.
    */
   public async createProperty(
     organizationId: string,
@@ -383,6 +385,21 @@ export class PropertyRepository {
             ) VALUES ($1, $2, $3, $4)
             `,
             [organizationId, row.id, tier.minDaysBeforeCheckIn, tier.refundPercent],
+          );
+        }
+        // Same transaction as the property, same organization. NOT EXISTS keeps a replay from adding a second copy.
+        for (const extra of DEFAULT_PROPERTY_EXTRAS) {
+          await client.query(
+            `
+            INSERT INTO extra_services (
+              organization_id, property_id, name, description, kind, price_cents, currency_code, published
+            )
+            SELECT $1::uuid, $2::uuid, $3::text, $4::text, $5::text, $6::integer, $7::text, $8::boolean
+            WHERE NOT EXISTS (
+              SELECT 1 FROM extra_services WHERE property_id = $2::uuid AND lower(name) = lower($3::text)
+            )
+            `,
+            [organizationId, row.id, extra.name, extra.description, extra.kind, extra.priceCents, extra.currencyCode, extra.published],
           );
         }
         let sort = 0;

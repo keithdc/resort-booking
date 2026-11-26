@@ -21,13 +21,11 @@ import type { RebookFeeType } from '@resort-booking/shared-types';
 import { LIMITS } from '../../../shared/validation/limits';
 
 export class CancellationTierWriteDto {
-  @Type((): NumberConstructor => Number)
   @IsInt()
   @Min(0)
   @Max(LIMITS.maxDaysBefore)
   public minDaysBeforeCheckIn!: number;
 
-  @Type((): NumberConstructor => Number)
   @IsInt()
   @Min(0)
   @Max(100)
@@ -35,14 +33,12 @@ export class CancellationTierWriteDto {
 }
 
 export class SaveBookingConfigDto {
-  @Type((): BooleanConstructor => Boolean)
   @IsBoolean()
   public rebookable!: boolean;
 
   @IsIn(['none', 'fixed', 'percent'])
   public rebookFeeType!: RebookFeeType;
 
-  @Type((): NumberConstructor => Number)
   @IsNumber()
   @Min(0)
   @Max(LIMITS.maxCents)

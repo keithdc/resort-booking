@@ -8,7 +8,11 @@
  * 3. Runs the REAL TenantGuard for every declared id with an id of ANOTHER organization and expects a 404,
  *    for params, query values and (sets of) body ids alike, and expects the caller's own ids to pass.
  * 4. Pins the exempt routes in one reviewed table.
- * 5. ROLES: fails when a staff route does not say which roles may call it (`@RequireRole` / `@AllowRoles`) or does not
+ * 5. MONEY: lists every employee-reachable write that touches money in two reviewed tables: the ones the SERVICE gates
+ *    (cancel, change dates: policy only without money access) and the ones the ROUTE gates with `@RequireMoneyAccess`
+ *    (refund retry, mark paid: an admin, or an employee an admin gave "can handle refunds and money actions"). The suite
+ *    runs the real RoleGuard on the latter with an employee with and without the permission.
+ * 6. ROLES: fails when a staff route does not say which roles may call it (`@RequireRole` / `@AllowRoles`) or does not
  *    run RoleGuard, and pins every route's allowed roles in one reviewed table (ROLE_MATRIX), so a route can
  *    never quietly become available to employees.
  *
@@ -18,7 +22,7 @@
  */
 
 import 'reflect-metadata';
-import { NotFoundException, RequestMethod } from '@nestjs/common';
+import { ForbiddenException, NotFoundException, RequestMethod } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ExecutionContextHost } from '@nestjs/core/helpers/execution-context-host';
 import { Test } from '@nestjs/testing';
@@ -26,7 +30,7 @@ import { readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { StaffGuard } from '../../modules/identity/staff.guard';
 import { AUDITED } from '../audit/audited.decorator';
-import { ALLOWED_ROLES } from '../roles/roles.decorator';
+import { ALLOWED_ROLES, REQUIRES_MONEY_ACCESS } from '../roles/roles.decorator';
 import { RoleGuard } from '../roles/role.guard';
 import type { StaffRole } from '../roles/staff-role';
 import { TenancyRepository } from './tenancy.repository';
@@ -47,6 +51,7 @@ interface StaffRoute {
   roles: StaffRole[] | undefined;
   method: string;
   audited: boolean;
+  moneyAccess: boolean;
 }
 
 /** Staff routes that name no row by id, and how each stays inside the caller's organization. */
@@ -116,9 +121,10 @@ const ROLE_MATRIX: Record<string, StaffRole[]> = {
   'POST /staff/me/two-factor/enable': BOTH,
   'POST /staff/me/two-factor/disable': BOTH,
   'POST /staff/me/two-factor/recovery-codes/regenerate': BOTH,
-  // Money out and everything that sets the business up: admin only.
-  'POST /staff/refunds/:id/retry': ADMIN,
-  'POST /staff/refunds/:id/mark-paid': ADMIN,
+  // Money out: an admin, or an employee with the refund permission (@RequireMoneyAccess, see MONEY_ACCESS_ROUTES).
+  'POST /staff/refunds/:id/retry': BOTH,
+  'POST /staff/refunds/:id/mark-paid': BOTH,
+  // Everything that sets the business up: admin only.
   'GET /staff/properties/:propertyId/configuration': ADMIN,
   'PUT /staff/properties/:propertyId/configuration': ADMIN,
   'GET /staff/organization': ADMIN,
@@ -161,6 +167,29 @@ const ROLE_MATRIX: Record<string, StaffRole[]> = {
   'POST /staff/team/:staffId/reset-two-factor': ADMIN,
   'GET /staff/audit': ADMIN,
 };
+
+/**
+ * Employee-reachable write routes that touch money and are gated in the SERVICE. They stay open to every employee for
+ * the normal guest-policy cancellation and a plain date change; StaffBookingsService (see its spec) answers 403
+ * FORBIDDEN_ROLE to someone WITHOUT money access (an admin, or an employee with `canManageRefunds`) who asks for
+ * reason property_cancelled or goodwill, any amount, waiveFee, or balanceSettledOutside. On a booking whose check-in is
+ * today or past in the property's timezone, an employee without money access cancels with the refund forced to ZERO,
+ * and gets 403 SAME_DAY_ADMIN_ONLY for change dates (a money difference).
+ */
+const EMPLOYEE_MONEY_ROUTES_GATED_IN_SERVICE: Record<string, string> = {
+  'POST /staff/reservations/:id/cancel': 'without money access: guest_request (policy refund) only; check-in today or past => refund forced to 0',
+  'POST /staff/reservations/:id/change-dates/quote': 'without money access: no waiveFee, and never when check-in is today or past (SAME_DAY_ADMIN_ONLY)',
+  'POST /staff/reservations/:id/change-dates': 'without money access: no waiveFee, no balanceSettledOutside, never when check-in is today or past (SAME_DAY_ADMIN_ONLY)',
+};
+
+/**
+ * Pure money-out routes: the ROUTE needs money access (`@RequireMoneyAccess`): an admin, or an employee an admin gave
+ * "can handle refunds and money actions". Both are audited with who, the booking reference and the amount.
+ */
+const MONEY_ACCESS_ROUTES: string[] = ['POST /staff/refunds/:id/retry', 'POST /staff/refunds/:id/mark-paid'];
+
+/** Path fragments that mark a route as touching money. */
+const MONEY_PATH_PARTS = ['/refund', '/cancel', '/change-dates', '/payment', '/rate-periods', '/discounts'];
 
 /** Routes under /staff that are public on purpose: they create or end a session, or open one through an invitation. */
 const PUBLIC_STAFF_ROUTES = new Set([
@@ -224,6 +253,8 @@ function collectRoutes(): { staff: StaffRoute[]; staffPathsWithoutGuard: string[
             exempt: Reflect.getMetadata(TENANT_EXEMPT, handler) as string | undefined,
             method: method ?? '',
             audited: Reflect.getMetadata(AUDITED, handler) !== undefined,
+            moneyAccess:
+              Reflect.getMetadata(REQUIRES_MONEY_ACCESS, handler) === true || Reflect.getMetadata(REQUIRES_MONEY_ACCESS, controller) === true,
             roles:
               (Reflect.getMetadata(ALLOWED_ROLES, handler) as StaffRole[] | undefined) ??
               (Reflect.getMetadata(ALLOWED_ROLES, controller) as StaffRole[] | undefined),
@@ -341,14 +372,52 @@ describe('tenant isolation: every staff route', () => {
     expect(Object.keys(ROLE_MATRIX).sort()).toEqual(STAFF_ROUTES.map((route) => route.key).sort());
   });
 
-  it('no route is open to employees that moves money out or changes how the business is set up', () => {
+  it('every route open to employees that can move money is on a reviewed list: gated in its service, or by money access on the route', () => {
     const employeeRoutes = STAFF_ROUTES.filter((route) => route.roles?.includes('employee') === true).map((route) => route.key);
-    const forbiddenForEmployees = ['/refunds/:id/retry', '/refunds/:id/mark-paid', '/organization', '/team', '/audit', '/discounts', '/rate-periods', '/extras', '/system'];
+    const moneyRelated = employeeRoutes.filter((key) => MONEY_PATH_PARTS.some((part) => key.includes(part)) && !key.startsWith('GET '));
+    // A new employee-reachable write that touches money must be added to one list on purpose (and gated).
+    expect(moneyRelated.sort()).toEqual([...Object.keys(EMPLOYEE_MONEY_ROUTES_GATED_IN_SERVICE), ...MONEY_ACCESS_ROUTES].sort());
+  });
+
+  it('no route is open to employees that sets the business up (money-out routes are permission-gated, see below)', () => {
+    const employeeRoutes = STAFF_ROUTES.filter((route) => route.roles?.includes('employee') === true).map((route) => route.key);
+    const forbiddenForEmployees = ['/organization', '/team', '/audit', '/discounts', '/rate-periods', '/extras', '/system'];
     for (const key of employeeRoutes) {
       for (const part of forbiddenForEmployees) {
         expect(key.includes(part)).toBe(false);
       }
     }
+  });
+
+  it('the money-access routes are exactly the ones marked @RequireMoneyAccess, and each is audited', () => {
+    const marked = STAFF_ROUTES.filter((route) => route.moneyAccess).map((route) => route.key);
+    expect(marked.sort()).toEqual([...MONEY_ACCESS_ROUTES].sort());
+    for (const key of MONEY_ACCESS_ROUTES) {
+      expect(STAFF_ROUTES.find((candidate) => candidate.key === key)?.audited).toBe(true);
+    }
+  });
+
+  it.each(MONEY_ACCESS_ROUTES)('%s: the real RoleGuard lets an admin and an employee WITH the permission in, and refuses one without', (key) => {
+    const route = STAFF_ROUTES.find((candidate) => candidate.key === key);
+    expect(route).toBeDefined();
+    if (route === undefined) {
+      return;
+    }
+    const guard = new RoleGuard(new Reflector());
+    const base = { id: 's1', organizationId: ORG_A, fullName: 'A', email: 'a@example.com', organizationName: 'Org' };
+    const attempt = (role: StaffRole, canManageRefunds: boolean): boolean =>
+      guard.canActivate(contextFor(route, { staff: { ...base, role, canManageRefunds } }));
+
+    expect(attempt('admin', false)).toBe(true);
+    expect(attempt('employee', true)).toBe(true);
+    expect(() => attempt('employee', false)).toThrow(ForbiddenException);
+  });
+
+  it('team routes that change who has money access stay admin only and are tenant-scoped', () => {
+    const route = STAFF_ROUTES.find((candidate) => candidate.key === 'PATCH /staff/team/:staffId');
+    expect(route?.roles).toEqual(['admin']);
+    expect(route?.refs.map((ref) => ref.resource)).toEqual(['staffUser']);
+    expect(route?.moneyAccess).toBe(false);
   });
 
   it.each(STAFF_ROUTES.filter((route) => route.refs.length > 0).map((route) => [route.key, route] as const))(

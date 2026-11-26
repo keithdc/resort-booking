@@ -13,6 +13,8 @@ const FRIENDLY: Record<string, string> = {
   MEMBER_INACTIVE: 'Switch this person back on before resetting their access.',
   EMAIL_TAKEN: 'Someone with this email already has an account in the system.',
   NOTHING_TO_CHANGE: 'Nothing to change: they already have this setting.',
+  REFUND_ACCESS_NOT_FOR_ADMIN: 'Admins always have refund access. It can only be given to employees.',
+  CANNOT_CHANGE_OWN_REFUND_ACCESS: 'You cannot change your own refund access. Ask another admin.',
   STAFF_NOT_FOUND: 'This person is no longer on the team. Reload the page.',
   INVITE_NOT_FOUND: 'This invitation no longer exists. Reload the page.',
 };

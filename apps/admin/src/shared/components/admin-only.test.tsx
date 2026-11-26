@@ -16,7 +16,7 @@ vi.mock('@/shared/services/staff-account', async (importOriginal) => ({
   fetchStaffAccount: account.fetchStaffAccount,
 }));
 
-const ADMIN: StaffAccount = { id: 's1', organizationId: 'o1', fullName: 'Marie', email: 'marie@x.example', role: 'admin', organizationName: 'Humphreys' };
+const ADMIN: StaffAccount = { id: 's1', organizationId: 'o1', fullName: 'Marie', email: 'marie@x.example', role: 'admin', organizationName: 'Humphreys', canManageRefunds: true };
 
 async function renderGuard(): Promise<void> {
   render(await AdminOnly({ what: 'The team page', children: <p>secret admin page</p> }));

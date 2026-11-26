@@ -12,9 +12,10 @@ import { clientIp } from '../http/client-ip';
 import type { RequestWithId } from '../http/request-id';
 import type { StaffAccount } from '../roles/staff-role';
 import { AuditService } from './audit.service';
-import { AUDITED, type AuditedOptions } from './audited.decorator';
+import type { AuditChangeCarrier, AuditMetadata } from './audit.types';
+import { AUDITED, type AuditDetailsInput, type AuditedOptions } from './audited.decorator';
 
-interface AuditedRequest extends Request {
+interface AuditedRequest extends Request, AuditChangeCarrier {
   staff?: StaffAccount;
 }
 
@@ -49,7 +50,7 @@ export class AuditInterceptor implements NestInterceptor {
             {
               targetType: options.targetType,
               ...targetOf(options, request, result),
-              ...(options.fieldNames === true ? { metadata: { fields: bodyFieldNames(request.body) } } : {}),
+              ...metadataOf(options, { staff, params: request.params, body: request.body, result }, request.auditChanges),
             },
           )
           .catch((): void => undefined);
@@ -71,6 +72,22 @@ function targetOf(options: AuditedOptions, request: Request, result: unknown): {
     }
   }
   return {};
+}
+
+/** The row's metadata: the sent field names (when asked) plus whatever the route's `details` function adds. */
+function metadataOf(options: AuditedOptions, input: AuditDetailsInput, changes: AuditMetadata | undefined): { metadata?: AuditMetadata } {
+  // `changeSet` routes: what the handler worked out itself (names of what really changed), never the body's names.
+  const fields: AuditMetadata =
+    options.changeSet === true ? (changes ?? { fields: [] }) : options.fieldNames === true ? { fields: bodyFieldNames(input.body) } : {};
+  let details: AuditMetadata = {};
+  try {
+    details = options.details === undefined ? {} : options.details(input);
+  } catch {
+    // A faulty detail builder must never turn a finished action into an error: the row is still written.
+    details = {};
+  }
+  const metadata: AuditMetadata = { ...fields, ...details };
+  return Object.keys(metadata).length === 0 ? {} : { metadata };
 }
 
 /** The names of the fields in a request body, sorted. Values are never read. */

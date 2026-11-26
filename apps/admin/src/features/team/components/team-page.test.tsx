@@ -36,6 +36,7 @@ function member(overrides: Partial<TeamMember> = {}): TeamMember {
     active: true,
     lastLoginAt: '2026-11-25T09:30:00.000Z',
     createdAt: '2026-01-01T00:00:00.000Z',
+    canManageRefunds: true,
     isYou: true,
     ...overrides,
   };
@@ -52,11 +53,12 @@ function invite(overrides: Partial<TeamInvite> = {}): TeamInvite {
     createdByName: 'Marie Dupont',
     expired: false,
     isReset: false,
+    canManageRefunds: false,
     ...overrides,
   };
 }
 
-const PAUL = member({ id: 'm2', fullName: 'Paul Martin', email: 'paul@atlantic.example', role: 'employee', lastLoginAt: null, isYou: false });
+const PAUL = member({ id: 'm2', fullName: 'Paul Martin', email: 'paul@atlantic.example', role: 'employee', lastLoginAt: null, canManageRefunds: false, isYou: false });
 const OVERVIEW: TeamOverview = { members: [member(), PAUL], invites: [invite(), invite({ id: 'i2', fullName: 'Old Link', email: 'old@atlantic.example', expired: true })], mailEnabled: false };
 
 function issued(token = 'f'.repeat(64)): InviteIssued {
@@ -130,6 +132,81 @@ describe('TeamPage', () => {
     await waitFor(() => expect(api.updateMember).toHaveBeenCalledWith('m2', { role: 'admin' }));
     expect(await screen.findByText('Paul Martin is now an admin')).toBeTruthy();
     expect(api.fetchTeam).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows full access for admins, refund access for an employee who has it, and policy-only for the rest', async () => {
+    const tia = member({ id: 'm3', fullName: 'Tia Roy', email: 'tia@atlantic.example', role: 'employee', canManageRefunds: true, isYou: false });
+    api.fetchTeam.mockResolvedValue({ members: [member(), PAUL, tia], invites: [], mailEnabled: false });
+    render(<TeamPage />);
+
+    const members = within(await screen.findByRole('table', { name: 'Team members' }));
+
+    expect(members.getAllByText('Full access')).toHaveLength(1);
+    expect(members.getAllByText('Refund access')).toHaveLength(1);
+    expect(members.getAllByText('Policy refunds only')).toHaveLength(1);
+  });
+
+  it('offers "Give refund access" to an employee without it and not to yourself or an admin', async () => {
+    render(<TeamPage />);
+
+    await openMenu('Paul Martin');
+    expect(screen.getByRole('menuitem', { name: 'Give refund access' })).toBeTruthy();
+    expect(screen.queryByRole('menuitem', { name: 'Remove refund access' })).toBeNull();
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
+    cleanup();
+
+    api.fetchTeam.mockResolvedValue(OVERVIEW);
+    render(<TeamPage />);
+    await openMenu('Marie Dupont');
+    expect(screen.queryByRole('menuitem', { name: /refund access/i })).toBeNull();
+  });
+
+  it('asks first, says what changes, then grants refund access and reloads', async () => {
+    api.updateMember.mockResolvedValue({ ...PAUL, canManageRefunds: true });
+    render(<TeamPage />);
+
+    await openMenu('Paul Martin');
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Give refund access' }));
+
+    const dialog = within(await screen.findByRole('dialog'));
+    expect(dialog.getByText('Give Paul Martin refund access?')).toBeTruthy();
+    expect(dialog.getByText(/retry failed refunds, mark hand refunds as paid, choose any refund amount/)).toBeTruthy();
+    expect(dialog.getByText(/recorded in the audit log with their name/)).toBeTruthy();
+    expect(api.updateMember).not.toHaveBeenCalled();
+
+    fireEvent.click(dialog.getByRole('button', { name: 'Give refund access' }));
+
+    await waitFor(() => expect(api.updateMember).toHaveBeenCalledWith('m2', { canManageRefunds: true }));
+    expect(await screen.findByText('Paul Martin can now handle refunds and money actions')).toBeTruthy();
+    expect(api.fetchTeam).toHaveBeenCalledTimes(2);
+  });
+
+  it('asks first, says what is lost, then removes refund access', async () => {
+    const tia = member({ id: 'm3', fullName: 'Tia Roy', email: 'tia@atlantic.example', role: 'employee', canManageRefunds: true, isYou: false });
+    api.fetchTeam.mockResolvedValue({ members: [member(), tia], invites: [], mailEnabled: false });
+    api.updateMember.mockResolvedValue({ ...tia, canManageRefunds: false });
+    render(<TeamPage />);
+
+    await openMenu('Tia Roy');
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Remove refund access' }));
+    const dialog = within(await screen.findByRole('dialog'));
+    expect(dialog.getByText(/policy refunds only/)).toBeTruthy();
+    expect(dialog.getByText(/no refund/)).toBeTruthy();
+    fireEvent.click(dialog.getByRole('button', { name: 'Remove refund access' }));
+
+    await waitFor(() => expect(api.updateMember).toHaveBeenCalledWith('m3', { canManageRefunds: false }));
+    expect(await screen.findByText('Tia Roy can no longer handle refunds and money actions')).toBeTruthy();
+  });
+
+  it('keeps the dialog open and explains when the API refuses the change', async () => {
+    api.updateMember.mockRejectedValue(new ApiRequestError('raw server text', 400, { code: 'REFUND_ACCESS_NOT_FOR_ADMIN' }));
+    render(<TeamPage />);
+
+    await openMenu('Paul Martin');
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Give refund access' }));
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Give refund access' }));
+
+    expect(await within(screen.getByRole('dialog')).findByText('Admins always have refund access. It can only be given to employees.')).toBeTruthy();
   });
 
   it('asks before switching a person off, then does it', async () => {
@@ -236,6 +313,18 @@ describe('TeamPage', () => {
     expect(api.createInvite).toHaveBeenCalledWith(expect.objectContaining({ fullName: 'Lena Roche' }));
   });
 
+  it('keeps the refund permission of the invitation when its lost link is replaced', async () => {
+    api.fetchTeam.mockResolvedValue({ ...OVERVIEW, invites: [invite({ canManageRefunds: true })] });
+    api.revokeInvite.mockResolvedValue(null);
+    api.createInvite.mockResolvedValue(issued('e'.repeat(64)));
+    render(<TeamPage />);
+
+    expect(await screen.findByText('Refund access')).toBeTruthy();
+    fireEvent.click(await screen.findByRole('button', { name: 'Get a new link for Lena Roche' }));
+
+    await waitFor(() => expect(api.createInvite).toHaveBeenCalledWith(expect.objectContaining({ fullName: 'Lena Roche', canManageRefunds: true })));
+  });
+
   it('confirms before revoking an invitation', async () => {
     api.revokeInvite.mockResolvedValue(null);
     render(<TeamPage />);
@@ -270,6 +359,37 @@ describe('TeamPage invite flow', () => {
     fireEvent.change(dialog.getByLabelText('Email'), { target: { value: 'nora@atlantic.example' } });
     fireEvent.click(dialog.getByRole('button', { name: 'Create invitation link' }));
   }
+
+  it('shows the refund-access checkbox (off by default, with what it allows) for an employee invite only', async () => {
+    render(<TeamPage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Invite someone' }));
+    const dialog = within(screen.getByRole('dialog'));
+    const box = dialog.getByRole('checkbox', { name: /Can handle refunds and money actions/ }) as HTMLInputElement;
+    expect(box.checked).toBe(false);
+    expect(dialog.getByText(/recorded in the audit log with their name/)).toBeTruthy();
+
+    fireEvent.mouseDown(dialog.getByRole('combobox', { name: 'Role' }));
+    fireEvent.click(within(screen.getByRole('listbox')).getByText('Admin'));
+
+    expect(screen.queryByRole('checkbox', { name: /Can handle refunds and money actions/ })).toBeNull();
+  });
+
+  it('sends canManageRefunds: true when the box is ticked for an employee', async () => {
+    api.createInvite.mockResolvedValue(issued('a'.repeat(64)));
+    render(<TeamPage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Invite someone' }));
+    const dialog = within(screen.getByRole('dialog'));
+    fireEvent.change(dialog.getByLabelText(/Name/), { target: { value: 'Nora Vidal' } });
+    fireEvent.change(dialog.getByLabelText('Email'), { target: { value: 'nora@atlantic.example' } });
+    fireEvent.click(dialog.getByRole('checkbox', { name: /Can handle refunds and money actions/ }));
+    fireEvent.click(dialog.getByRole('button', { name: 'Create invitation link' }));
+
+    await waitFor(() =>
+      expect(api.createInvite).toHaveBeenCalledWith({ email: 'nora@atlantic.example', fullName: 'Nora Vidal', role: 'employee', canManageRefunds: true }),
+    );
+  });
 
   it('keeps the invite button off until name and a valid email are entered', async () => {
     render(<TeamPage />);

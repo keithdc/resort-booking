@@ -13,7 +13,7 @@ import { RefundDetailDialog } from './refund-detail-dialog';
 
 const plain = (text: string | null | undefined): string => (text ?? '').replace(/\s/g, ' ');
 
-function renderDialog(refund: StaffRefund | null, overrides: { busy?: boolean; error?: string | null } = {}): {
+function renderDialog(refund: StaffRefund | null, overrides: { busy?: boolean; error?: string | null; canManageRefunds?: boolean } = {}): {
   onClose: () => void;
   onRetry: (refund: StaffRefund) => void;
   onMarkPaid: (refund: StaffRefund) => void;
@@ -23,7 +23,7 @@ function renderDialog(refund: StaffRefund | null, overrides: { busy?: boolean; e
     onRetry: vi.fn<(refund: StaffRefund) => void>(),
     onMarkPaid: vi.fn<(refund: StaffRefund) => void>(),
   };
-  render(<RefundDetailDialog refund={refund} busy={overrides.busy ?? false} error={overrides.error ?? null} {...handlers} />);
+  render(<RefundDetailDialog refund={refund} busy={overrides.busy ?? false} canManageRefunds={overrides.canManageRefunds ?? true} error={overrides.error ?? null} {...handlers} />);
   return handlers;
 }
 
@@ -73,6 +73,17 @@ describe('RefundDetailDialog', () => {
     renderDialog(staffRefund({ status: 'pending', provider: 'mock' }));
 
     expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
+  });
+
+  it('shows someone without refund access no Retry or Mark as refunded, only a note that an admin (or refund access) does it', () => {
+    renderDialog(staffRefund({ status: 'failed', provider: 'mock' }), { canManageRefunds: false });
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+    expect(screen.getByText('Only an admin or someone with refund access can retry or settle a refund.')).toBeTruthy();
+    cleanup();
+
+    renderDialog(staffRefund({ status: 'pending', provider: 'manual' }), { canManageRefunds: false });
+    expect(screen.queryByRole('button', { name: /Mark as refunded/ })).toBeNull();
+    expect(screen.getByText(/An admin or someone with refund access sends the money/)).toBeTruthy();
   });
 
   it('offers no actions for a refund that is done, and shows who resolved it', () => {

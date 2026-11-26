@@ -11,7 +11,7 @@ import { StaffRefundsQueryDto } from './staff-refunds-query.dto';
 
 // Same conversion setting as the app's global ValidationPipe (main.ts).
 async function failed<T extends object>(type: new () => T, payload: object): Promise<string[]> {
-  const errors = await validate(plainToInstance(type, payload, { enableImplicitConversion: true }));
+  const errors = await validate(plainToInstance(type, payload));
   return errors.map((error) => error.property);
 }
 

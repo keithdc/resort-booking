@@ -4,17 +4,17 @@
  * @dependencies class-validator
  */
 
-import { Type } from 'class-transformer';
+import { QueryNumber } from '../../../shared/validation/query-number';
 import { IsNumber, Max, Min } from 'class-validator';
 
 export class GeocodeReverseQueryDto {
-  @Type(() => Number)
+  @QueryNumber()
   @IsNumber()
   @Min(-90)
   @Max(90)
   public lat!: number;
 
-  @Type(() => Number)
+  @QueryNumber()
   @IsNumber()
   @Min(-180)
   @Max(180)

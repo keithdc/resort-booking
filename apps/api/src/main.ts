@@ -14,7 +14,9 @@ import { assertEnvironment } from './shared/config/environment';
 import { ApiExceptionFilter } from './shared/filters/api-exception.filter';
 import { trustProxySetting } from './shared/http/client-ip';
 import { requestIdMiddleware } from './shared/http/request-id';
+import { securityHeadersMiddleware } from './shared/http/security-headers.middleware';
 import { urlLengthMiddleware } from './shared/http/url-length.middleware';
+import { dropRawBodyOutsideWebhooks, webhookSizeGuard } from './shared/http/webhook-raw-body';
 import { IdParamPipe } from './shared/validation/id-param.pipe';
 import { apiValidationPipeOptions } from './shared/validation/validation-exception.factory';
 
@@ -28,14 +30,20 @@ async function bootstrap(): Promise<void> {
     logger.warn(warning);
   }
 
-  // The body parser is configured by hand below so the size limit is explicit.
-  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false });
+  // The body parser is configured by hand below so the size limit is explicit. `rawBody: true` makes the parser keep
+  // the exact bytes (a webhook signature covers bytes, not parsed JSON); dropRawBodyOutsideWebhooks removes them again
+  // from every route except POST /payments/webhooks/*, and webhookSizeGuard refuses an oversized webhook unread.
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false, rawBody: true });
+  app.disable('x-powered-by');
+  app.use(webhookSizeGuard);
   app.useBodyParser('json', { limit: JSON_BODY_LIMIT });
   app.useBodyParser('urlencoded', { limit: JSON_BODY_LIMIT, extended: false });
+  app.use(dropRawBodyOutsideWebhooks);
 
   // TRUST_PROXY=<hops> only when a reverse proxy sits in front: otherwise X-Forwarded-For is client-controlled.
   app.set('trust proxy', trustProxySetting(process.env.TRUST_PROXY));
   app.use(requestIdMiddleware);
+  app.use(securityHeadersMiddleware);
   app.use(urlLengthMiddleware);
 
   const origins = (process.env.CORS_ORIGINS ?? 'http://localhost:3000,http://localhost:3001')

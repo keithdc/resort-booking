@@ -16,7 +16,7 @@ import { ReservationsController } from './reservations.controller';
 import { ReservationsService } from './reservations.service';
 
 function account(role: StaffRole): StaffAccount {
-  return { id: 's1', organizationId: 'o1', fullName: 'Ada', email: 'ada@example.com', role, organizationName: 'Humphreys' };
+  return { id: 's1', organizationId: 'o1', fullName: 'Ada', email: 'ada@example.com', role, organizationName: 'Humphreys', canManageRefunds: role === 'admin' };
 }
 
 function report(): StaffReport {

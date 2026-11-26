@@ -37,6 +37,31 @@ describe('ROLE_PROBES', () => {
     }
   });
 
+  it('covers the append-only records: audit log, payments, refunds, booking history, webhook events', () => {
+    const probes = ROLE_PROBES.filter((probe) => probe.role === 'app');
+    const denied = probes.filter((probe) => probe.expect !== 'allowed').map((probe) => probe.sql).join('\n');
+
+    for (const needle of [
+      "UPDATE audit_log",
+      'DELETE FROM audit_log',
+      'UPDATE payments SET amount_cents',
+      "UPDATE payments SET currency_code",
+      'DELETE FROM payments',
+      'UPDATE refunds SET amount_cents',
+      'DELETE FROM refunds',
+      'UPDATE booking_changes',
+      'DELETE FROM booking_changes',
+      'DELETE FROM payment_webhook_events',
+    ]) {
+      expect(denied).toContain(needle);
+    }
+    const allowed = probes.filter((probe) => probe.expect === 'allowed').map((probe) => probe.sql).join('\n');
+    expect(allowed).toContain('INSERT INTO audit_log');
+    expect(allowed).toContain('UPDATE payments SET status');
+    expect(allowed).toContain('UPDATE refunds SET status');
+    expect(allowed).toContain('INSERT INTO payment_webhook_events');
+  });
+
   it('covers personal and bank columns for the read-only role', () => {
     const sql = ROLE_PROBES.filter((probe) => probe.role === 'readonly').map((probe) => probe.sql).join('\n');
 
@@ -49,7 +74,8 @@ describe('ROLE_PROBES', () => {
 describe('runProbes', () => {
   it('passes when allowed statements run and forbidden ones fail with the expected code', async () => {
     const { client } = fakeClient((sql) => {
-      if (/^(SELECT count|INSERT INTO organizations|UPDATE organizations|DELETE FROM organizations|SELECT id FROM schema_migrations)/.test(sql)) {
+      const probe = ROLE_PROBES.find((item) => item.sql === sql);
+      if (probe?.expect === 'allowed') {
         return null;
       }
       return { code: sql.includes('pg_sleep') ? '57014' : '42501' };

@@ -35,6 +35,7 @@ import {
 import { RebookService } from './rebook.service';
 import { DATES_TAKEN_MESSAGE, NO_CHANGE_MESSAGE, REBOOK_NOT_ALLOWED_MESSAGE } from './rebook.rules';
 import { RefundIssuer } from './refund-issuer';
+import { RefundTimings } from './refund-timings';
 
 const ID = '1a2b3c4d-5e6f-4a8b-9c0d-1e2f3a4b5c6d';
 const NEW_ID = '9f8e7d6c-5b4a-4392-8170-6f5e4d3c2b1a';
@@ -239,6 +240,7 @@ describe('RebookService', () => {
         RebookService,
         BookingReader,
         RefundIssuer,
+        { provide: RefundTimings, useValue: { values: { providerTimeoutMs: 20_000, leaseSeconds: 150 } } },
         {
           provide: BookingsRepository,
           useValue: {
@@ -577,7 +579,7 @@ describe('RebookService', () => {
       );
       expect(issueRefund).toHaveBeenCalledWith(expect.objectContaining({ providerRef: 'mock_pi_abc', amountCents: 34000 }));
       expect(log.indexOf('COMMIT')).toBeLessThan(log.indexOf('providerRefund'));
-      expect(completeRefund).toHaveBeenCalledWith('refund-1', 'succeeded', 'mock_re_1', null);
+      expect(completeRefund).toHaveBeenCalledWith('refund-1', 'succeeded', 'mock_re_1', null, {});
       expect(result).toMatchObject({
         outcome: 'changed',
         payment: null,
@@ -655,7 +657,7 @@ describe('RebookService', () => {
       const result = await service.rebook(NEW_DATES);
 
       expect(log).toContain('COMMIT');
-      expect(completeRefund).toHaveBeenCalledWith('refund-1', 'failed', '', 'provider unreachable');
+      expect(completeRefund).toHaveBeenCalledWith('refund-1', 'failed', '', 'provider unreachable', { bumpKeyGeneration: true });
       expect(result.outcome).toBe('changed');
       expect(result.refund).toMatchObject({ amountCents: 34000, status: 'failed' });
       expect(Logger.prototype.error).toHaveBeenCalled();

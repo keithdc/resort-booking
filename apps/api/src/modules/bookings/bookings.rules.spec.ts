@@ -15,7 +15,10 @@ import {
   referenceIdRange,
   selectRefundTier,
   wholeDaysBetween,
+  isCheckInTodayOrPast,
+  SAME_DAY_ADMIN_ONLY_MESSAGE,
 } from './bookings.rules';
+import { isoDateInTimeZone } from '../../shared/dates/iso-date';
 
 const LADDER: CancellationPolicyTier[] = [
   { minDaysBeforeCheckIn: 7, refundPercent: 100 },
@@ -232,5 +235,46 @@ describe('parseRefundablePayments', () => {
     expect(parseRefundablePayments([null, 'x', { id: 1 }, { id: 'p', provider: 'mock', providerRef: 'x', refundableCents: 'many' }])).toEqual([]);
     expect(parseRefundablePayments(null)).toEqual([]);
     expect(parseRefundablePayments({})).toEqual([]);
+  });
+});
+
+describe('isCheckInTodayOrPast (the employee same-day lock)', () => {
+  it('allows check-in tomorrow and later, refuses today and the past', () => {
+    expect(isCheckInTodayOrPast('2027-07-02', '2027-07-01')).toBe(false);
+    expect(isCheckInTodayOrPast('2027-07-01', '2027-07-01')).toBe(true);
+    expect(isCheckInTodayOrPast('2027-06-30', '2027-07-01')).toBe(true);
+    expect(isCheckInTodayOrPast('2026-01-01', '2027-07-01')).toBe(true);
+  });
+
+  it('counts across month and year ends like the refund ladder does', () => {
+    expect(isCheckInTodayOrPast('2028-01-01', '2027-12-31')).toBe(false);
+    expect(isCheckInTodayOrPast('2027-12-31', '2028-01-01')).toBe(true);
+  });
+
+  it('treats an unreadable date as too close (admin only)', () => {
+    expect(isCheckInTodayOrPast('soon', '2027-07-01')).toBe(true);
+    expect(isCheckInTodayOrPast('2027-07-02', '')).toBe(true);
+  });
+
+  it('uses the property day, not the UTC day, for a non-UTC property', () => {
+    const instant = new Date('2027-07-01T21:30:00Z'); // already 2 July in Auckland, still 1 July in Paris and UTC
+    expect(isCheckInTodayOrPast('2027-07-02', isoDateInTimeZone(instant, 'Pacific/Auckland'))).toBe(true);
+    expect(isCheckInTodayOrPast('2027-07-02', isoDateInTimeZone(instant, 'Europe/Paris'))).toBe(false);
+    expect(isCheckInTodayOrPast('2027-07-02', isoDateInTimeZone(new Date('2027-07-01T03:00:00Z'), 'America/Los_Angeles'))).toBe(false);
+  });
+
+  it('is not shifted by a daylight saving change', () => {
+    // New York springs forward on 14 March 2027: the calendar day count is still whole days.
+    const before = isoDateInTimeZone(new Date('2027-03-13T12:00:00Z'), 'America/New_York');
+    const after = isoDateInTimeZone(new Date('2027-03-14T12:00:00Z'), 'America/New_York');
+    expect(before).toBe('2027-03-13');
+    expect(after).toBe('2027-03-14');
+    expect(isCheckInTodayOrPast('2027-03-14', before)).toBe(false);
+    expect(isCheckInTodayOrPast('2027-03-14', after)).toBe(true);
+    expect(isCheckInTodayOrPast('2027-03-15', after)).toBe(false);
+  });
+
+  it('has the message the admin app shows', () => {
+    expect(SAME_DAY_ADMIN_ONLY_MESSAGE).toBe('Check-in is today (or has passed). An admin has to cancel or change this booking.');
   });
 });

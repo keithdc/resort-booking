@@ -12,8 +12,8 @@ import { TwoFactorSection } from './two-factor-section';
 
 const api = vi.hoisted(() => ({
   fetchTwoFactorStatus: vi.fn<() => Promise<TwoFactorStatus>>(),
-  startTwoFactorSetup: vi.fn<() => Promise<TwoFactorSetup>>(),
-  enableTwoFactor: vi.fn<(code: string) => Promise<TwoFactorRecoveryCodes>>(),
+  startTwoFactorSetup: vi.fn<(currentPassword: string) => Promise<TwoFactorSetup>>(),
+  enableTwoFactor: vi.fn<(currentPassword: string, code: string) => Promise<TwoFactorRecoveryCodes>>(),
   disableTwoFactor: vi.fn<(body: { currentPassword: string; code: string }) => Promise<{ disabled: true }>>(),
   regenerateRecoveryCodes: vi.fn<(body: { currentPassword: string; code: string }) => Promise<TwoFactorRecoveryCodes>>(),
 }));
@@ -37,6 +37,15 @@ const CODES = ['AAAAA-BBBBB', 'CCCCC-DDDDD', 'EEEEE-FFFFF', 'GGGGG-HHHHH', 'JJJJ
 
 function type(label: string | RegExp, value: string): void {
   fireEvent.change(screen.getByLabelText(label), { target: { value } });
+}
+
+/** Opens the password dialog from the Off state and continues with `password`. */
+async function startSetup(password = 'right-pass'): Promise<void> {
+  fireEvent.click(await screen.findByRole('button', { name: 'Turn on two-step verification' }));
+  const dialog = await screen.findByRole('dialog');
+  fireEvent.change(within(dialog).getByLabelText(/Current password/), { target: { value: password } });
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Continue' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 }
 
 describe('TwoFactorSection', () => {
@@ -69,12 +78,13 @@ describe('TwoFactorSection', () => {
     api.startTwoFactorSetup.mockResolvedValue(SETUP);
     render(<TwoFactorSection />);
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Turn on two-step verification' }));
+    await startSetup();
 
     expect(await screen.findByTestId('copyable-Setup key')).toHaveProperty('textContent', SETUP.secret);
     expect(screen.getByTestId('copyable-Setup link').textContent).toBe(SETUP.otpauthUri);
     fireEvent.click(screen.getByRole('button', { name: 'Copy setup key' }));
     await waitFor(() => expect(clip.copyText).toHaveBeenCalledWith(SETUP.secret));
+    expect(api.startTwoFactorSetup).toHaveBeenCalledWith('right-pass');
     expect(api.enableTwoFactor).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Confirm and turn on' }).hasAttribute('disabled')).toBe(true);
   });
@@ -84,14 +94,15 @@ describe('TwoFactorSection', () => {
     api.startTwoFactorSetup.mockResolvedValue(SETUP);
     api.enableTwoFactor.mockResolvedValue({ recoveryCodes: CODES });
     render(<TwoFactorSection />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Turn on two-step verification' }));
+    await startSetup();
     await screen.findByTestId('copyable-Setup key');
 
     type('6-digit code', '123 456');
     fireEvent.click(screen.getByRole('button', { name: 'Confirm and turn on' }));
 
     const panel = await screen.findByLabelText('Recovery codes');
-    expect(api.enableTwoFactor).toHaveBeenCalledWith('123 456');
+    expect(api.enableTwoFactor).toHaveBeenCalledWith('right-pass', '123 456');
+    expect(await screen.findByText(/other signed-in devices were signed out/)).toBeTruthy();
     expect(within(panel).getAllByRole('listitem')).toHaveLength(10);
     expect(within(panel).getByText('AAAAA-BBBBB')).toBeTruthy();
 
@@ -115,7 +126,7 @@ describe('TwoFactorSection', () => {
     api.startTwoFactorSetup.mockResolvedValue(SETUP);
     api.enableTwoFactor.mockRejectedValue(new ApiRequestError('That code is not valid', 401, { code: 'TWO_FACTOR_CODE_INVALID' }));
     render(<TwoFactorSection />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Turn on two-step verification' }));
+    await startSetup();
     await screen.findByTestId('copyable-Setup key');
 
     type('6-digit code', '000000');
@@ -126,11 +137,42 @@ describe('TwoFactorSection', () => {
     expect(screen.queryByLabelText('Recovery codes')).toBeNull();
   });
 
+  it('asks for the password before anything starts, shows a wrong password and does not start the setup', async () => {
+    api.fetchTwoFactorStatus.mockResolvedValue(OFF);
+    api.startTwoFactorSetup.mockRejectedValueOnce(new ApiRequestError('Current password is wrong', 401, { code: 'STAFF_PASSWORD_MISMATCH' }));
+    render(<TwoFactorSection />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Turn on two-step verification' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(api.startTwoFactorSetup).not.toHaveBeenCalled();
+    expect(within(dialog).getByRole('button', { name: 'Continue' }).hasAttribute('disabled')).toBe(true);
+    fireEvent.change(within(dialog).getByLabelText(/Current password/), { target: { value: 'nope' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Continue' }));
+
+    expect(await within(dialog).findByText('Current password is wrong')).toBeTruthy();
+    expect(screen.queryByTestId('copyable-Setup key')).toBeNull();
+    expect((within(dialog).getByLabelText(/Current password/) as HTMLInputElement).value).toBe('');
+  });
+
+  it('tells the person to start again when the password is refused at the final step', async () => {
+    api.fetchTwoFactorStatus.mockResolvedValue(OFF);
+    api.startTwoFactorSetup.mockResolvedValue(SETUP);
+    api.enableTwoFactor.mockRejectedValue(new ApiRequestError('Current password is wrong', 401, { code: 'STAFF_PASSWORD_MISMATCH' }));
+    render(<TwoFactorSection />);
+    await startSetup();
+    await screen.findByTestId('copyable-Setup key');
+
+    type('6-digit code', '123456');
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm and turn on' }));
+
+    expect(await screen.findByText(/password was not accepted/)).toBeTruthy();
+  });
+
   it('cancelling the setup goes back to Off', async () => {
     api.fetchTwoFactorStatus.mockResolvedValue(OFF);
     api.startTwoFactorSetup.mockResolvedValue(SETUP);
     render(<TwoFactorSection />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Turn on two-step verification' }));
+    await startSetup();
     await screen.findByTestId('copyable-Setup key');
 
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));

@@ -99,6 +99,13 @@ describe('TwoFactorCipher', () => {
     expect(() => cipherWith(undefined)).toThrow('TWO_FACTOR_ENCRYPTION_KEY is not set');
     expect(() => cipherWith('   ')).toThrow('TWO_FACTOR_ENCRYPTION_KEY is not set');
   });
+
+  it('never uses the development key when NODE_ENV is unset or not development/test (fail safe)', () => {
+    process.env.NODE_ENV = 'staging';
+    expect(() => cipherWith(undefined)).toThrow('TWO_FACTOR_ENCRYPTION_KEY is not set');
+    delete process.env.NODE_ENV;
+    expect(() => cipherWith(undefined)).toThrow('TWO_FACTOR_ENCRYPTION_KEY is not set');
+  });
 });
 
 describe('recovery codes', () => {

@@ -108,4 +108,44 @@ describe('PaymentsRepository', () => {
       await expect(repository.insertSucceededManual(client, INPUT)).rejects.toThrow('no row');
     });
   });
+
+  describe('what the webhook handler needs', () => {
+    it('finds a payment by the provider\'s own reference, per provider', async () => {
+      expect(await repository.findByProviderRef('mock', 'pi_1')).toEqual(ROW);
+
+      expect(query.mock.calls[0]?.[0]).toContain('provider = $1 AND provider_ref = $2');
+      expect(query.mock.calls[0]?.[1]).toEqual(['mock', 'pi_1']);
+    });
+
+    it('returns null for a reference we never created', async () => {
+      query.mockResolvedValueOnce({ rows: [] });
+
+      expect(await repository.findByProviderRef('mock', 'pi_x')).toBeNull();
+    });
+
+    it('re-reads and locks a payment inside the caller\'s transaction', async () => {
+      clientQuery.mockResolvedValueOnce({ rowCount: 1, rows: [ROW] } as never);
+
+      expect(await repository.lockById(client, 'p1')).toEqual(ROW);
+
+      expect(clientQuery.mock.calls[0]?.[0]).toContain('FOR UPDATE');
+    });
+
+    it('records a late success only from open, failed or cancelled, never from succeeded', async () => {
+      expect(await repository.markLateSucceeded(client, 'p1')).toBe(true);
+
+      const sql = clientQuery.mock.calls[0]?.[0] ?? '';
+      expect(sql).toContain("status IN ('requires_payment', 'failed', 'cancelled')");
+      expect(sql).toContain("failure_reason = 'late_success'");
+      clientQuery.mockResolvedValueOnce({ rowCount: 0 });
+      expect(await repository.markLateSucceeded(client, 'p1')).toBe(false);
+    });
+
+    it('ends an open attempt in the caller\'s transaction, only while it is open', async () => {
+      expect(await repository.markEndedIn(client, 'p1', 'failed', 'card_declined')).toBe(true);
+
+      expect(clientQuery.mock.calls[0]?.[0]).toContain("status = 'requires_payment'");
+      expect(clientQuery.mock.calls[0]?.[1]).toEqual(['p1', 'failed', 'card_declined']);
+    });
+  });
 });

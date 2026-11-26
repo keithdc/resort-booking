@@ -21,9 +21,9 @@ import { SaveBookingConfigDto } from '../../modules/reservations/dto/save-bookin
 import { StaffCancelDto } from '../../modules/bookings/dto/staff-actions.dto';
 import { LIMITS } from './limits';
 
-// The app's global ValidationPipe converts types implicitly (main.ts); mirror it.
+// The app's global ValidationPipe does not convert types (R2-16); plainToInstance without options mirrors it.
 async function failing<T extends object>(type: ClassConstructor<T>, body: Record<string, unknown>): Promise<string[]> {
-  const errors = await validate(plainToInstance(type, body, { enableImplicitConversion: true }), { whitelist: true, forbidNonWhitelisted: true });
+  const errors = await validate(plainToInstance(type, body), { whitelist: true, forbidNonWhitelisted: true });
   return errors.map((error) => error.property);
 }
 

@@ -24,6 +24,8 @@ import { refundStyle } from '@/shared/utils/status-style';
 interface RefundDetailDialogProps {
   refund: StaffRefund | null;
   busy: boolean;
+  /** Retry and "mark as refunded" need an admin or refund access (the API answers 403 otherwise). */
+  canManageRefunds: boolean;
   /** The last action failed (the API's message). */
   error: string | null;
   onClose: () => void;
@@ -35,7 +37,7 @@ interface RefundDetailDialogProps {
  * Everything about one refund, with the two things staff can do: ask the provider again, or say
  * they sent the money themselves.
  */
-export function RefundDetailDialog({ refund, busy, error, onClose, onRetry, onMarkPaid }: RefundDetailDialogProps): React.JSX.Element {
+export function RefundDetailDialog({ refund, busy, canManageRefunds, error, onClose, onRetry, onMarkPaid }: RefundDetailDialogProps): React.JSX.Element {
   return (
     <Dialog open={refund !== null} onClose={busy ? undefined : onClose} fullWidth maxWidth="sm" aria-labelledby="refund-detail-title">
       {refund !== null ? (
@@ -61,7 +63,14 @@ export function RefundDetailDialog({ refund, busy, error, onClose, onRetry, onMa
             ) : null}
             {refund.status === 'pending' && refund.provider === 'manual' ? (
               <Alert severity="info" sx={{ mb: 2 }}>
-                This refund has to be sent by hand. Send the money, then mark it as refunded.
+                {canManageRefunds
+                  ? 'This refund has to be sent by hand. Send the money, then mark it as refunded.'
+                  : 'This refund has to be sent by hand. An admin or someone with refund access sends the money and marks it as refunded.'}
+              </Alert>
+            ) : null}
+            {!canManageRefunds && (canRetryRefund(refund) || canMarkRefundPaid(refund)) ? (
+              <Alert severity="info" sx={{ mb: 2 }}>
+                Only an admin or someone with refund access can retry or settle a refund.
               </Alert>
             ) : null}
             <Box component="dl" sx={{ m: 0, display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr)', columnGap: 3, rowGap: 0.75 }}>
@@ -80,12 +89,12 @@ export function RefundDetailDialog({ refund, busy, error, onClose, onRetry, onMa
             <Button autoFocus onClick={onClose} disabled={busy}>
               Close
             </Button>
-            {canRetryRefund(refund) ? (
+            {canManageRefunds && canRetryRefund(refund) ? (
               <Button variant="outlined" disabled={busy} onClick={(): void => onRetry(refund)}>
                 {busy ? 'Working…' : 'Retry'}
               </Button>
             ) : null}
-            {canMarkRefundPaid(refund) ? (
+            {canManageRefunds && canMarkRefundPaid(refund) ? (
               <Button variant="contained" disabled={busy} onClick={(): void => onMarkPaid(refund)}>
                 Mark as refunded…
               </Button>

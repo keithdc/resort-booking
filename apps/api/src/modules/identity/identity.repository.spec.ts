@@ -57,6 +57,7 @@ describe('IdentityRepository accounts', () => {
     password_hash: 'salt:hash',
     role: 'admin',
     active: true,
+    can_manage_refunds: false,
     organization_name: 'Humphreys',
     ...overrides,
   });
@@ -85,9 +86,29 @@ describe('IdentityRepository accounts', () => {
       email: 'ada@example.com',
       role: 'admin',
       organizationName: 'Humphreys',
+      canManageRefunds: true,
     });
     // The password hash never leaves through a session lookup.
     expect(JSON.stringify(account)).not.toContain('salt:hash');
+  });
+
+  it('reads the refund permission from the database on EVERY lookup (no cache), so a change applies at once', async () => {
+    query.mockResolvedValueOnce({ rows: [row({ role: 'employee', can_manage_refunds: true })], rowCount: 1 });
+    query.mockResolvedValueOnce({ rows: [row({ role: 'employee', can_manage_refunds: false })], rowCount: 1 });
+
+    await expect(repository.findStaffBySessionTokenHash('hash')).resolves.toMatchObject({ role: 'employee', canManageRefunds: true });
+    await expect(repository.findStaffBySessionTokenHash('hash')).resolves.toMatchObject({ role: 'employee', canManageRefunds: false });
+
+    expect(query).toHaveBeenCalledTimes(2);
+    expect(query.mock.calls[0]?.[0]).toContain('u.can_manage_refunds');
+  });
+
+  it('an admin always has refund access, whatever the stored flag says; an employee only with the flag', async () => {
+    query.mockResolvedValueOnce({ rows: [row({ role: 'admin', can_manage_refunds: false })], rowCount: 1 });
+    query.mockResolvedValueOnce({ rows: [row({ role: 'employee', can_manage_refunds: false })], rowCount: 1 });
+
+    await expect(repository.findStaffBySessionTokenHash('a')).resolves.toMatchObject({ canManageRefunds: true });
+    await expect(repository.findStaffBySessionTokenHash('b')).resolves.toMatchObject({ canManageRefunds: false });
   });
 
   it('never turns an unknown role value into admin', async () => {

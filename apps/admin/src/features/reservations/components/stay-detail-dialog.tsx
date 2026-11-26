@@ -33,6 +33,7 @@ import {
 } from '@mui/material';
 import { useEffect, useState } from 'react';
 import { StatusChip } from '@/shared/components/status-chip';
+import { useCanManageRefunds } from '@/shared/hooks/use-staff-role';
 import { UserAvatar } from '@/shared/components/user-avatar';
 import { ApiRequestError } from '@/shared/services/api-client';
 import { formatIsoDate } from '@/shared/utils/format-date';
@@ -41,7 +42,14 @@ import { formatDateTime } from '@/shared/utils/booking-labels';
 import { formatCents } from '@/shared/utils/money';
 import { patchStaffReservationArrival } from '../services/staff-reservations-api';
 import { nightsBetween, todayLocalIso } from '../utils/dates';
-import { canCancelStay, canChangeStayDates, cancelNotice, changeNotice } from '../utils/stay-actions';
+import {
+  canCancelStay,
+  canChangeStayDates,
+  cancelNotice,
+  changeNotice,
+  isSameDayLockedForEmployee,
+  SAME_DAY_ADMIN_ONLY_MESSAGE,
+} from '../utils/stay-actions';
 import { CancellationBlock, HistoryBlock, RefundsBlock } from './booking-records';
 import { StaffCancelDialog } from './staff-cancel-dialog';
 import { StaffChangeDatesDialog } from './staff-change-dates-dialog';
@@ -69,6 +77,7 @@ export function StayDetailDialog({ stay, onClose, onUpdated, onChanged }: StayDe
   const [notice, setNotice] = useState<string | null>(null);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [changeOpen, setChangeOpen] = useState(false);
+  const canManageRefunds = useCanManageRefunds();
 
   useEffect((): void => {
     setError(null);
@@ -98,6 +107,8 @@ export function StayDetailDialog({ stay, onClose, onUpdated, onChanged }: StayDe
     stay !== null && stay.kind === 'reservation' && stay.status === 'confirmed' && stay.arrivalStatus === 'expected';
   const canCancel = stay !== null && canCancelStay(stay);
   const canChange = stay !== null && canChangeStayDates(stay, todayLocalIso());
+  // Only changing dates is locked on the check-in day: a cancellation goes through (with no refund) without refund access.
+  const sameDayLocked = stay !== null && canChange && isSameDayLockedForEmployee(stay, canManageRefunds, todayLocalIso());
   const canCheckOut =
     stay !== null &&
     stay.kind === 'reservation' &&
@@ -210,6 +221,11 @@ export function StayDetailDialog({ stay, onClose, onUpdated, onChanged }: StayDe
                 {stay.kind === 'reservation' ? <HistoryBlock stay={stay} /> : null}
               </Box>
             </DialogContent>
+            {sameDayLocked ? (
+              <Alert severity="info" sx={{ mx: { xs: 2, sm: 3 }, mb: 1 }}>
+                {SAME_DAY_ADMIN_ONLY_MESSAGE}
+              </Alert>
+            ) : null}
             <DialogActions sx={{ px: { xs: 2, sm: 3 }, py: 2, justifyContent: 'space-between', flexWrap: 'wrap', gap: 1, borderTop: 1, borderColor: 'divider' }}>
               <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={STACKED_ACTIONS}>
                 {canCancel ? (
@@ -218,7 +234,7 @@ export function StayDetailDialog({ stay, onClose, onUpdated, onChanged }: StayDe
                   </Button>
                 ) : null}
                 {canChange ? (
-                  <Button variant="outlined" startIcon={<EventRepeatOutlinedIcon />} disabled={pending !== null} onClick={(): void => setChangeOpen(true)}>
+                  <Button variant="outlined" startIcon={<EventRepeatOutlinedIcon />} disabled={pending !== null || sameDayLocked} onClick={(): void => setChangeOpen(true)}>
                     Change dates
                   </Button>
                 ) : null}
@@ -260,6 +276,7 @@ export function StayDetailDialog({ stay, onClose, onUpdated, onChanged }: StayDe
             open={cancelOpen}
             reservationId={stay.id}
             reference={stay.reference}
+            canManageRefunds={canManageRefunds}
             onClose={(): void => setCancelOpen(false)}
             onCancelled={(result): void => {
               setCancelOpen(false);
@@ -271,6 +288,8 @@ export function StayDetailDialog({ stay, onClose, onUpdated, onChanged }: StayDe
           <StaffChangeDatesDialog
             open={changeOpen}
             stay={stay}
+            canManageRefunds={canManageRefunds}
+            lockedReason={sameDayLocked ? SAME_DAY_ADMIN_ONLY_MESSAGE : null}
             onClose={(): void => setChangeOpen(false)}
             onChanged={(result): void => {
               setChangeOpen(false);

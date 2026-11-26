@@ -11,7 +11,15 @@ import { IconButton, ListItemText, Menu, MenuItem } from '@mui/material';
 import type { TeamMember } from '@resort-booking/shared-types';
 import { useState } from 'react';
 
-export type MemberAction = 'make-admin' | 'make-employee' | 'deactivate' | 'reactivate' | 'reset-access' | 'reset-two-factor';
+export type MemberAction =
+  | 'make-admin'
+  | 'make-employee'
+  | 'deactivate'
+  | 'reactivate'
+  | 'reset-access'
+  | 'reset-two-factor'
+  | 'grant-refund-access'
+  | 'remove-refund-access';
 
 interface MemberActionsProps {
   member: TeamMember;
@@ -19,11 +27,21 @@ interface MemberActionsProps {
   onAction: (action: MemberAction) => void;
 }
 
-/** Which actions apply to this row. You cannot switch yourself off or reset your own access (use Account). */
+/**
+ * Which actions apply to this row. You cannot switch yourself off or reset your own access (use Account). Refund
+ * access is only for employees (an admin always has it) and never for yourself.
+ */
 export function actionsFor(member: TeamMember): { action: MemberAction; label: string }[] {
   const items: { action: MemberAction; label: string }[] = [
     member.role === 'admin' ? { action: 'make-employee', label: 'Make employee' } : { action: 'make-admin', label: 'Make admin' },
   ];
+  if (member.role === 'employee' && !member.isYou) {
+    items.push(
+      member.canManageRefunds
+        ? { action: 'remove-refund-access', label: 'Remove refund access' }
+        : { action: 'grant-refund-access', label: 'Give refund access' },
+    );
+  }
   if (!member.isYou) {
     items.push(member.active ? { action: 'deactivate', label: 'Switch off' } : { action: 'reactivate', label: 'Switch back on' });
     if (member.active) {

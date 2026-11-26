@@ -4,6 +4,17 @@
  * @dependencies none
  */
 
+/** Extra facts on a row: names, ids, numbers and flags only. */
+export type AuditMetadata = Readonly<Record<string, string | number | boolean | readonly string[] | null>>;
+
+/**
+ * A request that carries what a handler worked out for its own audit row (see `@Audited({ changeSet: true })`): for
+ * example the NAMES of the settings that really changed. Set by the handler from its own result, never from the body.
+ */
+export interface AuditChangeCarrier {
+  auditChanges?: AuditMetadata;
+}
+
 /** What to record. Metadata may hold names of things and ids, never passwords, tokens, bank details or emails. */
 export interface AuditEntry {
   /** Null only for a sign-in attempt that matched no account. */
@@ -12,7 +23,7 @@ export interface AuditEntry {
   action: string;
   targetType?: string;
   targetId?: string;
-  metadata?: Readonly<Record<string, string | number | boolean | readonly string[] | null>>;
+  metadata?: AuditMetadata;
   /** Hash of the caller's IP (see fingerprint), never the address. */
   ipHash?: string | null;
   requestId?: string | null;

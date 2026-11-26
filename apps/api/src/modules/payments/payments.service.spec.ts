@@ -357,7 +357,7 @@ describe('PaymentsService', () => {
     it('passes a refund request to the active provider and returns its result', async () => {
       refund.mockResolvedValue({ providerRef: 're_1', status: 'succeeded' });
       const live = await build({ name: 'stripe', simulated: false, createIntent, refund });
-      const request = { providerRef: 'pi_1', amountCents: 4000, currencyCode: 'EUR', reason: 'Guest cancelled' };
+      const request = { providerRef: 'pi_1', amountCents: 4000, currencyCode: 'EUR', reason: 'Guest cancelled', idempotencyKey: 'refund-r1-g1-c0' };
 
       await expect(live.issueRefund(request)).resolves.toEqual({ providerRef: 're_1', status: 'succeeded' });
 
@@ -368,7 +368,7 @@ describe('PaymentsService', () => {
       refund.mockRejectedValue(new Error('provider down'));
       const live = await build({ name: 'stripe', simulated: false, createIntent, refund });
 
-      await expect(live.issueRefund({ providerRef: 'pi_1', amountCents: 100, currencyCode: 'EUR', reason: 'x' })).rejects.toThrow('provider down');
+      await expect(live.issueRefund({ providerRef: 'pi_1', amountCents: 100, currencyCode: 'EUR', reason: 'x', idempotencyKey: 'refund-r1-g1-c0' })).rejects.toThrow('provider down');
     });
   });
 

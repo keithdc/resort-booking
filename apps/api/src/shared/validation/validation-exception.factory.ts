@@ -15,8 +15,11 @@ type ExceptionFactory = (errors: ValidationError[]) => unknown;
 const BASE_OPTIONS: ValidationPipeOptions = {
   whitelist: true,
   forbidNonWhitelisted: true,
+  // Instances of the DTO classes (so defaults and nested @Type work), but NO implicit type conversion: a wrong type
+  // must fail validation, never turn into a valid value ("false" into true, {} into "[object Object]", [] into 0).
+  // The few query-string numbers are converted explicitly with @QueryNumber().
   transform: true,
-  transformOptions: { enableImplicitConversion: true },
+  transformOptions: { enableImplicitConversion: false },
 };
 
 /**

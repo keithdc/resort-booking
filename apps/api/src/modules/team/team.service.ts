@@ -21,7 +21,7 @@ import type { RegisterDto } from './dto/register.dto';
 import { TeamLimiter } from './team-limiter';
 import { inviteLink, renderInviteMail } from './team-mail';
 import { TeamRepository, type InviteRecord } from './team.repository';
-import { inviteIsOpen, isRegistrationOpen, memberChangeAction } from './team.rules';
+import { inviteIsOpen, isRegistrationOpen, memberChangeAction, type MemberRefusal } from './team.rules';
 import type { InviteEmailStatus, InviteIssued, InvitePreview, MemberChange, RegistrationStatus, TeamMember, TeamOverview } from './team.types';
 
 const DEFAULT_INVITE_HOURS = 72;
@@ -122,11 +122,12 @@ export class TeamService {
     if (await this.team.emailInUse(email)) {
       throw this.emailTaken();
     }
-    const issued = await this.issue(actor, { email, fullName, role: input.role, staffUserId: null }, input.sendEmail === true);
+    const canManageRefunds = input.role === 'employee' && input.canManageRefunds === true;
+    const issued = await this.issue(actor, { email, fullName, role: input.role, canManageRefunds, staffUserId: null }, input.sendEmail === true);
     await this.audit.recordBy(auditActor(actor), 'team.invite_created', {
       targetType: 'staff_invite',
       targetId: issued.invite.id,
-      metadata: { role: input.role, emailed: issued.emailStatus === 'sent' },
+      metadata: { role: input.role, canManageRefunds, emailed: issued.emailStatus === 'sent' },
     });
     return issued;
   }
@@ -140,28 +141,36 @@ export class TeamService {
   }
 
   /**
-   * Changes a member's role and/or switches them on or off. Never leaves the workspace without an active admin,
-   * never switches the caller off; switching someone off ends their sessions.
+   * Changes a member's role, switches them on or off, and/or grants or removes refund access. Never leaves the
+   * workspace without an active admin, never switches the caller off; switching someone off ends their sessions.
+   * Refund access is for employees, never for an admin or for yourself. It needs no session change: the API reads it
+   * from the database on every request, so it applies from the member's next call.
    */
   public async updateMember(actor: TeamActor, staffId: string, change: MemberChange): Promise<TeamMember> {
-    if (change.role === undefined && change.active === undefined) {
+    if (change.role === undefined && change.active === undefined && change.canManageRefunds === undefined) {
       throw new BadRequestException({ message: 'Nothing to change', code: 'NOTHING_TO_CHANGE' });
     }
     const outcome = await this.team.changeMember(actor.staff.organizationId, actor.staff.id, staffId, change);
     if (outcome.kind === 'refused') {
       throw this.refusal(outcome.code);
     }
-    for (const action of memberChangeAction(outcome.before, outcome.after)) {
-      await this.audit.recordBy(auditActor(actor), action, {
-        targetType: 'staff_user',
-        targetId: staffId,
-        metadata: { role: outcome.after.role },
-      });
-    }
     const members = await this.team.listMembers(actor.staff.organizationId, actor.staff.id);
     const updated = members.find((member): boolean => member.id === staffId);
     if (updated === undefined) {
       throw new NotFoundException({ message: 'Team member not found', code: 'STAFF_NOT_FOUND' });
+    }
+    for (const action of memberChangeAction(outcome.before, outcome.after)) {
+      await this.audit.recordBy(auditActor(actor), action, {
+        targetType: 'staff_user',
+        targetId: staffId,
+        metadata: {
+          role: outcome.after.role,
+          canManageRefunds: outcome.after.canManageRefunds,
+          memberName: updated.fullName,
+          changedByName: actor.staff.fullName,
+          changedByRole: actor.staff.role,
+        },
+      });
     }
     return updated;
   }
@@ -184,7 +193,7 @@ export class TeamService {
     await this.identity.logoutAll(staffId);
     const issued = await this.issue(
       actor,
-      { email: member.email, fullName: member.fullName, role: member.role, staffUserId: staffId },
+      { email: member.email, fullName: member.fullName, role: member.role, canManageRefunds: false, staffUserId: staffId },
       options.sendEmail === true,
     );
     await this.audit.recordBy(auditActor(actor), 'team.access_reset', {
@@ -262,7 +271,7 @@ export class TeamService {
 
   private async issue(
     actor: TeamActor,
-    input: { email: string; fullName: string; role: StaffRole; staffUserId: string | null },
+    input: { email: string; fullName: string; role: StaffRole; canManageRefunds: boolean; staffUserId: string | null },
     sendEmail: boolean,
   ): Promise<InviteIssued> {
     const token = createSessionToken();
@@ -273,6 +282,7 @@ export class TeamService {
       email: input.email,
       fullName: input.fullName,
       role: input.role,
+      canManageRefunds: input.canManageRefunds,
       staffUserId: input.staffUserId,
       tokenHash: hashSessionToken(token),
       expiresAt,
@@ -339,7 +349,7 @@ export class TeamService {
     return new ConflictException({ message: 'An account with this email already exists. Sign in instead.', code: 'EMAIL_TAKEN' });
   }
 
-  private refusal(code: 'STAFF_NOT_FOUND' | 'LAST_ADMIN' | 'CANNOT_DEACTIVATE_SELF' | 'NOTHING_TO_CHANGE'): Error {
+  private refusal(code: MemberRefusal): Error {
     switch (code) {
       case 'STAFF_NOT_FOUND':
         return new NotFoundException({ message: 'Team member not found', code });
@@ -349,6 +359,10 @@ export class TeamService {
         return new ConflictException({ message: 'You cannot switch yourself off: ask another admin', code });
       case 'NOTHING_TO_CHANGE':
         return new BadRequestException({ message: 'Nothing to change', code });
+      case 'REFUND_ACCESS_NOT_FOR_ADMIN':
+        return new BadRequestException({ message: 'Admins always have refund access. It can only be given to employees.', code });
+      case 'CANNOT_CHANGE_OWN_REFUND_ACCESS':
+        return new BadRequestException({ message: 'You cannot change your own refund access: ask another admin', code });
     }
   }
 

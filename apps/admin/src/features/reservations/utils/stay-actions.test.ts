@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { staffRefund, staffReservation } from '@/test/fixtures';
-import { canCancelStay, canChangeStayDates, cancelNotice, changeNotice } from './stay-actions';
+import { canCancelStay, canChangeStayDates, cancelNotice, changeNotice, isSameDayLockedForEmployee } from './stay-actions';
 
 const plain = (text: string): string => text.replace(/\s/g, ' ');
 
@@ -95,5 +95,21 @@ describe('changeNotice', () => {
 
   it('ignores a zero refund', () => {
     expect(changeNotice({ reservation: next, refund: staffRefund({ amountCents: 0 }) })).toBe('Dates changed. The new booking is BK-NEW0000000');
+  });
+});
+
+describe('isSameDayLockedForEmployee', () => {
+  it('locks an employee when check-in is today or earlier', () => {
+    expect(isSameDayLockedForEmployee({ checkIn: '2027-07-10' }, false, '2027-07-10')).toBe(true);
+    expect(isSameDayLockedForEmployee({ checkIn: '2027-07-09' }, false, '2027-07-10')).toBe(true);
+  });
+
+  it('does not lock an employee for tomorrow or later', () => {
+    expect(isSameDayLockedForEmployee({ checkIn: '2027-07-11' }, false, '2027-07-10')).toBe(false);
+  });
+
+  it('never locks an admin', () => {
+    expect(isSameDayLockedForEmployee({ checkIn: '2027-07-10' }, true, '2027-07-10')).toBe(false);
+    expect(isSameDayLockedForEmployee({ checkIn: '2020-01-01' }, true, '2027-07-10')).toBe(false);
   });
 });

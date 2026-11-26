@@ -4,7 +4,7 @@
  * @dependencies class-validator
  */
 
-import { Type } from 'class-transformer';
+import { QueryNumber } from '../../../shared/validation/query-number';
 import {
   IsInt,
   IsOptional,
@@ -23,7 +23,7 @@ export class SearchQueryDto {
   @Matches(/^\d{4}-\d{2}-\d{2}$/)
   public checkOut!: string;
 
-  @Type(() => Number)
+  @QueryNumber()
   @IsInt()
   @Min(1)
   @Max(50)

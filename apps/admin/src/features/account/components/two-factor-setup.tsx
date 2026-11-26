@@ -16,6 +16,8 @@ import { copyText } from '../utils/clipboard';
 
 interface TwoFactorSetupPanelProps {
   setup: TwoFactorSetup;
+  /** The password typed to start the setup: the server wants it again with the first code. Kept in memory only. */
+  currentPassword: string;
   onEnabled: (result: TwoFactorRecoveryCodes) => void;
   onCancel: () => void;
 }
@@ -58,9 +60,9 @@ function Copyable({ label, value }: CopyableProps): React.JSX.Element {
 
 /**
  * Step two of turning two-step verification on: the secret as text (no QR image), then one code from the app to
- * prove it works. Nothing is protected until the code is accepted.
+ * prove it works. The password typed at the start is sent again with the code. Nothing is protected until the code is accepted.
  */
-export function TwoFactorSetupPanel({ setup, onEnabled, onCancel }: TwoFactorSetupPanelProps): React.JSX.Element {
+export function TwoFactorSetupPanel({ setup, currentPassword, onEnabled, onCancel }: TwoFactorSetupPanelProps): React.JSX.Element {
   const [code, setCode] = useState('');
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -69,9 +71,15 @@ export function TwoFactorSetupPanel({ setup, onEnabled, onCancel }: TwoFactorSet
     setPending(true);
     setError(null);
     try {
-      onEnabled(await enableTwoFactor(code.trim()));
+      onEnabled(await enableTwoFactor(currentPassword, code.trim()));
     } catch (err: unknown) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not turn on two-step verification');
+      setError(
+        err instanceof ApiRequestError && err.code === 'STAFF_PASSWORD_MISMATCH'
+          ? 'Your password was not accepted. Cancel and start again.'
+          : err instanceof ApiRequestError
+            ? err.message
+            : 'Could not turn on two-step verification',
+      );
       setCode('');
     } finally {
       setPending(false);

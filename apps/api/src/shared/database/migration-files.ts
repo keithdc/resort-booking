@@ -9,7 +9,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Pool, PoolClient, QueryResult, QueryResultRow } from 'pg';
 import { compareMigrations } from './migration-status';
-import { assertIdentifier, DEFAULT_APP_ROLE } from './roles';
+import { assertIdentifier, DEFAULT_APP_ROLE, restrictedTableStatements } from './roles';
 
 /** The two things the migration code needs from a connection: a plain query and a client for a transaction. */
 export interface SqlExecutor {
@@ -93,6 +93,17 @@ export async function lockdownMigrationTable(executor: SqlExecutor, appRole: str
 }
 
 /**
+ * Narrows the runtime role's rights on the audit log and the money tables (INSERT and read, UPDATE of a few columns, no
+ * DELETE; docs/13 R2-05). New tables get the blanket default privileges when the owner creates them, so this runs after
+ * every migration run, like the ledger lock-down. Idempotent; does nothing if the role does not exist.
+ */
+export async function restrictFinancialTables(executor: SqlExecutor, appRole: string = DEFAULT_APP_ROLE): Promise<void> {
+  for (const sql of restrictedTableStatements(appRole)) {
+    await executor.query(sql);
+  }
+}
+
+/**
  * Applies every pending file, each in its own transaction together with its `schema_migrations` row. Needs a
  * connection that may change the schema. Returns the files applied, in order.
  */
@@ -126,5 +137,6 @@ export async function applyPendingMigrations(
     options.onApplied?.(file);
     applied.push(file);
   }
+  await restrictFinancialTables(executor, options.appRole);
   return applied;
 }

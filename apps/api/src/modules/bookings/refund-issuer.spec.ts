@@ -6,9 +6,10 @@
 import { Logger } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { PaymentsService } from '../payments/payments.service';
-import type { RefundRequest, RefundResult } from '../payments/payment-provider';
+import { ProviderOutcomeUnknownError, type RefundRequest, type RefundResult } from '../payments/payment-provider';
 import { BookingsRepository, type BookingRow } from './bookings.repository';
 import { RefundIssuer } from './refund-issuer';
+import { RefundTimings } from './refund-timings';
 
 function row(payments: BookingRow['payments']): BookingRow {
   return { id: 'b', currency_code: 'EUR', payments } as BookingRow;
@@ -20,7 +21,8 @@ const OLDER = { id: 'p1', provider: 'mock', providerRef: 'mock_pi_1', refundable
 describe('RefundIssuer', () => {
   const describeProvider = jest.fn<{ name: string; simulated: boolean }, []>();
   const issueRefund = jest.fn<Promise<RefundResult>, [RefundRequest]>();
-  const completeRefund = jest.fn<Promise<void>, [string, 'succeeded' | 'failed', string, string | null]>();
+  const completeRefund = jest.fn<Promise<boolean>, [string, 'succeeded' | 'failed', string, string | null, { bumpKeyGeneration?: boolean }?]>();
+  const noteRefundOutcomeUnknown = jest.fn<Promise<void>, [string, string]>();
   let issuer: RefundIssuer;
 
   beforeEach(async () => {
@@ -28,11 +30,13 @@ describe('RefundIssuer', () => {
     jest.spyOn(Logger.prototype, 'error').mockImplementation((): void => undefined);
     describeProvider.mockReturnValue({ name: 'mock', simulated: true });
     issueRefund.mockImplementation((request) => Promise.resolve({ providerRef: `re_${request.providerRef}`, status: 'succeeded' }));
-    completeRefund.mockResolvedValue(undefined);
+    completeRefund.mockResolvedValue(true);
+    noteRefundOutcomeUnknown.mockResolvedValue(undefined);
     const moduleRef = await Test.createTestingModule({
       providers: [
         RefundIssuer,
-        { provide: BookingsRepository, useValue: { completeRefund } },
+        { provide: BookingsRepository, useValue: { completeRefund, noteRefundOutcomeUnknown } },
+        { provide: RefundTimings, useValue: { values: { providerTimeoutMs: 20_000, leaseSeconds: 150 } } },
         { provide: PaymentsService, useValue: { describeProvider, issueRefund } },
       ],
     }).compile();
@@ -102,7 +106,7 @@ describe('RefundIssuer', () => {
       const outcome = await issuer.settle('refund-1', 'b', plan);
 
       expect(issueRefund.mock.calls.map((call) => [call[0].providerRef, call[0].amountCents])).toEqual([['mock_pi_2', 2000], ['mock_pi_1', 48000]]);
-      expect(completeRefund).toHaveBeenCalledWith('refund-1', 'succeeded', 're_mock_pi_2,re_mock_pi_1', null);
+      expect(completeRefund).toHaveBeenCalledWith('refund-1', 'succeeded', 're_mock_pi_2,re_mock_pi_1', null, {});
       expect(outcome).toBe('succeeded');
     });
 
@@ -112,7 +116,7 @@ describe('RefundIssuer', () => {
 
       await expect(issuer.settle('refund-1', 'b', plan)).resolves.toBe('failed');
 
-      expect(completeRefund).toHaveBeenCalledWith('refund-1', 'failed', '', 'provider unreachable');
+      expect(completeRefund).toHaveBeenCalledWith('refund-1', 'failed', '', 'provider unreachable', { bumpKeyGeneration: true });
       expect(Logger.prototype.error).toHaveBeenCalled();
     });
 
@@ -122,15 +126,94 @@ describe('RefundIssuer', () => {
 
       await issuer.settle('refund-1', 'b', plan);
 
-      expect(completeRefund).toHaveBeenCalledWith('refund-1', 'failed', 're_first', 'second failed');
+      expect(completeRefund).toHaveBeenCalledWith('refund-1', 'failed', 're_first', 'second failed', { bumpKeyGeneration: false });
     });
 
-    it('does not throw if saving the provider\'s answer fails (the money already moved)', async () => {
-      completeRefund.mockRejectedValue(new Error('db down'));
+    it('sends a deterministic idempotency key per refund, key generation and chunk', async () => {
+      const plan = { ...issuer.plan(row([NEWER, OLDER]), 50000, 100, 'why'), keyGeneration: 2 };
+
+      await issuer.settle('refund-1', 'b', plan);
+
+      expect(issueRefund.mock.calls.map((call) => call[0].idempotencyKey)).toEqual(['refund-refund-1-g2-c0', 'refund-refund-1-g2-c1']);
+    });
+
+    it('sends the SAME keys when the same refund is settled again (a retry after a lost answer cannot pay twice)', async () => {
+      const plan = issuer.plan(row([NEWER, OLDER]), 50000, 100, 'why');
+
+      await issuer.settle('refund-1', 'b', plan);
+      await issuer.settle('refund-1', 'b', plan);
+
+      const keys = issueRefund.mock.calls.map((call) => call[0].idempotencyKey);
+      expect(keys.slice(0, 2)).toEqual(keys.slice(2));
+    });
+
+    it('leaves the refund pending, with a note, when the provider cannot say what happened', async () => {
+      issueRefund.mockRejectedValue(new ProviderOutcomeUnknownError('connection reset'));
       const plan = issuer.plan(row([OLDER]), 1000, 100, 'why');
 
-      await expect(issuer.settle('refund-1', 'b', plan)).resolves.toBe('succeeded');
-      expect(Logger.prototype.error).toHaveBeenCalled();
+      await expect(issuer.settle('refund-1', 'b', plan)).resolves.toBe('pending');
+
+      expect(completeRefund).not.toHaveBeenCalled();
+      expect(noteRefundOutcomeUnknown).toHaveBeenCalledWith('refund-1', expect.stringContaining('connection reset'));
+      expect(Logger.prototype.error).toHaveBeenCalledWith(expect.stringContaining('asked again with the same idempotency key'));
+    });
+
+    describe('with fake timers', () => {
+      beforeEach(() => {
+        jest.useFakeTimers();
+      });
+      afterEach(() => {
+        jest.useRealTimers();
+      });
+
+      it('treats a provider call that outlasts the timeout as an unknown outcome, never as a refusal', async () => {
+        issueRefund.mockImplementation(() => new Promise<RefundResult>(() => undefined));
+        const plan = issuer.plan(row([OLDER]), 1000, 100, 'why');
+
+        const settled = issuer.settle('refund-1', 'b', plan);
+        await jest.advanceTimersByTimeAsync(20_001);
+
+        await expect(settled).resolves.toBe('pending');
+        expect(completeRefund).not.toHaveBeenCalled();
+        expect(noteRefundOutcomeUnknown).toHaveBeenCalledWith('refund-1', expect.stringContaining('no answer from the provider within 20 seconds'));
+      });
+
+      it('does not start the next payment\'s call when the lease is about to run out', async () => {
+        issueRefund.mockImplementation(async (request) => {
+          jest.setSystemTime(Date.now() + 140_000);
+          return { providerRef: `re_${request.providerRef}`, status: 'succeeded' as const };
+        });
+        const plan = issuer.plan(row([NEWER, OLDER]), 50000, 100, 'why');
+
+        await expect(issuer.settle('refund-1', 'b', plan)).resolves.toBe('pending');
+
+        expect(issueRefund).toHaveBeenCalledTimes(1);
+        expect(noteRefundOutcomeUnknown).toHaveBeenCalledWith('refund-1', expect.stringContaining('Already refunded: re_mock_pi_2'));
+      });
+
+      it('retries saving the provider\'s answer, then leaves the row pending for the reconciler', async () => {
+        completeRefund.mockRejectedValue(new Error('db down'));
+        const plan = issuer.plan(row([OLDER]), 1000, 100, 'why');
+
+        const settled = issuer.settle('refund-1', 'b', plan);
+        await jest.advanceTimersByTimeAsync(2000);
+
+        await expect(settled).resolves.toBe('succeeded');
+        expect(completeRefund).toHaveBeenCalledTimes(3);
+        expect(Logger.prototype.error).toHaveBeenCalledWith(expect.stringContaining('until the reconciler settles it with the same idempotency key'));
+      });
+
+      it('stops retrying the save as soon as it works', async () => {
+        completeRefund.mockRejectedValueOnce(new Error('blip')).mockResolvedValue(true);
+        const plan = issuer.plan(row([OLDER]), 1000, 100, 'why');
+
+        const settled = issuer.settle('refund-1', 'b', plan);
+        await jest.advanceTimersByTimeAsync(2000);
+
+        await expect(settled).resolves.toBe('succeeded');
+        expect(completeRefund).toHaveBeenCalledTimes(2);
+        expect(Logger.prototype.error).not.toHaveBeenCalled();
+      });
     });
   });
 });

@@ -13,6 +13,7 @@ import type { TeamInvite } from '@resort-booking/shared-types';
 import { RoleChip } from '@/shared/components/role-chip';
 import { useCompactLayout } from '@/shared/hooks/use-compact-layout';
 import { formatDateTime } from '../utils/format-time';
+import { MoneyAccessChip } from './money-access-chip';
 import { VISUALLY_HIDDEN } from '@/shared/utils/visually-hidden';
 
 interface InvitesTableProps {
@@ -68,6 +69,7 @@ export function InvitesTable({ invites, busy, mailEnabled, onRevoke, onNewLink }
             </Typography>
             <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" alignItems="center" sx={{ mt: 1.25 }}>
               <RoleChip role={invite.role} />
+              {invite.isReset ? null : <MoneyAccessChip role={invite.role} canManageRefunds={invite.canManageRefunds} />}
               <Chip size="small" variant="outlined" label={invite.isReset ? 'Access reset' : 'Invitation'} />
               {status(invite)}
             </Stack>
@@ -110,7 +112,10 @@ export function InvitesTable({ invites, busy, mailEnabled, onRevoke, onNewLink }
                 </Typography>
               </TableCell>
               <TableCell>
-                <RoleChip role={invite.role} />
+                <Stack spacing={0.5} alignItems="flex-start">
+                  <RoleChip role={invite.role} />
+                  {invite.isReset ? null : <MoneyAccessChip role={invite.role} canManageRefunds={invite.canManageRefunds} />}
+                </Stack>
               </TableCell>
               <TableCell>{invite.isReset ? 'Access reset' : 'Invitation'}</TableCell>
               <TableCell>

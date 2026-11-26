@@ -23,9 +23,9 @@ function body(extra: Record<string, unknown> = {}): Record<string, unknown> {
   };
 }
 
-// The app's global ValidationPipe converts types implicitly (main.ts); mirror it.
+// The app's global ValidationPipe does not convert types (R2-16); plainToInstance without options mirrors it.
 async function problems(extra: Record<string, unknown>): Promise<number> {
-  return (await validate(plainToInstance(DiscountWriteDto, body(extra), { enableImplicitConversion: true }))).length;
+  return (await validate(plainToInstance(DiscountWriteDto, body(extra)))).length;
 }
 
 describe('DiscountWriteDto promoted', () => {
@@ -46,7 +46,7 @@ describe('DiscountWriteDto priority', () => {
   it('is optional: the admin no longer sends it', async () => {
     const withoutPriority = body();
     delete withoutPriority.priority;
-    const dto = plainToInstance(DiscountWriteDto, withoutPriority, { enableImplicitConversion: true });
+    const dto = plainToInstance(DiscountWriteDto, withoutPriority);
     expect(await validate(dto)).toHaveLength(0);
   });
 

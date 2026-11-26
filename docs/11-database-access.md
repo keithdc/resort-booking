@@ -9,7 +9,7 @@ the running API can only read and write rows.
 | Role | Used by | Can | Cannot |
 | --- | --- | --- | --- |
 | `resort_owner` | `npm run migrate` only (and start-up migrations if you switch them on) | owns every table, view and sequence; changes the schema | be a superuser, create roles or databases |
-| `resort_app` | the API, at run time (`DATABASE_URL`) | `SELECT/INSERT/UPDATE/DELETE` on the tables, use sequences, read `schema_migrations` | `CREATE`, `DROP`, `ALTER`, `TRUNCATE`, write to `schema_migrations`, create roles, run a statement longer than 15 s |
+| `resort_app` | the API, at run time (`DATABASE_URL`) | `SELECT/INSERT/UPDATE/DELETE` on the tables (except the append-only ones below), use sequences, read `schema_migrations` | `CREATE`, `DROP`, `ALTER`, `TRUNCATE`, write to `schema_migrations`, `UPDATE` or `DELETE` the audit log, `DELETE` payments or refunds, change what a payment or refund IS, create roles, run a statement longer than 15 s |
 | `resort_readonly` | reports, BI, an accountant (`READONLY_DATABASE_URL`) | read the `report_*` views and a few catalogue tables | read any guest or bank data, write anything |
 
 All three: `NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS`, `search_path = public`, a connection limit.
@@ -23,6 +23,24 @@ Role limits (`ALTER ROLE ... SET`), so a slow query or a forgotten transaction c
 | `statement_timeout` | 15 s | 30 s | none (migrations can be long) |
 | `lock_timeout` | 3 s | none | 30 s |
 | `idle_in_transaction_session_timeout` | 20 s | none | none |
+
+### Append-only records (docs/13 R2-05, migrations 032 to 034)
+
+The audit log and the money tables can only grow and move forward. Two layers, so a bug, an injection or a mistake by the owner cannot rewrite history:
+
+| Table | `resort_app` privileges | Trigger (any role, the owner included) |
+| --- | --- | --- |
+| `audit_log` | `SELECT`, `INSERT` | no `UPDATE`, `DELETE`, `TRUNCATE`; the one exception is `staff_user_id ON DELETE SET NULL` of an erased staff account |
+| `booking_changes` | `SELECT`, `INSERT` | no `UPDATE`, `DELETE`, `TRUNCATE` |
+| `payments` | `SELECT`, `INSERT`, `UPDATE (status, failure_reason, inventory_block_id, updated_at)` | no `DELETE`, `TRUNCATE`; amount, currency, provider, provider reference, organization, property, purpose and payload never change; `inventory_block_id` moves only on a succeeded payment (a date change); status `requires_payment -> succeeded \| failed \| cancelled`, `failed \| cancelled -> succeeded` (a late success, docs/14), a succeeded payment never changes |
+| `refunds` | `SELECT`, `INSERT`, `UPDATE` of `status, provider, provider_ref, failure_reason, resolution_note, resolved_by_staff_id, resolved_at, updated_at, processing_started_at, attempts, key_generation` | no `DELETE`, `TRUNCATE`; amount, percent, currency, links, kind, reason and who created it never change; status `pending -> succeeded \| failed`, `failed -> pending \| succeeded`, a succeeded refund never changes; the provider can only change to `manual` |
+| `payment_webhook_events` | `SELECT`, `INSERT`, `UPDATE (status, attempts, error, updated_at, processed_at)` | none (the unique key and the column grant are the guard) |
+
+The privileges live in `RESTRICTED_TABLES` (`shared/database/roles.ts`) and are applied by `db:setup-roles` and again **after every migration run** (`restrictFinancialTables` in `applyPendingMigrations`), because a table the owner creates would otherwise carry the blanket default grant. The triggers need no role name and are in `032_financial_record_guards.sql`.
+
+**Escape hatch** (a retention or erasure job, run as the owner, never by the API): inside one transaction run `SET LOCAL resort.record_maintenance = 'on';` before the statement. The setting is transaction-local, so it cannot stay on. It does nothing for `resort_app`, which lacks the privileges. Any use should be written down (who, when, why, how many rows) outside the database; the audit log cannot record the deletion of its own rows.
+
+`db:verify-roles` proves the privilege side (it connects as `resort_app` and must be refused an `UPDATE` of `audit_log`, an amount change, a `DELETE` of payments or refunds, and must still be allowed to append and settle); `database-roles.integration.spec.ts` proves the triggers and the replay of the migrations on a throwaway database.
 
 ### What the read-only role sees
 
@@ -69,7 +87,7 @@ The old single-URL setup keeps working (the API warns that it connects as a supe
    transaction that is rolled back, so it is safe on a real database. Add `--skip-timeout` to skip the 15 s timeout probe.
    Run against a superuser URL it FAILS, which is how you notice a wrong `DATABASE_URL`.
 
-After a migration that adds a table: nothing to do for `resort_app` (default privileges cover tables the owner creates).
+After a migration that adds a table: nothing to do for `resort_app` (default privileges cover tables the owner creates; the append-only tables above are narrowed again by the migration runner).
 After a migration that adds a `report_*` view: run `db:setup-roles` again so the read-only role gets `SELECT` on it.
 
 ## What the API does at start-up
@@ -97,7 +115,7 @@ After a migration that adds a `report_*` view: run `db:setup-roles` again so the
 - [ ] TLS on the database connection (`DATABASE_SSL=true`) unless the database is on the same machine.
 - [ ] `db:setup-roles` run as the Postgres admin; strong, unique passwords for the three roles (a secrets manager, not a file
       in the repository).
-- [ ] `NODE_ENV=production`, `DATABASE_URL` = `resort_app`, `MIGRATION_DATABASE_URL` = `resort_owner`,
+- [ ] `NODE_ENV=production` (exactly: unset or any other value makes the API refuse to start), no `ALLOW_MOCK_PAYMENTS`, `IP_HASH_SALT` set (32+ chars), `DATABASE_URL` = `resort_app`, `MIGRATION_DATABASE_URL` = `resort_owner`,
       `RUN_MIGRATIONS_ON_START` unset (or `false`).
 - [ ] Deploy order: `npm run migrate` (owner) first, then `db:setup-roles` if the release adds `report_*` views, then start the
       API.
@@ -136,7 +154,7 @@ shared pool (`DatabaseService.query`) does not run requests in a transaction tod
 
 ## Tests
 
-- Unit tests (no database): role statements (`roles.spec.ts`), settings and TLS rules (`database-settings.spec.ts`), the role
+- Unit tests (no database): role statements (`roles.spec.ts`, including the append-only privileges), settings and TLS rules (`database-settings.spec.ts`), the role
   safety check (`role-safety.spec.ts`, `database-safety.service.spec.ts`), the environment rules
   (`database-environment.spec.ts`), the migration connection rules (`migration-runner.spec.ts`, `migration-files.spec.ts`), the
   probes (`role-probes.spec.ts`).

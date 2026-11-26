@@ -5,7 +5,7 @@
  * Bank and legal details belong to ONE organization: staff reach only their own.
  */
 
-import { NotFoundException } from '@nestjs/common';
+import { Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import type { OrganizationSettings, UpdateOrganizationSettingsRequest } from '@resort-booking/shared-types';
@@ -31,6 +31,23 @@ const SETTINGS: OrganizationSettings = {
   bookingEmail: 'booking@example.com',
   guestReplyEmail: 'reply@example.com',
 };
+
+function asRequest(settings: OrganizationSettings): UpdateOrganizationSettingsRequest {
+  return {
+    name: settings.name,
+    legalName: settings.legalName,
+    legalAddress: settings.legalAddress,
+    vatNumber: settings.vatNumber,
+    iban: settings.iban,
+    bic: settings.bic,
+    bankAccountName: settings.bankAccountName,
+    contactEmail: settings.contactEmail,
+    contactPhone: settings.contactPhone,
+    ownerName: settings.ownerName,
+    bookingEmail: settings.bookingEmail,
+    guestReplyEmail: settings.guestReplyEmail,
+  };
+}
 
 describe('IdentityService organization settings are scoped to the caller', () => {
   const getSettings = jest.fn<Promise<OrganizationSettings | null>, [(string | null)?]>();
@@ -84,10 +101,34 @@ describe('IdentityService organization settings are scoped to the caller', () =>
       guestReplyEmail: SETTINGS.guestReplyEmail,
     };
 
-    await service.updateSettings(request, 'org-B');
+    const saved = await service.updateSettings(request, 'org-B');
 
     expect(getSettings).toHaveBeenCalledWith('org-B');
     expect(updateSettings).toHaveBeenCalledWith('org-B', request);
+    expect(saved.settings).toEqual(SETTINGS);
+    expect(saved.audit).toMatchObject({ fields: [], bankDetailsChanged: false, notice: null });
+  });
+
+  it('answers the names of what changed, with the bank-details notice, and logs the sensitive names (never values)', async () => {
+    getSettings.mockResolvedValue(SETTINGS);
+    updateSettings.mockResolvedValue({ ...SETTINGS, iban: 'DE89 3704 0044 0532 0130 00' });
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation((): void => undefined);
+    const unchanged = asRequest(SETTINGS);
+
+    const saved = await service.updateSettings({ ...unchanged, iban: 'DE89 3704 0044 0532 0130 00', ownerName: 'Grace' }, 'org-B');
+
+    expect(saved.audit).toMatchObject({ fields: ['iban', 'ownerName'], sensitiveFields: ['iban'], bankDetailsChanged: true, notice: 'bank_details_changed' });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('sensitive fields: iban'));
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('3704');
+    warn.mockRestore();
+  });
+
+  it('does not save and does not log when the organization is gone', async () => {
+    getSettings.mockResolvedValue(SETTINGS);
+    updateSettings.mockResolvedValue(null);
+    const unchanged = asRequest(SETTINGS);
+
+    await expect(service.updateSettings({ ...unchanged, name: 'x' }, 'org-B')).rejects.toBeInstanceOf(NotFoundException);
   });
 });
 

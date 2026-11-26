@@ -58,13 +58,11 @@ export class UpsertHouseDto {
   @MaxLength(LIMITS.description)
   public description!: string;
 
-  @Type((): NumberConstructor => Number)
   @IsInt()
   @Min(1)
   @Max(LIMITS.capacity)
   public capacity!: number;
 
-  @Type((): NumberConstructor => Number)
   @IsInt()
   @Min(0)
   @Max(LIMITS.maxCents)
@@ -75,7 +73,6 @@ export class UpsertHouseDto {
   @MaxLength(LIMITS.currencyCode)
   public currencyCode!: string;
 
-  @Type((): BooleanConstructor => Boolean)
   @IsBoolean()
   public published!: boolean;
 

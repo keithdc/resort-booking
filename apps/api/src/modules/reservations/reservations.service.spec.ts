@@ -4,7 +4,7 @@
  * @dependencies ReservationsService, @nestjs/testing
  */
 
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import type {
   CancellationReasonRow,
@@ -467,5 +467,39 @@ describe('ReservationsService passes the caller organization to every staff read
     expect(attention.mock.calls[0]?.[2]).toBe('org-B');
     expect(listConfirmedOverlapping).toHaveBeenCalledTimes(2);
     expect(cancellationsByReason).toHaveBeenCalledTimes(2);
+  });
+
+  describe('range cap (R2-03: no request may build millions of days)', () => {
+    const BAD: Array<[string, string, string]> = [
+      ['0001-01-01', '9999-12-31', 'INVALID_DATES'],
+      ['0100-01-01', '9999-12-31', 'INVALID_DATES'],
+      ['2000-01-01', '2100-12-31', 'RANGE_TOO_LONG'],
+      ['2027-01-01', '2028-02-06', 'RANGE_TOO_LONG'],
+      ['2027-07-10', '2027-07-10', 'INVALID_DATES'],
+      ['2027-07-11', '2027-07-10', 'INVALID_DATES'],
+      ['2027-02-30', '2027-03-05', 'INVALID_DATES'],
+      ['2027-07-10', '2101-01-01', 'INVALID_DATES'],
+    ];
+
+    it.each(BAD)('calendar and report refuse %s to %s with %s before any query', async (from, to, code) => {
+      await expect(service.getCalendar({ from, to }, 'org-1')).rejects.toMatchObject({ response: { code } });
+      await expect(service.getReport({ from, to }, 'org-1')).rejects.toMatchObject({ response: { code } });
+      expect(listPipelineOverlapping).not.toHaveBeenCalled();
+      expect(listConfirmedOverlapping).not.toHaveBeenCalled();
+    });
+
+    it('RANGE_TOO_LONG and INVALID_DATES are 400s', async () => {
+      await expect(service.getCalendar({ from: '2000-01-01', to: '2100-12-31' }, 'org-1')).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('accepts exactly 400 nights (a whole leap year and more) for both', async () => {
+      await expect(service.getCalendar({ from: '2027-01-01', to: '2028-02-05' }, 'org-1')).resolves.toMatchObject({ days: expect.any(Array) });
+      await expect(service.getReport({ from: '2027-01-01', to: '2028-02-05' }, 'org-1')).resolves.toBeDefined();
+    });
+
+    it('accepts the presets the admin app sends: last year and this year', async () => {
+      await expect(service.getReport({ from: '2025-01-01', to: '2026-01-01' }, 'org-1')).resolves.toBeDefined();
+      await expect(service.getReport({ from: '2028-01-01', to: '2029-01-01' }, 'org-1')).resolves.toBeDefined();
+    });
   });
 });

@@ -7,6 +7,8 @@ import {
   assertIdentifier,
   buildRoleStatements,
   quoteLiteral,
+  RESTRICTED_TABLES,
+  restrictedTableStatements,
   roleOptionsFromEnv,
   type RoleSetupOptions,
 } from './roles';
@@ -133,6 +135,48 @@ describe('buildRoleStatements', () => {
     expect(sql).not.toMatch(/GRANT[^;]*(ALL PRIVILEGES|CREATE)[^;]*TO "resort_app"/);
     expect(sql).not.toMatch(/WITH (LOGIN )?SUPERUSER/);
     expect(sql).not.toMatch(/[^O]CREATEDB|[^O]CREATEROLE|[^O]REPLICATION/);
+  });
+
+  it('makes the audit log, payments, refunds and history append-only for the app role, after the blanket grant', () => {
+    const statements = buildRoleStatements(options()).map((statement): string => statement.sql);
+    const blanket = statements.indexOf('GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO "resort_app"');
+    const audit = statements.findIndex((sql): boolean => sql.includes('public.audit_log'));
+    const sql = statements.join(';\n');
+
+    expect(audit).toBeGreaterThan(blanket);
+    expect(sql).toContain('REVOKE ALL ON public.audit_log FROM "resort_app"');
+    expect(sql).toContain('GRANT SELECT, INSERT ON public.audit_log TO "resort_app"');
+    expect(sql).not.toMatch(/GRANT UPDATE \([^)]*\) ON public\.audit_log/);
+    expect(sql).not.toMatch(/GRANT[^;]*DELETE[^;]*ON public\.(audit_log|payments|refunds|booking_changes|payment_webhook_events)/);
+  });
+
+  it('limits UPDATE on payments and refunds to the settlement columns, never amount or currency', () => {
+    const sql = allSql();
+    const payments = /GRANT UPDATE \(([^)]*)\) ON public\.payments TO "resort_app"/.exec(sql)?.[1] ?? '';
+    const refunds = /GRANT UPDATE \(([^)]*)\) ON public\.refunds TO "resort_app"/.exec(sql)?.[1] ?? '';
+
+    expect(payments).toContain('"status"');
+    expect(refunds).toContain('"processing_started_at"');
+    for (const forbidden of ['amount_cents', 'currency_code', 'provider_ref', 'organization_id']) {
+      expect(payments.includes(forbidden) && forbidden !== 'provider_ref' ? forbidden : '').toBe('');
+      expect(refunds).not.toContain(forbidden === 'provider_ref' ? 'never' : forbidden);
+    }
+    expect(payments).not.toContain('provider_ref');
+  });
+
+  it('skips a table that does not exist and one the connected role cannot change', () => {
+    const statements = restrictedTableStatements('resort_app');
+
+    expect(statements).toHaveLength(RESTRICTED_TABLES.length);
+    for (const statement of statements) {
+      expect(statement).toContain("to_regclass('public.");
+      expect(statement).toContain("pg_has_role(current_user");
+      expect(statement).toContain("rolname = 'resort_app'");
+    }
+  });
+
+  it('refuses an unsafe role name in the restricted statements', () => {
+    expect(() => restrictedTableStatements('x"; DROP')).toThrow(/must be lower-case/);
   });
 
   it('takes write rights on the migration ledger away from the app role', () => {

@@ -21,9 +21,9 @@ class Loose {
   public accepted!: boolean;
 }
 
-// The app's global ValidationPipe uses implicit conversion (main.ts); mirror it.
-async function passes(cls: new () => object, accepted: unknown): Promise<boolean> {
-  return (await validate(plainToInstance(cls, { accepted }, { enableImplicitConversion: true }))).length === 0;
+// The app's global ValidationPipe no longer converts types (R2-16), so this mirrors it; KeepRawValue is the second line of defence.
+async function passes(cls: new () => object, accepted: unknown, implicit = false): Promise<boolean> {
+  return (await validate(plainToInstance(cls, { accepted }, { enableImplicitConversion: implicit }))).length === 0;
 }
 
 describe('KeepRawValue', () => {
@@ -35,8 +35,14 @@ describe('KeepRawValue', () => {
     expect(await passes(Strict, value)).toBe(false);
   });
 
-  it('shows why it is needed: without it the app\'s conversion lets "yes" and "false" through as true', async () => {
-    expect(await passes(Loose, 'yes')).toBe(true);
-    expect(await passes(Loose, 'false')).toBe(true);
+  it('a plain @IsBoolean refuses text because the app does not convert types any more', async () => {
+    expect(await passes(Loose, 'yes')).toBe(false);
+    expect(await passes(Loose, 'false')).toBe(false);
+  });
+
+  it('shows why the app switched conversion off: with it, "yes" and "false" count as true', async () => {
+    expect(await passes(Loose, 'yes', true)).toBe(true);
+    expect(await passes(Loose, 'false', true)).toBe(true);
+    expect(await passes(Strict, 'false', true)).toBe(false);
   });
 });

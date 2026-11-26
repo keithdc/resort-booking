@@ -24,9 +24,9 @@ const RESULT: StaffChangeResult = { reservation: staffReservation({ id: 'r2', re
 
 const plain = (text: string | null | undefined): string => (text ?? '').replace(/\s/g, ' ');
 
-function renderDialog(): { onClose: () => void; onChanged: (result: StaffChangeResult) => void } {
+function renderDialog(canManageRefunds = true, lockedReason: string | null = null): { onClose: () => void; onChanged: (result: StaffChangeResult) => void } {
   const handlers = { onClose: vi.fn<() => void>(), onChanged: vi.fn<(result: StaffChangeResult) => void>() };
-  render(<StaffChangeDatesDialog open stay={STAY} {...handlers} />);
+  render(<StaffChangeDatesDialog open stay={STAY} canManageRefunds={canManageRefunds} lockedReason={lockedReason} {...handlers} />);
   return handlers;
 }
 
@@ -48,6 +48,29 @@ describe('StaffChangeDatesDialog', () => {
   });
 
   afterEach(cleanup);
+
+  it('hides the fee waiver and the outside-payment confirmation from someone without refund access', async () => {
+    renderDialog(false);
+    expect(screen.queryByLabelText('Waive the change fee')).toBeNull();
+    await seeThePrice(rebookQuote({ payCents: 5000, available: true }));
+
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    expect(screen.getByText(/An admin or someone with refund access has to confirm that the guest paid it/)).toBeTruthy();
+  });
+
+  it('shows the same-day message and disables both buttons when the booking is locked for an employee', () => {
+    renderDialog(false, 'Check-in is today (or has passed). An admin has to cancel or change this booking.');
+
+    expect(screen.getByText('Check-in is today (or has passed). An admin has to cancel or change this booking.')).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'See price' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((confirmButton() as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('shows an admin the fee waiver', () => {
+    renderDialog(true);
+
+    expect(screen.getByLabelText('Waive the change fee')).toBeTruthy();
+  });
 
   it('says it works even when guests cannot change their own dates, and that the booking is replaced', () => {
     renderDialog();

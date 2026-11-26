@@ -9,7 +9,7 @@ import { Reflector } from '@nestjs/core';
 import { ExecutionContextHost } from '@nestjs/core/helpers/execution-context-host';
 import { Test } from '@nestjs/testing';
 import { RoleGuard } from './role.guard';
-import { AllowRoles, RequireRole } from './roles.decorator';
+import { AllowRoles, RequireMoneyAccess, RequireRole } from './roles.decorator';
 import type { StaffAccount, StaffRole } from './staff-role';
 
 @RequireRole('admin')
@@ -22,6 +22,11 @@ class AdminOnlyController {
   public sharedRoute(): void {
     return;
   }
+
+  @RequireMoneyAccess()
+  public moneyRoute(): void {
+    return;
+  }
 }
 
 class UndeclaredController {
@@ -30,8 +35,8 @@ class UndeclaredController {
   }
 }
 
-function account(role: StaffRole): StaffAccount {
-  return { id: 's1', organizationId: 'o1', fullName: 'Ada', email: 'ada@example.com', role, organizationName: 'Humphreys' };
+function account(role: StaffRole, canManageRefunds = false): StaffAccount {
+  return { id: 's1', organizationId: 'o1', fullName: 'Ada', email: 'ada@example.com', role, organizationName: 'Humphreys', canManageRefunds };
 }
 
 function context(controller: new () => object, handler: () => void, staff: StaffAccount | undefined): ExecutionContextHost {
@@ -66,6 +71,27 @@ describe('RoleGuard', () => {
     for (const role of ['admin', 'employee'] as const) {
       expect(guard.canActivate(context(AdminOnlyController, AdminOnlyController.prototype.sharedRoute, account(role)))).toBe(true);
     }
+  });
+
+  it('money route: an admin passes even when the stored flag is off', () => {
+    expect(guard.canActivate(context(AdminOnlyController, AdminOnlyController.prototype.moneyRoute, account('admin', false)))).toBe(true);
+  });
+
+  it('money route: an employee WITH the permission passes', () => {
+    expect(guard.canActivate(context(AdminOnlyController, AdminOnlyController.prototype.moneyRoute, account('employee', true)))).toBe(true);
+  });
+
+  it('money route: an employee WITHOUT the permission gets 403 FORBIDDEN_ROLE', () => {
+    const attempt = (): boolean => guard.canActivate(context(AdminOnlyController, AdminOnlyController.prototype.moneyRoute, account('employee', false)));
+
+    expect(attempt).toThrow(ForbiddenException);
+    expect(attempt).toThrow(expect.objectContaining({ response: expect.objectContaining({ code: 'FORBIDDEN_ROLE' }) }));
+  });
+
+  it('money route: the permission is read from the account on every call (removal applies at once)', () => {
+    const handler = AdminOnlyController.prototype.moneyRoute;
+    expect(guard.canActivate(context(AdminOnlyController, handler, account('employee', true)))).toBe(true);
+    expect(() => guard.canActivate(context(AdminOnlyController, handler, account('employee', false)))).toThrow(ForbiddenException);
   });
 
   it('fails closed: a route with no role declaration is refused for everyone, and the mistake is logged', () => {

@@ -15,9 +15,12 @@ import { BookingRateLimiter } from './booking-rate-limiter';
 import { BookingsController } from './bookings.controller';
 import { BookingsRepository } from './bookings.repository';
 import { BookingsService } from './bookings.service';
+import { PaymentEventsAdapter } from './payment-events.adapter';
 import { RebookService } from './rebook.service';
 import { RebookSettlementHandler } from './rebook-settlement.handler';
 import { RefundIssuer } from './refund-issuer';
+import { RefundReconcilerService } from './refund-reconciler.service';
+import { RefundTimings } from './refund-timings';
 import { StaffBookingsController } from './staff-bookings.controller';
 import { StaffBookingsService } from './staff-bookings.service';
 import { StaffRefundsRepository } from './staff-refunds.repository';
@@ -32,6 +35,9 @@ import { StaffRefundsService } from './staff-refunds.service';
     BookingRateLimiter,
     BookingReader,
     RefundIssuer,
+    RefundTimings,
+    RefundReconcilerService,
+    PaymentEventsAdapter,
     RebookService,
     RebookSettlementHandler,
     StaffBookingsService,

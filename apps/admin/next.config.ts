@@ -11,7 +11,7 @@ const nextConfig: NextConfig = {
   // The fixed security headers for every route. The Content-Security-Policy carries a per-request nonce, so it is
   // set in src/middleware.ts instead.
   async headers() {
-    return [{ source: '/:path*', headers: buildStaticSecurityHeaders({ isProduction: process.env.NODE_ENV === 'production' }) }];
+    return [{ source: '/:path*', headers: buildStaticSecurityHeaders({ isProduction: process.env.NODE_ENV !== 'development' }) }];
   },
 };
 

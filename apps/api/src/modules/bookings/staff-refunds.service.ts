@@ -11,6 +11,7 @@ import { allocateRefund } from './bookings.rules';
 import { RefundIssuer, type RefundPlan } from './refund-issuer';
 import { StaffRefundsRepository, type RefundActionRow } from './staff-refunds.repository';
 import { BookingsRepository } from './bookings.repository';
+import { RefundTimings } from './refund-timings';
 
 /** Which refunds the queue shows. The default is the ones a person still has to deal with. */
 export type RefundQueueFilter = 'needs_attention' | 'pending' | 'failed' | 'succeeded' | 'all';
@@ -28,6 +29,7 @@ export class StaffRefundsService {
     private readonly issuer: RefundIssuer,
     private readonly bookings: BookingsRepository,
     private readonly payments: PaymentsService,
+    private readonly timings: RefundTimings,
   ) {}
 
   /**
@@ -41,7 +43,9 @@ export class StaffRefundsService {
    * Asks the payment provider to send a refund again.
    *
    * Only a failed refund, or an online one stuck pending, can be retried; one that staff must send by
-   * hand cannot. The refund is taken in one atomic step first, so a double click cannot send it twice.
+   * hand cannot. The refund is taken in one atomic step first (a lease: nobody else may take it until the lease runs
+   * out), so a double click, or a click while the first call is still in flight, cannot send it twice. The provider
+   * call carries the refund's idempotency key, so a retry after a lost answer returns the first result.
    * The result is the refund as it now stands: paid, or failed again with the provider's reason.
    */
   public async retry(staff: StaffProfile, refundId: string): Promise<StaffRefund> {
@@ -52,8 +56,12 @@ export class StaffRefundsService {
     if (action.status === 'pending' && action.provider === 'manual') {
       throw this.notRetryable('This refund has to be sent by hand. Mark it as refunded once you have sent the money.');
     }
-    if (!(await this.refunds.claimForRetry(refundId))) {
-      throw this.notRetryable('This refund is already being processed. Check it again in a minute.');
+    const claim = await this.refunds.claimForRetry(refundId, this.timings.values.leaseSeconds);
+    if (claim === null) {
+      throw new ConflictException({
+        message: 'This refund is already being processed. Check it again in a few minutes.',
+        code: 'REFUND_NOT_RETRYABLE',
+      });
     }
 
     const provider = this.payments.describeProvider();
@@ -79,6 +87,7 @@ export class StaffRefundsService {
       viaProvider: true,
       reason: action.reason,
       chunks: allocation.chunks,
+      keyGeneration: claim.keyGeneration,
     };
     await this.issuer.settle(refundId, action.inventory_block_id, plan);
     return this.reload(refundId);
@@ -92,7 +101,14 @@ export class StaffRefundsService {
     if (action.status === 'succeeded') {
       throw this.alreadySettled();
     }
-    if (!(await this.refunds.markManualPaid(refundId, staff.id, note))) {
+    const outcome = await this.refunds.markManualPaid(refundId, staff.id, note, this.timings.values.leaseSeconds);
+    if (outcome === 'busy') {
+      throw new ConflictException({
+        message: 'The payment provider is still working on this refund. Wait a few minutes before marking it as refunded, or the guest could be paid twice.',
+        code: 'REFUND_BEING_PROCESSED',
+      });
+    }
+    if (outcome === 'not_open') {
       throw this.alreadySettled();
     }
     return this.reload(refundId);

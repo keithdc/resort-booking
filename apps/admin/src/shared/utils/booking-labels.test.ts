@@ -42,9 +42,14 @@ describe('reasonLabel', () => {
 });
 
 describe('refund wording', () => {
+  it('words the late-payment reason from the readable fallback', () => {
+    expect(reasonLabel('late_payment')).toBe('Late payment');
+  });
+
   it('names the kinds', () => {
     expect(refundKindLabel('cancellation')).toBe('Cancellation refund');
     expect(refundKindLabel('rebook_difference')).toBe('Date-change refund');
+    expect(refundKindLabel('late_payment')).toBe('Late payment refund');
   });
 
   it('names and colours the statuses', () => {

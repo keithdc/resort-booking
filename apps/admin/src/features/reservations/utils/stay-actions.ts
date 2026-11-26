@@ -57,3 +57,16 @@ export function changeNotice(result: StaffChangeResult): string {
     ? `${base}, ${refund}. This refund must be sent by hand, see Refunds`
     : `${base}, ${refund}`;
 }
+
+/** What someone without refund access is told when they try to change the dates on the check-in day or later (the API says the same with code SAME_DAY_ADMIN_ONLY). */
+export const SAME_DAY_ADMIN_ONLY_MESSAGE = 'Check-in is today (or has passed). An admin has to cancel or change this booking.';
+
+/**
+ * True when changing the dates must be handed to an admin (or someone with refund access): check-in is today or
+ * earlier and this person has no refund access. Cancelling is NOT locked: without access it goes through with a zero
+ * refund. A UI hint only (it uses the browser's day); the API decides with the property's timezone and answers 403
+ * when the hint was wrong.
+ */
+export function isSameDayLockedForEmployee(stay: Pick<StaffReservation, 'checkIn'>, canManageRefunds: boolean, todayIso: string): boolean {
+  return !canManageRefunds && stay.checkIn <= todayIso;
+}

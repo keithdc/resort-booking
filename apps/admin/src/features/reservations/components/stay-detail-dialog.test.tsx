@@ -29,6 +29,9 @@ const api = vi.hoisted(() => ({
   changeStaffReservationDates: vi.fn<(id: string, body: StaffChangeDatesRequest) => Promise<StaffChangeResult>>(),
 }));
 
+const role = vi.hoisted(() => ({ canManageRefunds: true }));
+
+vi.mock('@/shared/hooks/use-staff-role', () => ({ useCanManageRefunds: (): boolean => role.canManageRefunds }));
 vi.mock('../services/staff-reservations-api', () => api);
 
 // "Today" is fixed so a booking can reliably be in the future or the past.
@@ -41,7 +44,13 @@ const PREVIEW: StaffCancelPreview = {
   currencyCode: 'EUR',
   canCancel: true,
   blockedReason: null,
+  notice: null,
   policyRefund: { paidCents: 96000, refundPercent: 100, refundCents: 96000, currencyCode: 'EUR', daysBeforeCheckIn: 400 },
+};
+
+const localToday = (): string => {
+  const now = new Date();
+  return `${String(now.getFullYear())}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 };
 
 const plain = (text: string | null | undefined): string => (text ?? '').replace(/\s/g, ' ');
@@ -58,6 +67,7 @@ function renderDialog(stay: StaffReservation): { onClose: () => void; onUpdated:
 
 describe('StayDetailDialog', () => {
   beforeEach(() => {
+    role.canManageRefunds = true;
     Object.values(api).forEach((mock) => mock.mockReset());
     api.fetchStaffCancelPreview.mockResolvedValue(PREVIEW);
   });
@@ -167,6 +177,40 @@ describe('StayDetailDialog', () => {
       renderDialog(staffReservation({ checkIn: '2020-01-10', checkOut: '2020-01-12' }));
 
       expect(screen.queryByRole('button', { name: 'Change dates' })).toBeNull();
+    });
+
+    it('on the check-in day, without refund access: Cancel stays available (it refunds nothing), Change dates is disabled with the reason', () => {
+      role.canManageRefunds = false;
+      renderDialog(staffReservation({ checkIn: localToday(), checkOut: '2999-01-01' }));
+
+      expect((screen.getByRole('button', { name: 'Cancel booking' }) as HTMLButtonElement).disabled).toBe(false);
+      expect((screen.getByRole('button', { name: 'Change dates' }) as HTMLButtonElement).disabled).toBe(true);
+      expect(screen.getByText('Check-in is today (or has passed). An admin has to cancel or change this booking.')).toBeTruthy();
+    });
+
+    it('also lets an employee without refund access cancel a stay that began earlier (no change-dates button there)', () => {
+      role.canManageRefunds = false;
+      renderDialog(staffReservation({ checkIn: '2020-01-10', checkOut: '2999-01-01' }));
+
+      expect((screen.getByRole('button', { name: 'Cancel booking' }) as HTMLButtonElement).disabled).toBe(false);
+      expect(screen.queryByRole('button', { name: 'Change dates' })).toBeNull();
+    });
+
+    it('keeps an employee able to act on a booking that starts in the future', () => {
+      role.canManageRefunds = false;
+      renderDialog(staffReservation(FUTURE));
+
+      expect((screen.getByRole('button', { name: 'Cancel booking' }) as HTMLButtonElement).disabled).toBe(false);
+      expect((screen.getByRole('button', { name: 'Change dates' }) as HTMLButtonElement).disabled).toBe(false);
+      expect(screen.queryByText(/An admin has to cancel or change/)).toBeNull();
+    });
+
+    it('never locks an admin or an employee with refund access, even on the check-in day (Change dates stays enabled)', () => {
+      renderDialog(staffReservation({ checkIn: localToday(), checkOut: '2999-01-01' }));
+
+      expect((screen.getByRole('button', { name: 'Cancel booking' }) as HTMLButtonElement).disabled).toBe(false);
+      expect((screen.getByRole('button', { name: 'Change dates' }) as HTMLButtonElement).disabled).toBe(false);
+      expect(screen.queryByText(/An admin has to cancel or change/)).toBeNull();
     });
 
     it('keeps check-in available as before', () => {

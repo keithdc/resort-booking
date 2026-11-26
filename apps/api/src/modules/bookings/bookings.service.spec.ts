@@ -16,6 +16,7 @@ import { BookingReader } from './booking-reader';
 import { BookingsRepository, type BookingRow, type InsertRefundInput } from './bookings.repository';
 import { BookingsService } from './bookings.service';
 import { RefundIssuer } from './refund-issuer';
+import { RefundTimings } from './refund-timings';
 import { BOOKING_STARTED_MESSAGE } from './bookings.rules';
 
 const ID = '1a2b3c4d-5e6f-4a8b-9c0d-1e2f3a4b5c6d';
@@ -148,6 +149,7 @@ describe('BookingsService', () => {
         BookingsService,
         BookingReader,
         RefundIssuer,
+        { provide: RefundTimings, useValue: { values: { providerTimeoutMs: 20_000, leaseSeconds: 150 } } },
         { provide: BookingsRepository, useValue: { findByReference, findById, lockForCancel, markCancelled, insertRefund, completeRefund } },
         { provide: PaymentsService, useValue: { describeProvider, issueRefund } },
         { provide: ReservationsService, useValue: { getPolicySnapshot } },
@@ -372,8 +374,9 @@ describe('BookingsService', () => {
         amountCents: 96000,
         currencyCode: 'EUR',
         reason: 'Guest cancelled online',
+        idempotencyKey: 'refund-refund-1-g1-c0',
       });
-      expect(completeRefund).toHaveBeenCalledWith('refund-1', 'succeeded', 'mock_re_1', null);
+      expect(completeRefund).toHaveBeenCalledWith('refund-1', 'succeeded', 'mock_re_1', null, {});
       expect(booking.status).toBe('cancelled');
       expect(booking.refund).toMatchObject({ amountCents: 96000, status: 'succeeded' });
     });
@@ -464,7 +467,7 @@ describe('BookingsService', () => {
         ['mock_pi_balance', 26000],
         ['mock_pi_abc', 96000],
       ]);
-      expect(completeRefund).toHaveBeenCalledWith('refund-1', 'succeeded', 'mock_re_1,mock_re_1', null);
+      expect(completeRefund).toHaveBeenCalledWith('refund-1', 'succeeded', 'mock_re_1,mock_re_1', null, {});
     });
 
     it('can still be changed again: it carries the same saved policy and a future check-in', async () => {
@@ -627,7 +630,7 @@ describe('BookingsService', () => {
       const booking = await service.cancel(REQUEST);
 
       expect(log.indexOf('COMMIT')).toBeLessThan(log.indexOf('providerRefund'));
-      expect(completeRefund).toHaveBeenCalledWith('refund-1', 'failed', '', 'provider unreachable');
+      expect(completeRefund).toHaveBeenCalledWith('refund-1', 'failed', '', 'provider unreachable', { bumpKeyGeneration: true });
       expect(booking.status).toBe('cancelled');
       expect(booking.refund?.status).toBe('failed');
       expect(Logger.prototype.error).toHaveBeenCalled();

@@ -27,4 +27,10 @@ export class CreateInviteDto {
   @KeepRawValue()
   @IsBoolean()
   public sendEmail?: boolean;
+
+  /** Employee only: the new account starts with "can handle refunds and money actions". Ignored for an admin invite. */
+  @IsOptional()
+  @KeepRawValue()
+  @IsBoolean()
+  public canManageRefunds?: boolean;
 }

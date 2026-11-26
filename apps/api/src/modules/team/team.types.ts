@@ -22,6 +22,8 @@ export interface TeamMember {
   active: boolean;
   lastLoginAt: string | null;
   createdAt: string;
+  /** Money access: always true for an admin; for an employee only when an admin granted it. */
+  canManageRefunds: boolean;
   /** True for the person asking, so the screen can say "you" and hide the buttons that cannot apply. */
   isYou: boolean;
 }
@@ -38,6 +40,8 @@ export interface TeamInvite {
   expired: boolean;
   /** True for an access-reset link of an existing member, false for a first invitation. */
   isReset: boolean;
+  /** The refund permission the new account starts with (employees only; always false for an admin invite). */
+  canManageRefunds: boolean;
 }
 
 export interface TeamOverview {
@@ -69,4 +73,6 @@ export interface InvitePreview {
 export interface MemberChange {
   role?: StaffRole;
   active?: boolean;
+  /** Grant or remove "can handle refunds and money actions". Employees only; refused for an admin. */
+  canManageRefunds?: boolean;
 }

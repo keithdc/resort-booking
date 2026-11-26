@@ -20,6 +20,8 @@ const ACTION_LABELS: Record<string, string> = {
   'team.invite_accepted': 'Accepted an invitation',
   'team.access_reset': 'Reset someone’s access',
   'team.role_changed': 'Changed a role',
+  'team.refund_access_granted': 'Gave someone refund access',
+  'team.refund_access_removed': 'Removed someone’s refund access',
   'team.deactivated': 'Switched a person off',
   'team.reactivated': 'Switched a person back on',
   'org.settings_changed': 'Changed business settings',

@@ -67,6 +67,25 @@ export function wholeDaysBetween(fromIso: string, toIso: string): number {
   return Math.round((Date.parse(`${toIso}T00:00:00Z`) - Date.parse(`${fromIso}T00:00:00Z`)) / 86_400_000);
 }
 
+/** What an employee without refund access is told when changing the dates of a booking whose check-in is today or past. */
+export const SAME_DAY_ADMIN_ONLY_MESSAGE = 'Check-in is today (or has passed). An admin has to cancel or change this booking.';
+
+/** What an employee without refund access is told when cancelling on the check-in day (or later): the refund is zero. */
+export const SAME_DAY_NO_REFUND_NOTICE =
+  'Check-in is today: no refund applies. An admin or someone with refund access can decide otherwise.';
+
+/** The refund's text when an employee without refund access cancels on or after the check-in day. */
+export const SAME_DAY_NO_REFUND_LABEL = 'Staff cancelled on the check-in day without refund access: no refund';
+
+/**
+ * True when check-in is today or already past in the property's timezone (whole days remaining <= 0, counted exactly
+ * like the refund ladder). An unreadable date counts as too close, so the safe answer is "admin only".
+ */
+export function isCheckInTodayOrPast(checkInIso: string, todayIso: string): boolean {
+  const days = wholeDaysBetween(todayIso, checkInIso);
+  return Number.isNaN(days) || days <= 0;
+}
+
 /**
  * The tier that applies `daysBefore` days before check-in: the one with the greatest minimum that is
  * still at or below the days remaining. Works on tiers in any order and never changes them.

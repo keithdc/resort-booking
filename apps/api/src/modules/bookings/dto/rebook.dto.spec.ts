@@ -12,7 +12,7 @@ const GOOD = { reference: 'BK-1A2B3C4D5E', email: 'ada@example.com', newCheckIn:
 
 // Same conversion setting as the app's global ValidationPipe (main.ts).
 async function failed(payload: object): Promise<string[]> {
-  const errors = await validate(plainToInstance(RebookDto, payload, { enableImplicitConversion: true }));
+  const errors = await validate(plainToInstance(RebookDto, payload));
   return errors.map((error) => error.property);
 }
 

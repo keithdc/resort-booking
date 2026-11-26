@@ -9,13 +9,26 @@ import type {
   TwoFactorConfirmRequest,
   TwoFactorEnableRequest,
   TwoFactorLoginRequest,
+  TwoFactorSetupRequest,
 } from '@resort-booking/shared-types';
 import { LIMITS } from '../../../shared/validation/limits';
 
 /** Longest accepted code: a recovery code with a dash and a few stray spaces. */
 const CODE_MAX = 32;
 
+export class SetupTwoFactorDto implements TwoFactorSetupRequest {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(LIMITS.password)
+  public currentPassword!: string;
+}
+
 export class EnableTwoFactorDto implements TwoFactorEnableRequest {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(LIMITS.password)
+  public currentPassword!: string;
+
   @IsString()
   @MinLength(6)
   @MaxLength(CODE_MAX)

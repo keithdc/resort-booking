@@ -16,9 +16,9 @@ import { TeamController } from './team.controller';
 import { TeamService, type TeamActor } from './team.service';
 import type { InviteIssued, TeamMember, TeamOverview } from './team.types';
 
-const STAFF: StaffAccount = { id: 's1', organizationId: 'o1', fullName: 'Ada', email: 'ada@example.com', role: 'admin', organizationName: 'Humphreys' };
+const STAFF: StaffAccount = { id: 's1', organizationId: 'o1', fullName: 'Ada', email: 'ada@example.com', role: 'admin', organizationName: 'Humphreys', canManageRefunds: true };
 const ISSUED: InviteIssued = {
-  invite: { id: 'i1', email: 'new@example.com', fullName: 'New', role: 'employee', expiresAt: 'x', createdAt: 'y', createdByName: 'Ada', expired: false, isReset: false },
+  invite: { id: 'i1', email: 'new@example.com', fullName: 'New', role: 'employee', expiresAt: 'x', createdAt: 'y', createdByName: 'Ada', expired: false, isReset: false, canManageRefunds: false },
   inviteToken: 'c'.repeat(64),
   expiresAt: 'x',
 };
@@ -89,6 +89,22 @@ describe('TeamController', () => {
 
     expect(updateMember).toHaveBeenCalledWith(ACTOR, 'm1', { role: 'admin' });
     expect(resetAccess).toHaveBeenCalledWith(ACTOR, 'm1', { sendEmail: true });
+  });
+
+  it('passes a grant or removal of refund access to the service, as the signed-in admin', async () => {
+    const member = { id: 'm1', canManageRefunds: true } as TeamMember;
+    updateMember.mockResolvedValue(member);
+
+    await expect(controller.update(STAFF, 'm1', { canManageRefunds: true }, request())).resolves.toEqual({ status: 'ok', data: member });
+
+    expect(updateMember).toHaveBeenCalledWith(ACTOR, 'm1', { canManageRefunds: true });
+  });
+
+  it('is admin only as a whole, and the member id is tenant-scoped, so a foreign member cannot be given access', () => {
+    expect(Reflect.getMetadata('roles:allowed', TeamController)).toEqual(['admin']);
+    const handler = TeamController.prototype.update;
+    const refs = Reflect.getMetadata('tenant:refs', handler) as { resource: string }[] | undefined;
+    expect(refs?.map((ref) => ref.resource)).toEqual(['staffUser']);
   });
 
   it('resets a member\'s two-factor through the service, as the signed-in admin', async () => {

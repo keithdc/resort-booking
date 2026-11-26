@@ -7,14 +7,14 @@
 import 'reflect-metadata';
 import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { Test } from '@nestjs/testing';
-import type { StaffProfile } from '@resort-booking/shared-types';
+import type { StaffAccount } from '../../shared/roles/staff-role';
 import { TenantGuard } from '../../shared/tenancy/tenant.guard';
 import { StaffGuard, type StaffRequest } from '../identity/staff.guard';
 import { StaffBookingsController } from './staff-bookings.controller';
 import { StaffBookingsService } from './staff-bookings.service';
 import { StaffRefundsService } from './staff-refunds.service';
 
-const STAFF: StaffProfile = { id: 'staff-1', organizationId: 'org', fullName: 'Sam', email: 's@example.com' };
+const STAFF: StaffAccount = { id: 'staff-1', organizationId: 'org', fullName: 'Sam', email: 's@example.com', role: 'admin', organizationName: 'Org', canManageRefunds: true };
 const REQUEST = { staff: STAFF } as StaffRequest;
 
 describe('StaffBookingsController', () => {

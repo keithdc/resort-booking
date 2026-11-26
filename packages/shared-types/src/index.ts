@@ -936,7 +936,8 @@ export interface RebookResult {
 
 // --- Staff: guest cancellations, refunds and date changes ---
 
-export type RefundKind = 'cancellation' | 'rebook_difference';
+/** `late_payment`: an automatic full refund of a payment that succeeded after its hold had ended (docs/14). */
+export type RefundKind = 'cancellation' | 'rebook_difference' | 'late_payment';
 export type ActionInitiator = 'guest' | 'staff';
 
 /** A refund as staff see it, with enough about the booking to act on it. */
@@ -1005,7 +1006,9 @@ export interface StaffCancelPreview {
   currencyCode: string;
   canCancel: boolean;
   blockedReason: string | null;
-  /** What the policy saved with the booking would refund right now, or null when it has no ladder. */
+  /** A note to show next to the refund (e.g. "no refund applies on the check-in day"), or null. */
+  notice: string | null;
+  /** What the policy saved with the booking would refund right now (zero when the note says none applies), or null when it has no ladder. */
   policyRefund: RefundQuote | null;
 }
 

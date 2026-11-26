@@ -5,7 +5,7 @@
  */
 
 import { IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min } from 'class-validator';
-import { Type } from 'class-transformer';
+import { QueryNumber } from '../../../shared/validation/query-number';
 import { UUID_LIKE } from '../../../shared/validation/uuid-like';
 
 export class QuoteQueryDto {
@@ -18,7 +18,7 @@ export class QuoteQueryDto {
   @Matches(/^\d{4}-\d{2}-\d{2}$/)
   public checkOut!: string;
 
-  @Type(() => Number)
+  @QueryNumber()
   @IsInt()
   @Min(1)
   @Max(50)

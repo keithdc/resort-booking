@@ -36,6 +36,7 @@ import { useEffect, useState } from 'react';
 import { fetchStaffProperties } from '@/features/property/services/staff-property-api';
 import { EmptyState } from '@/shared/components/empty-state';
 import { useCompactLayout } from '@/shared/hooks/use-compact-layout';
+import { useCanManageRefunds } from '@/shared/hooks/use-staff-role';
 import { PageHeader } from '@/shared/components/page-header';
 import { StatusChip } from '@/shared/components/status-chip';
 import { reasonLabel, refundKindLabel } from '@/shared/utils/booking-labels';
@@ -55,6 +56,7 @@ const ALL_PROPERTIES = 'all';
 export function RefundsPage(): React.JSX.Element {
   const state = useRefunds();
   const compact = useCompactLayout();
+  const canManageRefunds = useCanManageRefunds();
   const [properties, setProperties] = useState<PropertySummary[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
   const [markingId, setMarkingId] = useState<string | null>(null);
@@ -235,6 +237,7 @@ export function RefundsPage(): React.JSX.Element {
       <RefundDetailDialog
         refund={open}
         busy={state.busyId !== null}
+        canManageRefunds={canManageRefunds}
         error={marking === null ? state.actionError : null}
         onClose={(): void => {
           state.clearActionError();

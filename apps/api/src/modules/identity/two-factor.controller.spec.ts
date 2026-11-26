@@ -12,11 +12,11 @@ import { RoleGuard } from '../../shared/roles/role.guard';
 import { ALLOWED_ROLES } from '../../shared/roles/roles.decorator';
 import type { StaffAccount } from '../../shared/roles/staff-role';
 import { StaffGuard } from './staff.guard';
-import { ConfirmTwoFactorDto, EnableTwoFactorDto, TwoFactorLoginDto } from './dto/two-factor.dto';
+import { ConfirmTwoFactorDto, EnableTwoFactorDto, SetupTwoFactorDto, TwoFactorLoginDto } from './dto/two-factor.dto';
 import { TwoFactorController } from './two-factor.controller';
 import { TwoFactorService, type TwoFactorContext } from './two-factor.service';
 
-const STAFF: StaffAccount = { id: 's1', organizationId: 'o1', fullName: 'Ada', email: 'ada@example.com', role: 'employee', organizationName: 'Humphreys' };
+const STAFF: StaffAccount = { id: 's1', organizationId: 'o1', fullName: 'Ada', email: 'ada@example.com', role: 'employee', organizationName: 'Humphreys', canManageRefunds: false };
 const CONTEXT: TwoFactorContext = { ip: '203.0.113.7', requestId: 'req-3' };
 const CODES: TwoFactorRecoveryCodes = { recoveryCodes: ['AAAAA-BBBBB'] };
 
@@ -26,8 +26,8 @@ function request(): RequestWithId {
 
 describe('TwoFactorController', () => {
   const getStatus = jest.fn<Promise<TwoFactorStatus>, [string]>();
-  const setup = jest.fn<Promise<TwoFactorSetup>, [StaffAccount]>();
-  const enable = jest.fn<Promise<TwoFactorRecoveryCodes>, [StaffAccount, string, TwoFactorContext]>();
+  const setup = jest.fn<Promise<TwoFactorSetup>, [StaffAccount, string, TwoFactorContext]>();
+  const enable = jest.fn<Promise<TwoFactorRecoveryCodes>, [StaffAccount, string, string, TwoFactorContext, string]>();
   const disable = jest.fn<Promise<void>, [StaffAccount, string, string, TwoFactorContext]>();
   const regenerateRecoveryCodes = jest.fn<Promise<TwoFactorRecoveryCodes>, [StaffAccount, string, string, TwoFactorContext]>();
   let controller: TwoFactorController;
@@ -53,18 +53,18 @@ describe('TwoFactorController', () => {
     setup.mockResolvedValue(issued);
 
     await expect(controller.status(STAFF)).resolves.toEqual({ status: 'ok', data: status });
-    await expect(controller.setup(STAFF)).resolves.toEqual({ status: 'ok', data: issued });
+    await expect(controller.setup(STAFF, { currentPassword: 'pw' }, request())).resolves.toEqual({ status: 'ok', data: issued });
 
     expect(getStatus).toHaveBeenCalledWith('s1');
-    expect(setup).toHaveBeenCalledWith(STAFF);
+    expect(setup).toHaveBeenCalledWith(STAFF, 'pw', CONTEXT);
   });
 
-  it('enables with the code and passes the caller IP and request id', async () => {
+  it('enables with password and code and passes the current session token, the caller IP and request id', async () => {
     enable.mockResolvedValue(CODES);
 
-    await expect(controller.enable(STAFF, { code: '123456' }, request())).resolves.toEqual({ status: 'ok', data: CODES });
+    await expect(controller.enable(STAFF, { currentPassword: 'pw', code: '123456' }, request(), 'tok')).resolves.toEqual({ status: 'ok', data: CODES });
 
-    expect(enable).toHaveBeenCalledWith(STAFF, '123456', CONTEXT);
+    expect(enable).toHaveBeenCalledWith(STAFF, 'pw', '123456', CONTEXT, 'tok');
   });
 
   it('disables with password and code, and regenerates with password and code', async () => {
@@ -93,16 +93,21 @@ describe('two-factor DTOs', () => {
   }
 
   it('accept a code, a password with a code, and the login challenge', async () => {
-    await expect(check(EnableTwoFactorDto, { code: '123456' })).resolves.toBeDefined();
+    await expect(check(EnableTwoFactorDto, { currentPassword: 'pw', code: '123456' })).resolves.toBeDefined();
+    await expect(check(SetupTwoFactorDto, { currentPassword: 'pw' })).resolves.toBeDefined();
     await expect(check(ConfirmTwoFactorDto, { currentPassword: 'pw', code: 'ABCDE-FGHJK' })).resolves.toBeDefined();
     await expect(check(TwoFactorLoginDto, { challengeToken: 'a'.repeat(64), code: '123 456' })).resolves.toBeDefined();
   });
 
   it('reject missing, too short, too long and unknown fields', async () => {
     await expect(check(EnableTwoFactorDto, {})).rejects.toBeDefined();
-    await expect(check(EnableTwoFactorDto, { code: '123' })).rejects.toBeDefined();
-    await expect(check(EnableTwoFactorDto, { code: '1'.repeat(33) })).rejects.toBeDefined();
-    await expect(check(EnableTwoFactorDto, { code: '123456', extra: true })).rejects.toBeDefined();
+    await expect(check(EnableTwoFactorDto, { code: '123456' })).rejects.toBeDefined();
+    await expect(check(EnableTwoFactorDto, { currentPassword: '', code: '123456' })).rejects.toBeDefined();
+    await expect(check(EnableTwoFactorDto, { currentPassword: 'pw', code: '123' })).rejects.toBeDefined();
+    await expect(check(EnableTwoFactorDto, { currentPassword: 'pw', code: '1'.repeat(33) })).rejects.toBeDefined();
+    await expect(check(EnableTwoFactorDto, { currentPassword: 'pw', code: '123456', extra: true })).rejects.toBeDefined();
+    await expect(check(SetupTwoFactorDto, {})).rejects.toBeDefined();
+    await expect(check(SetupTwoFactorDto, { currentPassword: '' })).rejects.toBeDefined();
     await expect(check(ConfirmTwoFactorDto, { code: '123456' })).rejects.toBeDefined();
     await expect(check(ConfirmTwoFactorDto, { currentPassword: '', code: '123456' })).rejects.toBeDefined();
   });

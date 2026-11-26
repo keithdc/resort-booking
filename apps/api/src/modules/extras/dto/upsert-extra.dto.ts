@@ -4,7 +4,6 @@
  * @dependencies class-validator
  */
 
-import { Type } from 'class-transformer';
 import {
   IsBoolean,
   IsIn,
@@ -31,7 +30,6 @@ export class UpsertExtraDto {
   @IsIn(['instant', 'on_request'])
   public kind!: ExtraServiceKind;
 
-  @Type((): NumberConstructor => Number)
   @IsInt()
   @Min(0)
   @Max(LIMITS.maxCents)
@@ -42,7 +40,6 @@ export class UpsertExtraDto {
   @MaxLength(LIMITS.currencyCode)
   public currencyCode!: string;
 
-  @Type((): BooleanConstructor => Boolean)
   @IsBoolean()
   public published!: boolean;
 }

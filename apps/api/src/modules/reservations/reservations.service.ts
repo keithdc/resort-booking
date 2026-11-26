@@ -44,6 +44,7 @@ import {
   overlapNights,
   reportAsOfDate,
   sortCalendarDayStays,
+  staffRangeProblem,
   stayOccupiesDate,
   uniquePropertyCount,
   validateCancellationTiers,
@@ -386,11 +387,9 @@ export class ReservationsService {
   }
 
   private assertRange(from: string, to: string): void {
-    if (nightsBetween(from, to) === null) {
-      throw new BadRequestException({
-        message: 'Report/calendar range must have a check-out after check-in',
-        code: 'INVALID_DATES',
-      });
+    const problem = staffRangeProblem(from, to);
+    if (problem !== null) {
+      throw new BadRequestException({ message: problem.message, code: problem.code });
     }
   }
 }

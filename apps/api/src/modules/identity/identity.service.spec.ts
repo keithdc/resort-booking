@@ -82,6 +82,7 @@ describe('IdentityService', () => {
       email: 'owner@example.com',
       role: 'admin',
       organizationName: 'Humphreys',
+      canManageRefunds: true,
       active: true,
       passwordHash: storedHash,
     };
@@ -252,7 +253,7 @@ describe('IdentityService', () => {
     });
 
     it('answers with the role and the workspace name, and notes the time of the last login', async () => {
-      findStaffByEmail.mockResolvedValue({ ...owner(), role: 'employee' });
+      findStaffByEmail.mockResolvedValue({ ...owner(), role: 'employee', canManageRefunds: true });
 
       const result = sessionOf(await service.login('owner@example.com', 'Correct-horse-9', CONTEXT));
 
@@ -263,6 +264,7 @@ describe('IdentityService', () => {
         email: 'owner@example.com',
         role: 'employee',
         organizationName: 'Humphreys',
+        canManageRefunds: true,
       });
       expect(touchLastLogin).toHaveBeenCalledWith(STAFF_ID);
     });
@@ -379,6 +381,7 @@ describe('IdentityService', () => {
         email: 'owner@example.com',
         role: 'admin',
         organizationName: 'Humphreys',
+        canManageRefunds: true,
       };
 
       const session = await service.startSession(account);
@@ -420,6 +423,7 @@ describe('IdentityService', () => {
         email: 'owner@example.com',
         role: 'admin',
         organizationName: 'Humphreys',
+        canManageRefunds: true,
       });
 
       await expect(service.staffFromToken('abc')).resolves.toMatchObject({ id: STAFF_ID });
@@ -551,7 +555,7 @@ describe('IdentityService', () => {
       getSettings.mockResolvedValue(SETTINGS);
       settings.STAFF_OWNER_EMAIL = 'Boss@Example.com';
       settings.STAFF_OWNER_PASSWORD = 'First-start-pass-1';
-      insertStaffUser.mockResolvedValue({ id: STAFF_ID, organizationId: ORG, fullName: 'Owner', email: 'boss@example.com', role: 'admin', organizationName: 'Humphreys' });
+      insertStaffUser.mockResolvedValue({ id: STAFF_ID, organizationId: ORG, fullName: 'Owner', email: 'boss@example.com', role: 'admin', organizationName: 'Humphreys', canManageRefunds: true });
       service = await build();
 
       await service.onModuleInit();
@@ -587,7 +591,7 @@ describe('IdentityService', () => {
       getSettings.mockResolvedValue(SETTINGS);
       settings.STAFF_OWNER_EMAIL = DEV_OWNER_EMAIL;
       settings.STAFF_OWNER_PASSWORD = DEV_OWNER_PASSWORD;
-      insertStaffUser.mockResolvedValue({ id: STAFF_ID, organizationId: ORG, fullName: 'Owner', email: DEV_OWNER_EMAIL, role: 'admin', organizationName: 'Humphreys' });
+      insertStaffUser.mockResolvedValue({ id: STAFF_ID, organizationId: ORG, fullName: 'Owner', email: DEV_OWNER_EMAIL, role: 'admin', organizationName: 'Humphreys', canManageRefunds: true });
       process.env.NODE_ENV = 'development';
       service = await build();
 

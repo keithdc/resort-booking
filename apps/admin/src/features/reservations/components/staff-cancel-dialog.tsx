@@ -30,6 +30,8 @@ interface StaffCancelDialogProps {
   open: boolean;
   reservationId: string;
   reference: string;
+  /** Only an admin, or an employee with refund access, may choose a reason other than "guest asked" (the API answers 403 otherwise). */
+  canManageRefunds: boolean;
   onClose: () => void;
   onCancelled: (result: StaffCancelResult) => void;
 }
@@ -38,7 +40,7 @@ interface StaffCancelDialogProps {
  * Cancel a booking for a guest. Staff pick why (which decides the refund), write who asked and
  * why, and see the exact consequence on the confirm button. "Keep the booking" has the focus.
  */
-export function StaffCancelDialog({ open, reservationId, reference, onClose, onCancelled }: StaffCancelDialogProps): React.JSX.Element {
+export function StaffCancelDialog({ open, reservationId, reference, canManageRefunds, onClose, onCancelled }: StaffCancelDialogProps): React.JSX.Element {
   const state = useStaffCancel({ reservationId, open, onCancelled });
   const { preview } = state;
   const money = (cents: number): string => formatCents(cents, preview?.currencyCode ?? 'EUR');
@@ -60,6 +62,7 @@ export function StaffCancelDialog({ open, reservationId, reference, onClose, onC
           ) : null}
           {preview !== null && preview.canCancel ? (
             <>
+              {preview.notice !== null ? <Alert severity="info">{preview.notice}</Alert> : null}
               <Typography>
                 The guest has paid <strong>{money(preview.paidCents)}</strong>. Their dates are released as soon as you confirm.
               </Typography>
@@ -78,16 +81,27 @@ export function StaffCancelDialog({ open, reservationId, reference, onClose, onC
                   label={
                     preview.policyRefund === null
                       ? 'Guest asked: this booking has no refund ladder, so no refund'
-                      : `Guest asked: policy refund ${money(preview.policyRefund.refundCents)} (${String(preview.policyRefund.refundPercent)}%)`
+                      : preview.notice !== null
+                        ? 'Guest asked: no refund (check-in is today)'
+                        : `Guest asked: policy refund ${money(preview.policyRefund.refundCents)} (${String(preview.policyRefund.refundPercent)}%)`
                   }
                 />
-                <FormControlLabel
-                  value="property_cancelled"
-                  control={<Radio />}
-                  label={`We cannot host: full refund ${money(preview.paidCents)}`}
-                />
-                <FormControlLabel value="goodwill" control={<Radio />} label="Goodwill or special case: you choose the refund" />
+                {canManageRefunds ? (
+                  <FormControlLabel
+                    value="property_cancelled"
+                    control={<Radio />}
+                    label={`We cannot host: full refund ${money(preview.paidCents)}`}
+                  />
+                ) : null}
+                {canManageRefunds ? (
+                  <FormControlLabel value="goodwill" control={<Radio />} label="Goodwill or special case: you choose the refund" />
+                ) : null}
               </RadioGroup>
+              {canManageRefunds ? null : (
+                <Typography variant="body2" color="text.secondary">
+                  Full refunds and goodwill amounts are decided by an admin or someone with refund access. Ask one if this guest needs more than the policy refund.
+                </Typography>
+              )}
               {state.reason === 'goodwill' ? (
                 <TextField
                   label="Refund amount (€)"

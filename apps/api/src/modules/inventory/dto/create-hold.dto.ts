@@ -21,7 +21,6 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
-import { Type } from 'class-transformer';
 import type { CreateHoldRequest, PaymentMethod } from '@resort-booking/shared-types';
 import { KeepRawValue } from '../../../shared/validation/keep-raw-value';
 import { UUID_LIKE } from '../../../shared/validation/uuid-like';
@@ -37,7 +36,6 @@ export class CreateHoldDto implements CreateHoldRequest {
   @Matches(/^\d{4}-\d{2}-\d{2}$/)
   public checkOut!: string;
 
-  @Type(() => Number)
   @IsInt()
   @Min(1)
   @Max(50)

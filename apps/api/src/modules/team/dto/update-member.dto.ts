@@ -17,4 +17,10 @@ export class UpdateMemberDto {
   @KeepRawValue()
   @IsBoolean()
   public active?: boolean;
+
+  /** Grant or remove "can handle refunds and money actions" (employees only; the service refuses it for an admin). */
+  @IsOptional()
+  @KeepRawValue()
+  @IsBoolean()
+  public canManageRefunds?: boolean;
 }

@@ -25,6 +25,7 @@ const PREVIEW: StaffCancelPreview = {
   currencyCode: 'EUR',
   canCancel: true,
   blockedReason: null,
+  notice: null,
   policyRefund: { paidCents: 96000, refundPercent: 75, refundCents: 72000, currencyCode: 'EUR', daysBeforeCheckIn: 4 },
 };
 

@@ -5,12 +5,13 @@
  */
 
 import { ConflictException, NotFoundException } from '@nestjs/common';
-import type { StaffProfile, StaffRefund } from '@resort-booking/shared-types';
+import type { RefundStatus, StaffProfile, StaffRefund } from '@resort-booking/shared-types';
 import { Test } from '@nestjs/testing';
 import { PaymentsService } from '../payments/payments.service';
 import { BookingsRepository } from './bookings.repository';
 import { RefundIssuer, type RefundPlan } from './refund-issuer';
-import { StaffRefundsRepository, type RefundActionRow } from './staff-refunds.repository';
+import { RefundTimings } from './refund-timings';
+import { StaffRefundsRepository, type ManualPaidOutcome, type RefundActionRow, type RefundClaim } from './staff-refunds.repository';
 import { StaffRefundsService, statusesFor } from './staff-refunds.service';
 
 const STAFF: StaffProfile = { id: 'staff-1', organizationId: 'org', fullName: 'Sam', email: 's@example.com' };
@@ -26,6 +27,8 @@ function action(overrides: Partial<RefundActionRow> = {}): RefundActionRow {
     percent: 50,
     currency_code: 'EUR',
     reason: 'Guest cancelled',
+    key_generation: 1,
+    processing_started_at: null,
     ...overrides,
   };
 }
@@ -46,20 +49,20 @@ describe('StaffRefundsService', () => {
   const list = jest.fn();
   const getStaffRefund = jest.fn<Promise<StaffRefund | null>, [string]>();
   const findForAction = jest.fn<Promise<RefundActionRow | null>, [string]>();
-  const claimForRetry = jest.fn<Promise<boolean>, [string]>();
+  const claimForRetry = jest.fn<Promise<RefundClaim | null>, [string, number]>();
   const refundablePayments = jest.fn();
-  const markManualPaid = jest.fn<Promise<boolean>, [string, string, string]>();
-  const settle = jest.fn<Promise<'succeeded' | 'failed'>, [string, string, RefundPlan]>();
+  const markManualPaid = jest.fn<Promise<ManualPaidOutcome>, [string, string, string, number]>();
+  const settle = jest.fn<Promise<RefundStatus>, [string, string, RefundPlan]>();
   const completeRefund = jest.fn();
   let service: StaffRefundsService;
 
   beforeEach(async (): Promise<void> => {
     jest.resetAllMocks();
     findForAction.mockResolvedValue(action());
-    claimForRetry.mockResolvedValue(true);
+    claimForRetry.mockResolvedValue({ keyGeneration: 1, attempts: 1 });
     refundablePayments.mockResolvedValue([{ id: 'p1', provider: 'mock', providerRef: 'mock_pi', refundableCents: 5000 }]);
     getStaffRefund.mockResolvedValue({ id: 'r1', status: 'succeeded' } as StaffRefund);
-    markManualPaid.mockResolvedValue(true);
+    markManualPaid.mockResolvedValue('paid');
     settle.mockResolvedValue('succeeded');
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -68,6 +71,7 @@ describe('StaffRefundsService', () => {
         { provide: RefundIssuer, useValue: { settle } },
         { provide: BookingsRepository, useValue: { completeRefund } },
         { provide: PaymentsService, useValue: { describeProvider: () => ({ name: 'mock', simulated: true }) } },
+        { provide: RefundTimings, useValue: { values: { leaseSeconds: 150 } } },
       ],
     }).compile();
     service = moduleRef.get(StaffRefundsService);
@@ -88,14 +92,31 @@ describe('StaffRefundsService', () => {
 
       expect(claimForRetry.mock.invocationCallOrder[0]).toBeLessThan(settle.mock.invocationCallOrder[0] ?? 0);
       expect(refundablePayments).toHaveBeenCalledWith('b1', 'r1');
-      expect(settle).toHaveBeenCalledWith('r1', 'b1', expect.objectContaining({ amountCents: 5000, viaProvider: true, provider: 'mock' }));
+      expect(claimForRetry).toHaveBeenCalledWith('r1', 150);
+      expect(settle).toHaveBeenCalledWith('r1', 'b1', expect.objectContaining({ amountCents: 5000, viaProvider: true, provider: 'mock', keyGeneration: 1 }));
       expect(refund).toEqual({ id: 'r1', status: 'succeeded' });
     });
 
-    it('is double-click safe: when the claim is lost the provider is never called', async () => {
-      claimForRetry.mockResolvedValue(false);
+    it('sends the key generation the claim handed back, so a retry after a definitive refusal uses a fresh key', async () => {
+      claimForRetry.mockResolvedValue({ keyGeneration: 3, attempts: 4 });
 
-      await expect(service.retry(STAFF, 'r1')).rejects.toMatchObject({ response: { code: 'REFUND_NOT_RETRYABLE' } });
+      await service.retry(STAFF, 'r1');
+
+      expect(settle).toHaveBeenCalledWith('r1', 'b1', expect.objectContaining({ keyGeneration: 3 }));
+    });
+
+    it('can retry a refund left pending (an unknown outcome) once its lease is stale, with the same generation', async () => {
+      findForAction.mockResolvedValue(action({ status: 'pending' }));
+
+      await service.retry(STAFF, 'r1');
+
+      expect(settle).toHaveBeenCalledWith('r1', 'b1', expect.objectContaining({ keyGeneration: 1 }));
+    });
+
+    it('is double-click safe: when the claim is lost the provider is never called', async () => {
+      claimForRetry.mockResolvedValue(null);
+
+      await expect(service.retry(STAFF, 'r1')).rejects.toMatchObject({ response: { code: 'REFUND_NOT_RETRYABLE', message: expect.stringContaining('already being processed') } });
       expect(settle).not.toHaveBeenCalled();
     });
 
@@ -142,7 +163,7 @@ describe('StaffRefundsService', () => {
 
       await service.markPaid(STAFF, 'r1', 'Bank transfer 12 May');
 
-      expect(markManualPaid).toHaveBeenCalledWith('r1', 'staff-1', 'Bank transfer 12 May');
+      expect(markManualPaid).toHaveBeenCalledWith('r1', 'staff-1', 'Bank transfer 12 May', 150);
     });
 
     it('refuses a refund that is already paid', async () => {
@@ -153,9 +174,15 @@ describe('StaffRefundsService', () => {
     });
 
     it('refuses when it was settled between the read and the write', async () => {
-      markManualPaid.mockResolvedValue(false);
+      markManualPaid.mockResolvedValue('not_open');
 
       await expect(service.markPaid(STAFF, 'r1', 'abc')).rejects.toMatchObject({ response: { code: 'REFUND_ALREADY_SETTLED' } });
+    });
+
+    it('refuses while the provider is still working on the refund, so the guest cannot be paid twice', async () => {
+      markManualPaid.mockResolvedValue('busy');
+
+      await expect(service.markPaid(STAFF, 'r1', 'abc')).rejects.toMatchObject({ response: { code: 'REFUND_BEING_PROCESSED' } });
     });
 
     it('404s for another organization', async () => {

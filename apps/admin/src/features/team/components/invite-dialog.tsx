@@ -6,7 +6,7 @@
 
 'use client';
 
-import { Alert, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, FormControlLabel, MenuItem, Stack, TextField } from '@mui/material';
+import { Alert, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, FormControlLabel, MenuItem, Stack, TextField, Typography } from '@mui/material';
 import { EmailField, isValidEmail } from '@resort-booking/ui/contact';
 import type { CreateInviteRequest, StaffRole } from '@resort-booking/shared-types';
 import { useState, type FormEvent } from 'react';
@@ -22,8 +22,11 @@ interface InviteDialogProps {
   onSubmit: (request: CreateInviteRequest) => void;
 }
 
+const REFUND_ACCESS_HELP =
+  'Lets them retry failed refunds, mark hand refunds as paid, choose any refund amount, waive the change fee and decide on the check-in day. Everything they do here is recorded in the audit log with their name.';
+
 const ROLE_HINTS: Record<StaffRole, string> = {
-  employee: 'Calendar, bookings and check-in. No money settings, no team.',
+  employee: 'Calendar, bookings and check-in. No money settings, no team. Refunds follow the policy unless you give them refund access.',
   admin: 'Everything, including the team, property settings, refunds and money.',
 };
 
@@ -35,12 +38,19 @@ export function InviteDialog({ open, pending, mailEnabled, error, onClose, onSub
   const [fullName, setFullName] = useState('');
   const [role, setRole] = useState<StaffRole>('employee');
   const [emailIt, setEmailIt] = useState(true);
+  const [refundAccess, setRefundAccess] = useState(false);
   const canSubmit = !pending && isValidEmail(email) && fullName.trim().length >= 2;
 
   const submit = (event: FormEvent): void => {
     event.preventDefault();
     if (canSubmit) {
-      onSubmit({ email: email.trim(), fullName: fullName.trim(), role, ...(mailEnabled && emailIt ? { sendEmail: true } : {}) });
+      onSubmit({
+        email: email.trim(),
+        fullName: fullName.trim(),
+        role,
+        ...(role === 'employee' && refundAccess ? { canManageRefunds: true } : {}),
+        ...(mailEnabled && emailIt ? { sendEmail: true } : {}),
+      });
     }
   };
   const reset = (): void => {
@@ -48,6 +58,7 @@ export function InviteDialog({ open, pending, mailEnabled, error, onClose, onSub
     setFullName('');
     setRole('employee');
     setEmailIt(true);
+    setRefundAccess(false);
   };
 
   return (
@@ -75,6 +86,22 @@ export function InviteDialog({ open, pending, mailEnabled, error, onClose, onSub
               <MenuItem value="employee">{ROLE_LABELS.employee}</MenuItem>
               <MenuItem value="admin">{ROLE_LABELS.admin}</MenuItem>
             </TextField>
+            {role === 'employee' ? (
+              <FormControlLabel
+                sx={{ alignItems: 'flex-start' }}
+                control={<Checkbox checked={refundAccess} onChange={(event): void => setRefundAccess(event.target.checked)} />}
+                label={
+                  <>
+                    <Typography component="span" display="block">
+                      Can handle refunds and money actions
+                    </Typography>
+                    <Typography component="span" variant="body2" color="text.secondary" display="block">
+                      {REFUND_ACCESS_HELP}
+                    </Typography>
+                  </>
+                }
+              />
+            ) : null}
             {mailEnabled ? (
               <FormControlLabel
                 control={<Checkbox checked={emailIt} onChange={(event): void => setEmailIt(event.target.checked)} />}

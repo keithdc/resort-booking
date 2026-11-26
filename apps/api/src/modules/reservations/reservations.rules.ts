@@ -15,12 +15,11 @@ import type {
 } from '@resort-booking/shared-types';
 import { nightsBetween } from '../inventory/inventory.rules';
 
-export const DEFAULT_CANCELLATION_TIERS: CancellationTierWrite[] = [
-  { minDaysBeforeCheckIn: 7, refundPercent: 100 },
-  { minDaysBeforeCheckIn: 3, refundPercent: 75 },
-  { minDaysBeforeCheckIn: 1, refundPercent: 25 },
-  { minDaysBeforeCheckIn: 0, refundPercent: 0 },
-];
+/**
+ * The ladder a NEW property starts with: one catch-all row, 0 days before check-in => 0% refund ("no refund when
+ * cancelling"). The owner adds real tiers on purpose; existing properties keep whatever they have saved.
+ */
+export const DEFAULT_CANCELLATION_TIERS: CancellationTierWrite[] = [{ minDaysBeforeCheckIn: 0, refundPercent: 0 }];
 
 /**
  * Rejects empty, duplicate, or out-of-range ladders. Percents are never hardcoded in callers.
@@ -78,6 +77,35 @@ export function hasInvertedRefundLadder(tiers: CancellationTierWrite[]): boolean
  */
 export function stayOccupiesDate(checkIn: string, checkOut: string, day: string): boolean {
   return day >= checkIn && day < checkOut;
+}
+
+/** The longest calendar or report range staff may ask for (the admin app offers at most 400 days). */
+export const MAX_STAFF_RANGE_NIGHTS = 400;
+/** Earliest and latest dates a staff range may touch; outside this nothing real exists and the math gets odd. */
+export const MIN_STAFF_RANGE_DATE = '2000-01-01';
+export const MAX_STAFF_RANGE_DATE = '2100-12-31';
+
+export interface RangeProblem {
+  code: 'INVALID_DATES' | 'RANGE_TOO_LONG';
+  message: string;
+}
+
+/**
+ * Why a calendar/report range (`to` exclusive) cannot be served, or null when it is fine: both dates real,
+ * `to` after `from`, inside 2000 to 2100, and at most 400 nights, so one request can never build millions of days.
+ */
+export function staffRangeProblem(from: string, to: string): RangeProblem | null {
+  const nights = nightsBetween(from, to);
+  if (nights === null) {
+    return { code: 'INVALID_DATES', message: 'Report/calendar range must have a check-out after check-in' };
+  }
+  if (from < MIN_STAFF_RANGE_DATE || to > MAX_STAFF_RANGE_DATE) {
+    return { code: 'INVALID_DATES', message: 'Dates must be between 2000-01-01 and 2100-12-31' };
+  }
+  if (nights > MAX_STAFF_RANGE_NIGHTS) {
+    return { code: 'RANGE_TOO_LONG', message: `Choose at most ${String(MAX_STAFF_RANGE_NIGHTS)} days at a time` };
+  }
+  return null;
 }
 
 /**

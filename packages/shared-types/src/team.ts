@@ -16,6 +16,8 @@ export type StaffRole = 'admin' | 'employee';
 export interface StaffAccount extends StaffProfile {
   role: StaffRole;
   organizationName: string;
+  /** True for every admin; for an employee only when an admin granted "can handle refunds and money actions". */
+  canManageRefunds: boolean;
 }
 
 /** What /staff/login and /staff/register answer: the session and who it belongs to. */
@@ -50,6 +52,8 @@ export interface TeamMember {
   active: boolean;
   lastLoginAt: string | null;
   createdAt: string;
+  /** Money access: always true for an admin; for an employee only when an admin granted it. */
+  canManageRefunds: boolean;
   /** True for the person asking, so the screen can say "you" and hide the buttons that cannot apply. */
   isYou: boolean;
 }
@@ -66,6 +70,8 @@ export interface TeamInvite {
   expired: boolean;
   /** True for an access-reset link of an existing member, false for a first invitation. */
   isReset: boolean;
+  /** The refund permission the new account starts with (employees only; always false for an admin invite). */
+  canManageRefunds: boolean;
 }
 
 export interface TeamOverview {
@@ -100,6 +106,8 @@ export interface CreateInviteRequest {
   role: StaffRole;
   /** Also email the one-time link to the invited address. */
   sendEmail?: boolean;
+  /** Employee only: start with "can handle refunds and money actions". Ignored for an admin. Default false. */
+  canManageRefunds?: boolean;
 }
 
 /** Body of POST /staff/team/:staffId/reset-access. */
@@ -117,6 +125,8 @@ export interface AcceptInviteRequest {
 export interface MemberChange {
   role?: StaffRole;
   active?: boolean;
+  /** Grant or remove "can handle refunds and money actions". Employees only; refused for an admin. */
+  canManageRefunds?: boolean;
 }
 
 // --- Audit log ---

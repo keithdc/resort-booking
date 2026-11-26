@@ -22,6 +22,16 @@ export function isStaffRole(value: unknown): value is StaffRole {
 export interface StaffAccount extends StaffProfile {
   role: StaffRole;
   organizationName: string;
+  /**
+   * Money access: true for every admin, and for an employee only when an admin granted it (staff_users.can_manage_refunds).
+   * Loaded from the database on every request, so a change applies from the next call.
+   */
+  canManageRefunds: boolean;
+}
+
+/** May this person decide refunds and other money actions? Admins always; an employee only with the permission. */
+export function hasMoneyAccess(staff: Pick<StaffAccount, 'role' | 'canManageRefunds'>): boolean {
+  return staff.role === 'admin' || staff.canManageRefunds;
 }
 
 /** What /staff/login and /staff/register answer: the session and who it belongs to. */

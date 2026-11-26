@@ -6,7 +6,7 @@
 
 'use client';
 
-import type { CreateInviteRequest, InviteIssued, TeamInvite, TeamMember } from '@resort-booking/shared-types';
+import type { CreateInviteRequest, InviteIssued, MemberChange, TeamInvite, TeamMember } from '@resort-booking/shared-types';
 import { useState } from 'react';
 import type { MemberAction } from '../components/member-actions';
 import { createInvite, resetAccess, resetTwoFactor, revokeInvite, updateMember } from '../services/team-api';
@@ -52,7 +52,32 @@ export interface TeamActions {
 }
 
 /** Actions that need a confirm dialog before they run. */
-const NEEDS_CONFIRM: readonly MemberAction[] = ['make-employee', 'deactivate', 'reset-access', 'reset-two-factor'];
+const NEEDS_CONFIRM: readonly MemberAction[] = [
+  'make-employee',
+  'deactivate',
+  'reset-access',
+  'reset-two-factor',
+  'grant-refund-access',
+  'remove-refund-access',
+];
+
+/** The PATCH body each simple member action sends. */
+function memberChangeFor(action: Exclude<MemberAction, 'reset-access' | 'reset-two-factor'>): MemberChange {
+  switch (action) {
+    case 'make-admin':
+      return { role: 'admin' };
+    case 'make-employee':
+      return { role: 'employee' };
+    case 'grant-refund-access':
+      return { canManageRefunds: true };
+    case 'remove-refund-access':
+      return { canManageRefunds: false };
+    case 'reactivate':
+      return { active: true };
+    case 'deactivate':
+      return { active: false };
+  }
+}
 
 /**
  * Everything the team screen can do and the little state around it (dialogs, notices). `onChanged` reloads the list;
@@ -86,13 +111,15 @@ export function useTeamActions(onChanged: () => void, mailEnabled = false): Team
       setNotice({ severity: 'success', text: `${member.fullName}'s two-factor was removed and they were signed out` });
       return;
     }
-    const change = action === 'make-admin' ? { role: 'admin' as const } : action === 'make-employee' ? { role: 'employee' as const } : { active: action === 'reactivate' };
+    const change = memberChangeFor(action);
     await updateMember(member.id, change);
     const text: Record<Exclude<MemberAction, 'reset-access' | 'reset-two-factor'>, string> = {
       'make-admin': `${member.fullName} is now an admin`,
       'make-employee': `${member.fullName} is now an employee`,
       deactivate: `${member.fullName} was switched off`,
       reactivate: `${member.fullName} was switched back on`,
+      'grant-refund-access': `${member.fullName} can now handle refunds and money actions`,
+      'remove-refund-access': `${member.fullName} can no longer handle refunds and money actions`,
     };
     setNotice({ severity: 'success', text: text[action] });
   };
@@ -144,7 +171,7 @@ export function useTeamActions(onChanged: () => void, mailEnabled = false): Team
       // The old link can never be shown again, so replace it: revoke, then invite the same person again.
       setPending(true);
       revokeInvite(invite.id)
-        .then(() => createInvite({ email: invite.email, fullName: invite.fullName, role: invite.role, ...(sendEmail && mailEnabled ? { sendEmail: true } : {}) }))
+        .then(() => createInvite({ email: invite.email, fullName: invite.fullName, role: invite.role, ...(invite.canManageRefunds ? { canManageRefunds: true } : {}), ...(sendEmail && mailEnabled ? { sendEmail: true } : {}) }))
         .then((result): void => {
           setIssued({ issued: result, title: 'New link ready', recipient: invite.email });
           onChanged();

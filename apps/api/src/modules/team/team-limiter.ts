@@ -6,6 +6,7 @@
 
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { resolveIpHashSalt } from '../../shared/config/environment';
 import { fingerprint } from '../../shared/http/client-ip';
 import { enforceWindowLimit, limitSettingFromConfig, type LimitSetting } from '../../shared/redis/rate-limit';
 import { RedisService } from '../../shared/redis/redis.service';
@@ -49,7 +50,7 @@ export class TeamLimiter {
     this.preview = limitSettingFromConfig(config, 'INVITE_PREVIEW', INVITE_PREVIEW_DEFAULT);
     this.emailOrg = limitSettingFromConfig(config, 'INVITE_EMAIL_ORG', INVITE_EMAIL_ORG_DEFAULT);
     this.emailRecipient = limitSettingFromConfig(config, 'INVITE_EMAIL_RECIPIENT', INVITE_EMAIL_RECIPIENT_DEFAULT);
-    this.salt = config.get<string>('IP_HASH_SALT') ?? '';
+    this.salt = resolveIpHashSalt(config.get<string>('IP_HASH_SALT'));
   }
 
   public async checkRegistration(ip: string | undefined, email: string): Promise<void> {

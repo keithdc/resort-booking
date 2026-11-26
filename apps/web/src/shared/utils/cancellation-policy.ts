@@ -52,7 +52,7 @@ export function describeRefundHeadline(tiers: readonly CancellationPolicyTier[],
   }
   const paying = tiers.filter((tier): boolean => tier.refundPercent > 0);
   if (paying.length === 0) {
-    return 'No refund after booking';
+    return 'No refund when cancelling';
   }
   const known = checkIn !== undefined && isRealIsoDate(checkIn) ? checkIn : null;
   const untilText = (minDays: number): string => {

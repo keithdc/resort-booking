@@ -18,7 +18,8 @@ export function middleware(request: NextRequest): NextResponse {
   const headerName = cspHeaderName(process.env.CSP_REPORT_ONLY === 'true');
   const policy = buildCsp({
     nonce,
-    isDevelopment: process.env.NODE_ENV !== 'production',
+    // Only an explicit `next dev` run relaxes the policy; any other value keeps the strict one.
+    isDevelopment: process.env.NODE_ENV === 'development',
     apiOrigin: originOf(process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3002'),
     extraConnectOrigins: [
       ...parseOriginList(process.env.CSP_EXTRA_CONNECT_ORIGINS),

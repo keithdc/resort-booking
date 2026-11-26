@@ -4,7 +4,7 @@
  */
 
 import type { QueryResult, QueryResultRow } from 'pg';
-import { listMigrationFiles, lockdownMigrationTable, pendingMigrations, type SqlExecutor } from './migration-files';
+import { listMigrationFiles, lockdownMigrationTable, pendingMigrations, restrictFinancialTables, type SqlExecutor } from './migration-files';
 
 function result<T extends QueryResultRow>(rows: T[]): QueryResult<T> {
   return { rows, rowCount: rows.length, command: 'SELECT', oid: 0, fields: [] };
@@ -84,5 +84,26 @@ describe('lockdownMigrationTable', () => {
     const { sql } = executor({ ledgerExists: true, applied: [] });
 
     await expect(lockdownMigrationTable(sql, "x'; DROP TABLE houses; --")).rejects.toThrow(/the app role name must be/);
+  });
+});
+
+describe('restrictFinancialTables', () => {
+  it('narrows the money and audit tables for the app role, one statement each, and does nothing else', async () => {
+    const { sql, seen } = executor({ ledgerExists: true, applied: [] });
+
+    await restrictFinancialTables(sql, 'resort_app');
+
+    expect(seen).toHaveLength(5);
+    expect(seen.join('\n')).toContain('public.audit_log');
+    expect(seen.join('\n')).toContain('public.payment_webhook_events');
+    expect(seen.every((text: string) => text.startsWith('DO $$') && text.includes('"resort_app"'))).toBe(true);
+  });
+
+  it('uses the configured role name and refuses an unsafe one', async () => {
+    const { sql, seen } = executor({ ledgerExists: true, applied: [] });
+
+    await restrictFinancialTables(sql, 'api_rw');
+    expect(seen.every((text: string) => text.includes('"api_rw"') && !text.includes('resort_app'))).toBe(true);
+    await expect(restrictFinancialTables(sql, 'x"y')).rejects.toThrow(/must be lower-case/);
   });
 });

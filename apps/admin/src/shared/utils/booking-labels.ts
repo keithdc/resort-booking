@@ -39,7 +39,14 @@ export function reasonLabel(reason: string): string {
  * The kind of refund, in words.
  */
 export function refundKindLabel(kind: RefundKind): string {
-  return kind === 'cancellation' ? 'Cancellation refund' : 'Date-change refund';
+  switch (kind) {
+    case 'cancellation':
+      return 'Cancellation refund';
+    case 'rebook_difference':
+      return 'Date-change refund';
+    case 'late_payment':
+      return 'Late payment refund';
+  }
 }
 
 /**

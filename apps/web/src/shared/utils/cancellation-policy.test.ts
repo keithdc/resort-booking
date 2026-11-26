@@ -72,8 +72,18 @@ describe('describeRefundHeadline', () => {
 
   it('says there is no refund when every tier is 0%', () => {
     expect(describeRefundHeadline([{ minDaysBeforeCheckIn: 7, refundPercent: 0 }, { minDaysBeforeCheckIn: 0, refundPercent: 0 }])).toBe(
-      'No refund after booking',
+      'No refund when cancelling',
     );
+  });
+
+  it('handles the default ladder of a new property (one catch-all row, 0 days, 0%): no refund, with and without a date', () => {
+    const only = [{ minDaysBeforeCheckIn: 0, refundPercent: 0 }];
+
+    expect(describeRefundHeadline(only)).toBe('No refund when cancelling');
+    expect(describeRefundHeadline(only, '2026-12-10')).toBe('No refund when cancelling');
+    expect(buildRefundSegments(only).map((segment) => [segment.period, segment.refund, segment.percent, segment.tone])).toEqual([
+      ['Any time before check-in', 'No refund', 0, 'error'],
+    ]);
   });
 
   it('returns null for an empty ladder', () => {

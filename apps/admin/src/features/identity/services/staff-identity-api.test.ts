@@ -49,15 +49,15 @@ describe('staff identity api: two-factor', () => {
 
   it('calls the account endpoints with the right method and body', async () => {
     await fetchTwoFactorStatus();
-    await startTwoFactorSetup();
-    await enableTwoFactor('123456');
+    await startTwoFactorSetup('pw');
+    await enableTwoFactor('pw', '123456');
     await disableTwoFactor({ currentPassword: 'pw', code: '123456' });
     await regenerateRecoveryCodes({ currentPassword: 'pw', code: 'ABCDE-FGHJK' });
 
     expect(client.getStaffApiOk).toHaveBeenCalledWith('/staff/me/two-factor');
     expect(client.mutateStaffApiOk.mock.calls).toEqual([
-      ['/staff/me/two-factor/setup', 'POST', {}],
-      ['/staff/me/two-factor/enable', 'POST', { code: '123456' }],
+      ['/staff/me/two-factor/setup', 'POST', { currentPassword: 'pw' }],
+      ['/staff/me/two-factor/enable', 'POST', { currentPassword: 'pw', code: '123456' }],
       ['/staff/me/two-factor/disable', 'POST', { currentPassword: 'pw', code: '123456' }],
       ['/staff/me/two-factor/recovery-codes/regenerate', 'POST', { currentPassword: 'pw', code: 'ABCDE-FGHJK' }],
     ]);

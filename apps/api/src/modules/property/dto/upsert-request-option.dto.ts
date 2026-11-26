@@ -4,7 +4,6 @@
  * @dependencies class-validator
  */
 
-import { Type } from 'class-transformer';
 import { IsBoolean, IsString, MaxLength, MinLength } from 'class-validator';
 
 export class UpsertRequestOptionDto {
@@ -17,7 +16,6 @@ export class UpsertRequestOptionDto {
   @MaxLength(400)
   public description!: string;
 
-  @Type((): BooleanConstructor => Boolean)
   @IsBoolean()
   public published!: boolean;
 }

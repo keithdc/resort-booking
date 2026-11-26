@@ -33,6 +33,7 @@ interface StaffUserRow {
   password_hash: string;
   role: string;
   active: boolean;
+  can_manage_refunds: boolean;
   organization_name: string;
 }
 
@@ -44,7 +45,7 @@ export interface StaffCredentials extends StaffAccount {
 
 /** One staff row with its workspace name, joined in the same statement (no per-row lookups). */
 const STAFF_COLUMNS = `u.id, u.organization_id, u.full_name, u.email, u.password_hash, u.role, u.active,
-  o.name AS organization_name`;
+  u.can_manage_refunds, o.name AS organization_name`;
 const STAFF_FROM = 'FROM staff_users u INNER JOIN organizations o ON o.id = u.organization_id';
 
 @Injectable()
@@ -257,14 +258,17 @@ function mapSettings(row: OrganizationSettingsRow): OrganizationSettings {
 }
 
 function mapStaff(row: StaffUserRow): StaffAccount {
+  const role: StaffRole = isStaffRole(row.role) ? row.role : 'employee';
   return {
     id: row.id,
     organizationId: row.organization_id,
     fullName: row.full_name,
     email: row.email,
     // An unknown value in the column must never become admin: fall back to the safer role.
-    role: isStaffRole(row.role) ? row.role : 'employee',
+    role,
     organizationName: row.organization_name,
+    // Read on every request (no cache). An admin always has money access whatever the column says.
+    canManageRefunds: role === 'admin' || row.can_manage_refunds,
   };
 }
 

@@ -17,6 +17,7 @@ import {
   parsePolicySnapshot,
   reportAsOfDate,
   sortCalendarDayStays,
+  staffRangeProblem,
   stayOccupiesDate,
   uniquePropertyCount,
   validateCancellationTiers,
@@ -49,6 +50,13 @@ describe('reservations.rules', (): void => {
         { minDaysBeforeCheckIn: 0, refundPercent: 0 },
       ]),
     ).toBeNull();
+  });
+
+  it('accepts the new-property default (one 0-day, 0% catch-all row) and does not flag it as inverted', (): void => {
+    const only = [{ minDaysBeforeCheckIn: 0, refundPercent: 0 }];
+
+    expect(validateCancellationTiers(only)).toBeNull();
+    expect(hasInvertedRefundLadder(only)).toBe(false);
   });
 
   it('flags inverted refund ladders without blocking save', (): void => {
@@ -299,3 +307,26 @@ describe('parsePolicySnapshot', (): void => {
   });
 });
 
+
+describe('staffRangeProblem', (): void => {
+  it('is null for a normal month and for exactly 400 nights', (): void => {
+    expect(staffRangeProblem('2027-07-01', '2027-08-01')).toBeNull();
+    expect(staffRangeProblem('2027-01-01', '2028-02-05')).toBeNull();
+  });
+
+  it('says RANGE_TOO_LONG for 401 nights and for the whole calendar', (): void => {
+    expect(staffRangeProblem('2027-01-01', '2028-02-06')?.code).toBe('RANGE_TOO_LONG');
+    expect(staffRangeProblem('2000-01-01', '2100-12-31')?.code).toBe('RANGE_TOO_LONG');
+  });
+
+  it.each([
+    ['0001-01-01', '9999-12-31'],
+    ['1999-12-31', '2000-01-05'],
+    ['2027-07-10', '2027-07-10'],
+    ['2027-07-12', '2027-07-10'],
+    ['2027-13-01', '2027-13-05'],
+    ['2100-12-30', '2101-01-02'],
+  ])('says INVALID_DATES for %s to %s', (from, to): void => {
+    expect(staffRangeProblem(from, to)?.code).toBe('INVALID_DATES');
+  });
+});

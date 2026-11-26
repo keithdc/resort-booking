@@ -77,10 +77,13 @@ export class TwoFactorService {
   }
 
   /**
-   * Issues a new secret. Nothing is protected until `enable` proves a code works, and calling it again simply
+   * Issues a new secret. Needs the current password (a stolen session alone must not be able to plant its own
+   * authenticator). Nothing is protected until `enable` proves a code works, and calling it again simply
    * replaces an unconfirmed secret. Refused while two-factor is on.
    */
-  public async setup(staff: StaffAccount): Promise<TwoFactorSetup> {
+  public async setup(staff: StaffAccount, password: string, context: TwoFactorContext): Promise<TwoFactorSetup> {
+    await this.limiter.assertAllowed(staff.id, context.ip);
+    await this.assertPassword(staff, password, context);
     const secret = generateTotpSecret();
     const saved = await this.store.savePendingSecret(staff.id, this.cipher.encrypt(secret, staff.id));
     if (!saved) {
@@ -95,9 +98,20 @@ export class TwoFactorService {
     };
   }
 
-  /** Confirms the first code, switches two-factor on and returns the recovery codes (this once only). */
-  public async enable(staff: StaffAccount, code: string, context: TwoFactorContext): Promise<TwoFactorRecoveryCodes> {
+  /**
+   * Confirms the first code, switches two-factor on and returns the recovery codes (this once only). Needs the
+   * current password in the same request, and signs the person out everywhere else: `currentToken` is the
+   * session making the change and stays signed in.
+   */
+  public async enable(
+    staff: StaffAccount,
+    password: string,
+    code: string,
+    context: TwoFactorContext,
+    currentToken: string,
+  ): Promise<TwoFactorRecoveryCodes> {
     await this.limiter.assertAllowed(staff.id, context.ip);
+    await this.assertPassword(staff, password, context);
     const state = await this.store.findState(staff.id);
     if (state === null) {
       throw new ConflictException({ message: 'Start the setup first', code: 'TWO_FACTOR_SETUP_REQUIRED' });
@@ -119,7 +133,12 @@ export class TwoFactorService {
       throw new ConflictException({ message: 'Two-factor authentication is already on', code: 'TWO_FACTOR_ALREADY_ENABLED' });
     }
     await this.limiter.recordSuccess(staff.id);
-    await this.audit.recordBy(actorOf(staff, context), 'auth.two_factor_enabled', { targetType: 'staff_user', targetId: staff.id });
+    const revoked = await this.identity.deleteSessionsExcept(staff.id, currentToken === '' ? null : hashSessionToken(currentToken));
+    await this.audit.recordBy(actorOf(staff, context), 'auth.two_factor_enabled', {
+      targetType: 'staff_user',
+      targetId: staff.id,
+      metadata: { otherSessionsRevoked: revoked },
+    });
     return { recoveryCodes };
   }
 
@@ -236,21 +255,26 @@ export class TwoFactorService {
     scope: string,
   ): Promise<void> {
     await this.limiter.assertAllowed(staff.id, context.ip);
+    if (!(await this.store.isEnabled(staff.id))) {
+      throw new ConflictException({ message: 'Two-factor authentication is not on', code: 'TWO_FACTOR_NOT_ENABLED' });
+    }
+    await this.assertPassword(staff, password, context);
+    if ((await this.checkSecondFactor(staff.id, code)) === null) {
+      throw await this.wrongCode(staff, context, scope);
+    }
+    await this.limiter.recordSuccess(staff.id);
+  }
+
+  /** The current password must be right; a wrong one counts toward the limiter and never says more than that. */
+  private async assertPassword(staff: StaffAccount, password: string, context: TwoFactorContext): Promise<void> {
     const credentials = await this.identity.findStaffById(staff.id);
     if (credentials === null) {
       throw new NotFoundException({ message: 'Staff not found', code: 'STAFF_NOT_FOUND' });
-    }
-    if (!(await this.store.isEnabled(staff.id))) {
-      throw new ConflictException({ message: 'Two-factor authentication is not on', code: 'TWO_FACTOR_NOT_ENABLED' });
     }
     if (!(await verifyPassword(password, credentials.passwordHash))) {
       await this.limiter.recordFailure(staff.id, context.ip);
       throw new UnauthorizedException({ message: 'Current password is wrong', code: 'STAFF_PASSWORD_MISMATCH' });
     }
-    if ((await this.checkSecondFactor(staff.id, code)) === null) {
-      throw await this.wrongCode(staff, context, scope);
-    }
-    await this.limiter.recordSuccess(staff.id);
   }
 
   /**

@@ -24,6 +24,7 @@ import type {
 } from '@resort-booking/shared-types';
 import { isDevelopment, isProduction } from '../../shared/config/environment';
 import { AuditService } from '../../shared/audit/audit.service';
+import type { AuditMetadata } from '../../shared/audit/audit.types';
 import { fingerprint } from '../../shared/http/client-ip';
 import type { StaffAccount, StaffSessionResult } from '../../shared/roles/staff-role';
 import { DEV_OWNER_EMAIL, DEV_OWNER_PASSWORD } from './identity.defaults';
@@ -37,6 +38,7 @@ import {
 import { validatePassword } from '../../shared/validation/password-policy';
 import { PasswordTooWeakException } from '../../shared/validation/password-too-weak.exception';
 import { IdentityRepository } from './identity.repository';
+import { diffOrganizationSettings, settingsAuditMetadata } from './organization-settings-diff';
 import { LoginLimiter } from './login-limiter';
 import { TwoFactorService } from './two-factor.service';
 
@@ -81,16 +83,25 @@ export class IdentityService implements OnModuleInit {
     return settings;
   }
 
+  /**
+   * Saves the settings and works out what REALLY changed: the audit row names the changed fields (never values) and
+   * carries the bank-details signal, instead of the 12 field names every save sends (docs/13 R2-06).
+   */
   public async updateSettings(
     input: UpdateOrganizationSettingsRequest,
     organizationId: string,
-  ): Promise<OrganizationSettings> {
+  ): Promise<{ settings: OrganizationSettings; audit: AuditMetadata }> {
     const current = await this.getSettings(organizationId);
+    const change = diffOrganizationSettings(current, input);
     const saved = await this.identity.updateSettings(current.id, input);
     if (saved === null) {
       throw new NotFoundException({ message: 'Organization not found', code: 'ORG_NOT_FOUND' });
     }
-    return saved;
+    if (change.sensitiveFields.length > 0) {
+      // Same line a log alert can match on, with no value in it.
+      this.logger.warn(`org.settings_changed sensitive fields: ${change.sensitiveFields.join(',')} (organization ${organizationId})`);
+    }
+    return { settings: saved, audit: settingsAuditMetadata(change) };
   }
 
   /**
@@ -191,6 +202,7 @@ export class IdentityService implements OnModuleInit {
         email: staff.email,
         role: staff.role,
         organizationName: staff.organizationName,
+        canManageRefunds: staff.canManageRefunds,
       },
     };
   }
