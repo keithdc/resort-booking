@@ -272,14 +272,28 @@ export function StayDetailDialog({ stay, onClose, onUpdated, onChanged }: StayDe
                   </Box>
                 </StayBlock>
                 {stay.kind === 'reservation' ? (
-                  <StaffNotesBlock
-                    bookingId={stay.id}
-                    onChanged={(count: number, lastNoteAt: string | null): void => onUpdated({ ...stay, notesCount: count, lastNoteAt })}
-                  />
+                  <Box sx={{ gridColumn: '1 / -1', minWidth: 0 }}>
+                    <StaffNotesBlock
+                      bookingId={stay.id}
+                      onChanged={(count: number, lastNoteAt: string | null): void => onUpdated({ ...stay, notesCount: count, lastNoteAt })}
+                    />
+                  </Box>
                 ) : null}
-                {stay.cancellation !== null ? <CancellationBlock cancellation={stay.cancellation} /> : null}
-                {stay.kind === 'reservation' ? <RefundsBlock refunds={stay.refunds} /> : null}
-                {stay.kind === 'reservation' ? <HistoryBlock stay={stay} /> : null}
+                {stay.cancellation !== null ? (
+                  <Box sx={{ gridColumn: '1 / -1', minWidth: 0 }}>
+                    <CancellationBlock cancellation={stay.cancellation} />
+                  </Box>
+                ) : null}
+                {stay.kind === 'reservation' ? (
+                  <Box sx={{ gridColumn: '1 / -1', minWidth: 0 }}>
+                    <RefundsBlock refunds={stay.refunds} />
+                  </Box>
+                ) : null}
+                {stay.kind === 'reservation' ? (
+                  <Box sx={{ gridColumn: '1 / -1', minWidth: 0 }}>
+                    <HistoryBlock stay={stay} />
+                  </Box>
+                ) : null}
               </Box>
             </DialogContent>
             {sameDayLocked ? (
