@@ -5,3 +5,4 @@
  */
 
 export { TwoFactorSection } from './components/two-factor-section';
+export { SignedInDevices } from './components/signed-in-devices';

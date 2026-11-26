@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { ACTIVITY_WRITE_THROTTLE_MS, STAFF_IDLE_LIMIT_MS, isIdle, shouldWriteActivity } from './idle';
+import { ACTIVITY_WRITE_THROTTLE_MS, STAFF_IDLE_LIMIT_MS, STAFF_KEEP_ALIVE_MS, isIdle, shouldKeepAlive, shouldWriteActivity } from './idle';
 
 describe('isIdle', () => {
   const now = 1_000_000_000;
@@ -34,5 +34,20 @@ describe('shouldWriteActivity', () => {
     expect(shouldWriteActivity(null, 100)).toBe(true);
     expect(shouldWriteActivity(100, 100 + ACTIVITY_WRITE_THROTTLE_MS - 1)).toBe(false);
     expect(shouldWriteActivity(100, 100 + ACTIVITY_WRITE_THROTTLE_MS)).toBe(true);
+  });
+});
+
+describe('shouldKeepAlive', () => {
+  it('pings an active person once a period, and never an idle tab', () => {
+    expect(shouldKeepAlive(1_000, 0, 9_999, 10_000)).toBe(false);
+    expect(shouldKeepAlive(1_000, 0, 10_000, 10_000)).toBe(true);
+    // Nothing happened since the last ping: stay quiet.
+    expect(shouldKeepAlive(500, 1_000, 50_000, 10_000)).toBe(false);
+    expect(shouldKeepAlive(null, 0, 50_000, 10_000)).toBe(false);
+  });
+
+  it('defaults to every 10 minutes, well inside the 30 minute server idle limit', () => {
+    expect(STAFF_KEEP_ALIVE_MS).toBe(10 * 60 * 1000);
+    expect(STAFF_KEEP_ALIVE_MS).toBeLessThan(STAFF_IDLE_LIMIT_MS);
   });
 });

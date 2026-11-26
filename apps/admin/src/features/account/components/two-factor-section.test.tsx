@@ -73,7 +73,7 @@ describe('TwoFactorSection', () => {
     expect(await screen.findByText('Server is down')).toBeTruthy();
   });
 
-  it('setup shows the key and the link as text with copy buttons, and does not turn anything on by itself', async () => {
+  it('setup shows a QR code, the key as text and a collapsed link with copy buttons, and does not turn anything on by itself', async () => {
     api.fetchTwoFactorStatus.mockResolvedValue(OFF);
     api.startTwoFactorSetup.mockResolvedValue(SETUP);
     render(<TwoFactorSection />);
@@ -81,6 +81,11 @@ describe('TwoFactorSection', () => {
     await startSetup();
 
     expect(await screen.findByTestId('copyable-Setup key')).toHaveProperty('textContent', SETUP.secret);
+    expect(screen.getByText('Scan this QR code with your authenticator app, then enter the 6-digit code.')).toBeTruthy();
+    expect(screen.getByRole('img', { name: 'QR code for your authenticator app' }).tagName.toLowerCase()).toBe('svg');
+    expect(screen.getByText(/Can't scan\?/)).toBeTruthy();
+    expect(screen.queryByTestId('copyable-Setup link')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Show setup link' }));
     expect(screen.getByTestId('copyable-Setup link').textContent).toBe(SETUP.otpauthUri);
     fireEvent.click(screen.getByRole('button', { name: 'Copy setup key' }));
     await waitFor(() => expect(clip.copyText).toHaveBeenCalledWith(SETUP.secret));

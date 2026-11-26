@@ -11,9 +11,8 @@ import { StaffLoginPage } from './staff-login-page';
 
 const nav = vi.hoisted(() => ({ replace: vi.fn(), refresh: vi.fn(), next: null as string | null, reason: null as string | null }));
 const api = vi.hoisted(() => ({
-  loginStaff: vi.fn<(email: string, password: string) => Promise<{ token: string } | { twoFactorRequired: true; challengeToken: string; expiresAt: string }>>(),
-  loginStaffTwoFactor: vi.fn<(challengeToken: string, code: string) => Promise<{ token: string }>>(),
-  persistStaffSession: vi.fn<(token: string) => Promise<void>>(),
+  loginStaff: vi.fn<(email: string, password: string) => Promise<{ signedIn: true } | { twoFactorRequired: true; challengeToken: string; expiresAt: string }>>(),
+  loginStaffTwoFactor: vi.fn<(challengeToken: string, code: string) => Promise<{ signedIn: true }>>(),
   clearStaffSession: vi.fn<() => Promise<void>>(),
 }));
 
@@ -28,7 +27,6 @@ vi.mock('../services/staff-identity-api', () => ({
 }));
 vi.mock('@/shared/services/api-client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/shared/services/api-client')>()),
-  persistStaffSession: api.persistStaffSession,
   clearStaffSession: api.clearStaffSession,
 }));
 vi.mock('@/features/registration', () => ({ RegistrationLink: (): null => null }));
@@ -47,8 +45,6 @@ describe('StaffLoginPage', () => {
     nav.reason = null;
     api.loginStaff.mockReset();
     api.loginStaffTwoFactor.mockReset();
-    api.persistStaffSession.mockReset();
-    api.persistStaffSession.mockResolvedValue(undefined);
     api.clearStaffSession.mockReset();
     api.clearStaffSession.mockResolvedValue(undefined);
   });
@@ -69,7 +65,7 @@ describe('StaffLoginPage', () => {
   });
 
   it('signs in, saves the session and goes home', async () => {
-    api.loginStaff.mockResolvedValue({ token: 't1' });
+    api.loginStaff.mockResolvedValue({ signedIn: true });
     render(<StaffLoginPage />);
 
     fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'staff@example.test' } });
@@ -77,11 +73,11 @@ describe('StaffLoginPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
 
     await waitFor(() => expect(nav.replace).toHaveBeenCalledWith('/'));
-    expect(api.persistStaffSession).toHaveBeenCalledWith('t1');
+    // The page never sees a token: the server already set the cookie.
   });
 
   it('goes to the page it was asked for, but only inside the site', async () => {
-    api.loginStaff.mockResolvedValue({ token: 't1' });
+    api.loginStaff.mockResolvedValue({ signedIn: true });
     nav.next = '/reports';
     const first = render(<StaffLoginPage />);
     fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'staff@example.test' } });
@@ -100,7 +96,7 @@ describe('StaffLoginPage', () => {
   });
 
   it.each(['//evil.example', '/\\evil.example'])('does not follow the open redirect %s', async (target) => {
-    api.loginStaff.mockResolvedValue({ token: 't1' });
+    api.loginStaff.mockResolvedValue({ signedIn: true });
     nav.next = target;
     render(<StaffLoginPage />);
     fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'staff@example.test' } });
@@ -167,7 +163,6 @@ describe('StaffLoginPage', () => {
     it('asks for a code instead of opening a session when the account has two-factor', async () => {
       await toSecondStep();
 
-      expect(api.persistStaffSession).not.toHaveBeenCalled();
       expect(nav.replace).not.toHaveBeenCalled();
       expect(screen.getByLabelText(/Authentication code/)).toBeTruthy();
       expect(screen.getByRole('button', { name: 'Verify and sign in' }).hasAttribute('disabled')).toBe(true);
@@ -175,7 +170,7 @@ describe('StaffLoginPage', () => {
 
     it('signs in with the code, saves the session and goes where it was asked', async () => {
       nav.next = '/reports';
-      api.loginStaffTwoFactor.mockResolvedValue({ token: 't2' });
+      api.loginStaffTwoFactor.mockResolvedValue({ signedIn: true });
       await toSecondStep();
 
       fireEvent.change(screen.getByLabelText(/Authentication code/), { target: { value: '123456' } });
@@ -183,11 +178,10 @@ describe('StaffLoginPage', () => {
 
       await waitFor(() => expect(nav.replace).toHaveBeenCalledWith('/reports'));
       expect(api.loginStaffTwoFactor).toHaveBeenCalledWith(CHALLENGE.challengeToken, '123456');
-      expect(api.persistStaffSession).toHaveBeenCalledWith('t2');
     });
 
     it('lets the person use a recovery code instead, and switch back', async () => {
-      api.loginStaffTwoFactor.mockResolvedValue({ token: 't3' });
+      api.loginStaffTwoFactor.mockResolvedValue({ signedIn: true });
       await toSecondStep();
 
       fireEvent.click(screen.getByRole('button', { name: 'Use a recovery code' }));
@@ -197,7 +191,7 @@ describe('StaffLoginPage', () => {
       fireEvent.change(screen.getByLabelText(/Recovery code/), { target: { value: 'ABCDE-FGHJK' } });
       fireEvent.click(screen.getByRole('button', { name: 'Verify and sign in' }));
 
-      await waitFor(() => expect(api.persistStaffSession).toHaveBeenCalledWith('t3'));
+      await waitFor(() => expect(nav.replace).toHaveBeenCalled());
       expect(api.loginStaffTwoFactor).toHaveBeenCalledWith(CHALLENGE.challengeToken, 'ABCDE-FGHJK');
     });
 

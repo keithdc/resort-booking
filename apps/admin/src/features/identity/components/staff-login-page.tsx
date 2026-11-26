@@ -16,7 +16,8 @@ import { useEffect, useState } from 'react';
 import { RegistrationLink } from '@/features/registration';
 import { loginStaff, loginStaffTwoFactor, needsTwoFactor } from '../services/staff-identity-api';
 import { AuthBackdrop } from '@/shared/components/auth-backdrop';
-import { ApiRequestError, clearStaffSession, persistStaffSession } from '@/shared/services/api-client';
+import { clearLastActive, writeLastActive } from '@/shared/services/activity-clock';
+import { ApiRequestError, clearStaffSession } from '@/shared/services/api-client';
 import { safeRedirectTarget } from '@/shared/utils/safe-redirect';
 
 /** Why the user landed on the login page (from `?reason=`): shown as a calm notice. */
@@ -26,7 +27,7 @@ const LOGIN_NOTICES: Record<string, string> = {
 };
 
 /**
- * Owner sign-in. Session is stored for both the browser and RSC.
+ * Staff sign-in. The server puts the session in an httpOnly cookie; this page never sees the token.
  */
 export function StaffLoginPage(): React.JSX.Element {
   const router = useRouter();
@@ -45,12 +46,14 @@ export function StaffLoginPage(): React.JSX.Element {
   // Sent here because the session ended: drop the stale token and cookie so the next page load is clean.
   useEffect((): void => {
     if (sessionEnded) {
+      clearLastActive();
       void clearStaffSession().catch((): void => undefined);
     }
   }, [sessionEnded]);
 
-  const finish = async (token: string): Promise<void> => {
-    await persistStaffSession(token);
+  /** Signed in: the BFF already set the cookie. Start the inactivity clock and go on. */
+  const finish = (): void => {
+    writeLastActive();
     router.replace(safeRedirectTarget(search.get('next')));
     router.refresh();
   };
@@ -74,7 +77,7 @@ export function StaffLoginPage(): React.JSX.Element {
         setChallenge(result);
         return;
       }
-      await finish(result.token);
+      finish();
     } catch (err: unknown) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not sign in');
     } finally {
@@ -90,8 +93,8 @@ export function StaffLoginPage(): React.JSX.Element {
     setPending(true);
     setError(null);
     try {
-      const result = await loginStaffTwoFactor(challenge.challengeToken, code.trim());
-      await finish(result.token);
+      await loginStaffTwoFactor(challenge.challengeToken, code.trim());
+      finish();
     } catch (err: unknown) {
       if (err instanceof ApiRequestError && err.code === 'TWO_FACTOR_CHALLENGE_INVALID') {
         // Expired, used up or too many wrong codes: only a fresh password step can continue.

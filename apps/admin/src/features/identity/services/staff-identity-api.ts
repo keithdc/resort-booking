@@ -6,7 +6,6 @@
 
 import type {
   ChangeStaffPasswordRequest,
-  StaffLoginResult,
   StaffProfile,
   TwoFactorChallenge,
   TwoFactorConfirmRequest,
@@ -15,10 +14,13 @@ import type {
   TwoFactorStatus,
   UpdateStaffProfileRequest,
 } from '@resort-booking/shared-types';
-import { getStaffApiOk, mutateStaffApiOk, postStaffLogin, postStaffPublic } from '@/shared/services/api-client';
+import { getStaffApiOk, mutateStaffApiOk, postStaffLogin, postStaffPublic, type SignedInAnswer } from '@/shared/services/api-client';
 
-/** What sign-in answers: a session, or (only for an account with two-factor) a challenge for step two. */
-export type StaffLoginOutcome = StaffLoginResult | TwoFactorChallenge;
+/**
+ * What sign-in answers in the browser: "signed in" (the session cookie is already set, the token never reaches the page),
+ * or (only for an account with two-factor) a challenge for step two.
+ */
+export type StaffLoginOutcome = SignedInAnswer | TwoFactorChallenge;
 
 /** True when sign-in needs the second step. */
 export function needsTwoFactor(outcome: StaffLoginOutcome): outcome is TwoFactorChallenge {
@@ -30,8 +32,8 @@ export function loginStaff(email: string, password: string): Promise<StaffLoginO
 }
 
 /** Step two of sign-in: the challenge token plus an authenticator code or a recovery code. */
-export function loginStaffTwoFactor(challengeToken: string, code: string): Promise<StaffLoginResult> {
-  return postStaffPublic<StaffLoginResult>('/staff/login/two-factor', { challengeToken, code }, 'Could not sign in');
+export function loginStaffTwoFactor(challengeToken: string, code: string): Promise<SignedInAnswer> {
+  return postStaffPublic<SignedInAnswer>('/staff/login/two-factor', { challengeToken, code }, 'Could not sign in');
 }
 
 export function fetchTwoFactorStatus(): Promise<TwoFactorStatus> {

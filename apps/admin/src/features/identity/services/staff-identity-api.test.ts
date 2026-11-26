@@ -32,10 +32,14 @@ describe('staff identity api: two-factor', () => {
     }
   });
 
-  it('tells a challenge from a session', () => {
+  it('tells a challenge from a signed-in answer (which carries no token)', () => {
     expect(needsTwoFactor({ twoFactorRequired: true, challengeToken: 'x', expiresAt: 'y' })).toBe(true);
     expect(
-      needsTwoFactor({ token: 't', expiresAt: 'y', staff: { id: '1', organizationId: 'o', fullName: 'A', email: 'a@b.c' } }),
+      needsTwoFactor({
+        signedIn: true,
+        expiresAt: 'y',
+        staff: { id: '1', organizationId: 'o', fullName: 'A', email: 'a@b.c', role: 'admin', organizationName: 'Humphreys', canManageRefunds: true },
+      }),
     ).toBe(false);
   });
 

@@ -15,7 +15,6 @@ import { useRouter } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
 import { NewPasswordField } from '@/features/configuration';
 import { AuthLayout } from '@/shared/components/auth-layout';
-import { persistStaffSession } from '@/shared/services/api-client';
 import { registerWorkspace } from '../services/registration-api';
 import { useRegistrationStatus } from '../services/use-registration-status';
 import { submitErrorMessage } from './session-errors';
@@ -50,8 +49,8 @@ export function RegisterPage(): React.JSX.Element {
     setPending(true);
     setError(null);
     try {
-      const result = await registerWorkspace({ organizationName: organizationName.trim(), fullName: fullName.trim(), email: email.trim(), password });
-      await persistStaffSession(result.token);
+      // The BFF sets the httpOnly session cookie; the answer carries no token.
+      await registerWorkspace({ organizationName: organizationName.trim(), fullName: fullName.trim(), email: email.trim(), password });
       router.replace('/');
       router.refresh();
     } catch (err: unknown) {

@@ -11,10 +11,11 @@ import { AppBar, Box, Drawer, IconButton, Toolbar, Typography } from '@mui/mater
 import { BlurFade } from '@resort-booking/ui';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState, type ReactNode } from 'react';
-import { logoutStaff } from '@/features/identity/services/staff-identity-api';
+import { fetchStaffMe, logoutStaff } from '@/features/identity/services/staff-identity-api';
 import { useSidebarCollapsed } from '@/shared/hooks/use-sidebar-collapsed';
 import { useSidebarData } from '@/shared/hooks/use-sidebar-data';
 import { useIdleLogout } from '@/shared/hooks/use-idle-logout';
+import { clearLastActive } from '@/shared/services/activity-clock';
 import { clearStaffSession } from '@/shared/services/api-client';
 import { isBarePath } from '@/shared/utils/public-paths';
 import { SIDEBAR_RAIL_WIDTH, SIDEBAR_WIDTH, StaffSidebar } from './staff-sidebar';
@@ -43,16 +44,22 @@ export function StaffShell({ children }: StaffShellProps): React.JSX.Element {
       try {
         await logoutStaff();
       } catch {
-        // Cookie/local session still cleared below.
+        // The cookie is still cleared below.
       }
-      await clearStaffSession();
+      clearLastActive();
+      await clearStaffSession().catch((): void => undefined);
       router.replace(loginPath);
       router.refresh();
     })();
   };
   const onLogout = (): void => signOut('/login');
   // S-11: no activity for 30 minutes (in any tab) ends the session.
-  useIdleLogout({ enabled: !isBare, onIdle: (): void => signOut('/login?reason=idle') });
+  useIdleLogout({
+    enabled: !isBare,
+    onIdle: (): void => signOut('/login?reason=idle'),
+    // The API also ends a session after 30 minutes without a request: tell it a working person is still here.
+    onKeepAlive: (): void => void fetchStaffMe().catch((): void => undefined),
+  });
 
   if (isBare) {
     return <>{children}</>;

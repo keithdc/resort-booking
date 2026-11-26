@@ -1,7 +1,7 @@
 /**
  * @file apps/admin/src/middleware.ts
  * @shared Send unsigned staff to the login page, and set the Content-Security-Policy (per-request nonce)
- * @dependencies @resort-booking/ui/security, public-paths
+ * @dependencies @resort-booking/ui/security, public-paths, bff-http (cookie name)
  */
 
 import { buildCsp, cspHeaderName, generateNonce, originOf, parseOriginList } from '@resort-booking/ui/security';
@@ -20,7 +20,8 @@ export function middleware(request: NextRequest): NextResponse {
     nonce,
     // Only an explicit `next dev` run relaxes the policy; any other value keeps the strict one.
     isDevelopment: process.env.NODE_ENV === 'development',
-    apiOrigin: originOf(process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3002'),
+    // The browser only talks to this site (the /api/proxy BFF), never to the API origin, so connect-src needs no API entry.
+    apiOrigin: '',
     extraConnectOrigins: [
       ...parseOriginList(process.env.CSP_EXTRA_CONNECT_ORIGINS),
       originOf(process.env.NEXT_PUBLIC_MAP_STYLE_URL),

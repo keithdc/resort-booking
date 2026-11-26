@@ -29,7 +29,7 @@ vi.mock('@/features/identity/services/staff-identity-api', () => ({
   changeStaffPassword: api.changeStaffPassword,
 }));
 // The two-step verification section has its own tests (features/account).
-vi.mock('@/features/account', () => ({ TwoFactorSection: (): null => null }));
+vi.mock('@/features/account', () => ({ TwoFactorSection: (): null => null, SignedInDevices: (): null => null }));
 vi.mock('@/features/property/services/staff-property-api', () => ({
   fetchOrganizationSettings: api.fetchOrganizationSettings,
   saveOrganizationSettings: api.saveOrganizationSettings,

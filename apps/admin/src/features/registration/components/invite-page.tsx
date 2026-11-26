@@ -17,7 +17,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { NewPasswordField } from '@/features/configuration';
 import { AuthLayout } from '@/shared/components/auth-layout';
 import { RoleChip } from '@/shared/components/role-chip';
-import { ApiRequestError, persistStaffSession } from '@/shared/services/api-client';
+import { ApiRequestError } from '@/shared/services/api-client';
 import { acceptInvite, fetchInvitePreview } from '../services/registration-api';
 import { submitErrorMessage } from './session-errors';
 
@@ -99,7 +99,8 @@ export function InvitePage({ token }: InvitePageProps): React.JSX.Element {
 
   const { invite } = preview;
   const mismatch = confirm !== '' && confirm !== password;
-  const nameOk = fullName.trim() === '' || fullName.trim().length >= 2;
+  const isReset = invite.isReset;
+  const nameOk = isReset || fullName.trim() === '' || fullName.trim().length >= 2;
   const canSubmit = !pending && nameOk && validatePassword(password, { email: invite.email }).ok && confirm === password;
 
   const onSubmit = async (event: FormEvent): Promise<void> => {
@@ -107,9 +108,10 @@ export function InvitePage({ token }: InvitePageProps): React.JSX.Element {
     setPending(true);
     setError(null);
     try {
-      const name = fullName.trim();
-      const result = await acceptInvite({ token, password, ...(name === '' ? {} : { fullName: name }) });
-      await persistStaffSession(result.token);
+      // A reset link only sets a password: the name is never sent.
+      const name = isReset ? '' : fullName.trim();
+      // The BFF sets the httpOnly session cookie; the answer carries no token.
+      await acceptInvite({ token, password, ...(name === '' ? {} : { fullName: name }) });
       router.replace('/');
       router.refresh();
     } catch (err: unknown) {
@@ -123,29 +125,37 @@ export function InvitePage({ token }: InvitePageProps): React.JSX.Element {
   };
 
   return (
-    <AuthLayout icon={icon} title={`Join ${invite.organizationName}`} description="Choose a password to finish setting up your staff account.">
+    <AuthLayout
+      icon={icon}
+      title={isReset ? 'Reset your password' : `Join ${invite.organizationName}`}
+      description={isReset ? 'Choose a new password for your staff account.' : 'Choose a password to finish setting up your staff account.'}
+    >
       <Box sx={{ mb: 3, p: 2, borderRadius: 2, bgcolor: 'action.hover' }}>
         <Typography variant="caption" color="text.secondary">
           Signing in as
         </Typography>
         <Typography sx={{ fontWeight: 600, wordBreak: 'break-all' }}>{invite.email}</Typography>
-        <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1 }}>
-          <Typography variant="body2" color="text.secondary">
-            Your role
-          </Typography>
-          <RoleChip role={invite.role} />
-        </Stack>
+        {isReset ? null : (
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1 }}>
+            <Typography variant="body2" color="text.secondary">
+              Your role
+            </Typography>
+            <RoleChip role={invite.role} />
+          </Stack>
+        )}
       </Box>
       {error !== null ? <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert> : null}
       <Stack component="form" spacing={2} onSubmit={(event): void => void onSubmit(event)} noValidate>
-        <TextField
-          label="Your name"
-          value={fullName}
-          onChange={(event): void => setFullName(event.target.value)}
-          autoComplete="name"
-          helperText="Optional: leave empty to keep the name your admin entered."
-          slotProps={{ htmlInput: { maxLength: 120 } }}
-        />
+        {isReset ? null : (
+          <TextField
+            label="Your name"
+            value={fullName}
+            onChange={(event): void => setFullName(event.target.value)}
+            autoComplete="name"
+            helperText="Optional: leave empty to keep the name your admin entered."
+            slotProps={{ htmlInput: { maxLength: 120 } }}
+          />
+        )}
         <NewPasswordField label="Password" value={password} onChange={setPassword} email={invite.email} />
         <TextField
           label="Confirm password"
@@ -158,7 +168,7 @@ export function InvitePage({ token }: InvitePageProps): React.JSX.Element {
           helperText={mismatch ? 'The passwords do not match' : undefined}
         />
         <Button type="submit" variant="contained" disabled={!canSubmit}>
-          {pending ? 'Joining…' : 'Accept invitation'}
+          {pending ? (isReset ? 'Saving…' : 'Joining…') : isReset ? 'Set new password' : 'Accept invitation'}
         </Button>
       </Stack>
     </AuthLayout>

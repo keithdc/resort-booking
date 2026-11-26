@@ -11,7 +11,7 @@ import { Alert, Box, Button, Divider, Snackbar, Stack, TextField, Typography } f
 import { EmailField, isValidEmail } from '@resort-booking/ui/contact';
 import { validatePassword } from '@resort-booking/ui/password';
 import { useState } from 'react';
-import { TwoFactorSection } from '@/features/account';
+import { SignedInDevices, TwoFactorSection } from '@/features/account';
 import { changeStaffPassword, saveStaffProfile } from '@/features/identity/services/staff-identity-api';
 import { ApiRequestError } from '@/shared/services/api-client';
 import { isFormDirty } from '../utils/form-dirty';
@@ -128,6 +128,8 @@ export function OwnerAccountForm({ initial }: OwnerAccountFormProps): React.JSX.
       </Box>
       <Divider />
       <TwoFactorSection />
+      <Divider />
+      <SignedInDevices />
       <Snackbar open={notice} autoHideDuration={3000} onClose={(): void => setNotice(false)}>
         <Alert severity="success" onClose={(): void => setNotice(false)}>
           Account saved

@@ -6,7 +6,7 @@
 
 import { act, cleanup, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { readLastActive, writeLastActive } from '@/shared/services/staff-session';
+import { readLastActive, writeLastActive } from '@/shared/services/activity-clock';
 import { useIdleLogout } from './use-idle-logout';
 
 const LIMIT = 60_000;
@@ -93,5 +93,25 @@ describe('useIdleLogout', () => {
     });
 
     expect(onIdle).not.toHaveBeenCalled();
+  });
+
+  it('pings the API while the user is active, and never while the tab sits idle', () => {
+    const onKeepAlive = vi.fn();
+    renderHook(() =>
+      useIdleLogout({ enabled: true, onIdle: vi.fn(), onKeepAlive, limitMs: LIMIT * 100, checkEveryMs: CHECK, keepAliveMs: 10_000 }),
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(10_500);
+      window.dispatchEvent(new Event('pointerdown'));
+      vi.advanceTimersByTime(1_500);
+    });
+    expect(onKeepAlive).toHaveBeenCalledTimes(1);
+
+    // No activity since the ping: no more pings.
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(onKeepAlive).toHaveBeenCalledTimes(1);
   });
 });

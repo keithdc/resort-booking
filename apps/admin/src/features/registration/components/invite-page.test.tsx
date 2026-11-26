@@ -13,23 +13,19 @@ import { InvitePage } from './invite-page';
 const nav = vi.hoisted(() => ({ replace: vi.fn(), refresh: vi.fn() }));
 const api = vi.hoisted(() => ({
   fetchInvitePreview: vi.fn<(token: string) => Promise<InvitePreview>>(),
-  acceptInvite: vi.fn<(body: object) => Promise<{ token: string }>>(),
-  persistStaffSession: vi.fn<(token: string) => Promise<void>>(),
+  acceptInvite: vi.fn<(body: object) => Promise<{ signedIn: true }>>(),
 }));
 
 vi.mock('next/navigation', () => ({ useRouter: (): typeof nav => nav }));
 vi.mock('../services/registration-api', () => ({ fetchInvitePreview: api.fetchInvitePreview, acceptInvite: api.acceptInvite }));
-vi.mock('@/shared/services/api-client', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/shared/services/api-client')>()),
-  persistStaffSession: api.persistStaffSession,
-}));
 vi.mock('@/features/configuration', async () => ({
   NewPasswordField: (await import('@/features/configuration/components/new-password-field')).NewPasswordField,
 }));
 
 const TOKEN = 'a'.repeat(64);
 const GOOD = 'Correct-Horse-9';
-const PREVIEW: InvitePreview = { organizationName: 'Atlantic Stays', email: 'paul@atlantic.example', role: 'employee' };
+const PREVIEW: InvitePreview = { organizationName: 'Atlantic Stays', email: 'paul@atlantic.example', role: 'employee', isReset: false };
+const RESET_PREVIEW: InvitePreview = { ...PREVIEW, isReset: true };
 
 describe('InvitePage', () => {
   beforeEach(() => {
@@ -37,7 +33,6 @@ describe('InvitePage', () => {
       fn.mockReset();
     }
     api.fetchInvitePreview.mockResolvedValue(PREVIEW);
-    api.persistStaffSession.mockResolvedValue(undefined);
   });
   afterEach(cleanup);
 
@@ -86,8 +81,8 @@ describe('InvitePage', () => {
     expect(submit.disabled).toBe(false);
   });
 
-  it('accepts, signs in with the returned session and goes home (name sent only when typed)', async () => {
-    api.acceptInvite.mockResolvedValue({ token: 'tok-9' });
+  it('accepts (the server sets the session cookie) and goes home (name sent only when typed)', async () => {
+    api.acceptInvite.mockResolvedValue({ signedIn: true });
     render(<InvitePage token={TOKEN} />);
     await screen.findByRole('heading', { level: 1, name: 'Join Atlantic Stays' });
 
@@ -97,11 +92,10 @@ describe('InvitePage', () => {
 
     await waitFor(() => expect(nav.replace).toHaveBeenCalledWith('/'));
     expect(api.acceptInvite).toHaveBeenCalledWith({ token: TOKEN, password: GOOD });
-    expect(api.persistStaffSession).toHaveBeenCalledWith('tok-9');
   });
 
   it('sends the typed name', async () => {
-    api.acceptInvite.mockResolvedValue({ token: 'tok-9' });
+    api.acceptInvite.mockResolvedValue({ signedIn: true });
     render(<InvitePage token={TOKEN} />);
     await screen.findByRole('heading', { level: 1, name: 'Join Atlantic Stays' });
 
@@ -124,5 +118,39 @@ describe('InvitePage', () => {
 
     expect(await screen.findByRole('heading', { level: 1, name: 'This link is not valid' })).toBeTruthy();
     expect(nav.replace).not.toHaveBeenCalled();
+  });
+
+  describe('access reset link', () => {
+    beforeEach(() => {
+      api.fetchInvitePreview.mockResolvedValue(RESET_PREVIEW);
+    });
+
+    it('shows only the email and the two password fields, with reset wording', async () => {
+      render(<InvitePage token={TOKEN} />);
+
+      expect(await screen.findByRole('heading', { level: 1, name: 'Reset your password' })).toBeTruthy();
+      expect(screen.getByText('Choose a new password for your staff account.')).toBeTruthy();
+      expect(screen.getByText('paul@atlantic.example')).toBeTruthy();
+      expect(screen.getByLabelText('Password')).toBeTruthy();
+      expect(screen.getByLabelText(/Confirm password/)).toBeTruthy();
+      expect(screen.queryByLabelText('Your name')).toBeNull();
+      expect(screen.queryByText(/Join /)).toBeNull();
+      expect(screen.queryByText('Your role')).toBeNull();
+      expect(screen.queryByText('Employee')).toBeNull();
+      expect(screen.getByRole('button', { name: 'Set new password' })).toBeTruthy();
+    });
+
+    it('submits the password without any name', async () => {
+      api.acceptInvite.mockResolvedValue({ signedIn: true });
+      render(<InvitePage token={TOKEN} />);
+      await screen.findByRole('heading', { level: 1, name: 'Reset your password' });
+
+      fireEvent.change(screen.getByLabelText('Password'), { target: { value: GOOD } });
+      fireEvent.change(screen.getByLabelText(/Confirm password/), { target: { value: GOOD } });
+      fireEvent.click(screen.getByRole('button', { name: 'Set new password' }));
+
+      await waitFor(() => expect(nav.replace).toHaveBeenCalledWith('/'));
+      expect(api.acceptInvite).toHaveBeenCalledWith({ token: TOKEN, password: GOOD });
+    });
   });
 });

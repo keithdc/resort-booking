@@ -12,16 +12,11 @@ import { RegisterPage } from './register-page';
 const nav = vi.hoisted(() => ({ replace: vi.fn(), refresh: vi.fn() }));
 const api = vi.hoisted(() => ({
   fetchRegistrationStatus: vi.fn<() => Promise<{ open: boolean }>>(),
-  registerWorkspace: vi.fn<(body: object) => Promise<{ token: string }>>(),
-  persistStaffSession: vi.fn<(token: string) => Promise<void>>(),
+  registerWorkspace: vi.fn<(body: object) => Promise<{ signedIn: true }>>(),
 }));
 
 vi.mock('next/navigation', () => ({ useRouter: (): typeof nav => nav }));
 vi.mock('../services/registration-api', () => ({ fetchRegistrationStatus: api.fetchRegistrationStatus, registerWorkspace: api.registerWorkspace }));
-vi.mock('@/shared/services/api-client', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/shared/services/api-client')>()),
-  persistStaffSession: api.persistStaffSession,
-}));
 vi.mock('@/features/configuration', async () => ({
   NewPasswordField: (await import('@/features/configuration/components/new-password-field')).NewPasswordField,
 }));
@@ -48,7 +43,6 @@ describe('RegisterPage', () => {
       fn.mockReset();
     }
     api.fetchRegistrationStatus.mockResolvedValue({ open: true });
-    api.persistStaffSession.mockResolvedValue(undefined);
   });
   afterEach(cleanup);
 
@@ -93,8 +87,8 @@ describe('RegisterPage', () => {
     expect((screen.getByRole('button', { name: 'Create account' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it('registers, signs the returned session in and goes home', async () => {
-    api.registerWorkspace.mockResolvedValue({ token: 'tok-1' });
+  it('registers (the server sets the session cookie) and goes home', async () => {
+    api.registerWorkspace.mockResolvedValue({ signedIn: true });
     render(<RegisterPage />);
     await fillForm();
 
@@ -102,7 +96,7 @@ describe('RegisterPage', () => {
 
     await waitFor(() => expect(nav.replace).toHaveBeenCalledWith('/'));
     expect(api.registerWorkspace).toHaveBeenCalledWith({ organizationName: 'Atlantic Stays', fullName: 'Marie Dupont', email: 'marie@atlantic.example', password: GOOD });
-    expect(api.persistStaffSession).toHaveBeenCalledWith('tok-1');
+    // The page never handles a token: the BFF set the cookie.
     expect(nav.refresh).toHaveBeenCalled();
   });
 

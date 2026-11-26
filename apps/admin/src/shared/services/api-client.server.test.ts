@@ -25,19 +25,22 @@ function json(status: number, body: unknown): Response {
 describe('api-client on the server', () => {
   beforeEach(() => {
     nav.redirect.mockClear();
+    vi.stubEnv('API_URL', 'https://api.internal.example');
   });
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
   });
 
-  it('sends the cookie token and, when the API refuses the session, redirects to the login page', async () => {
+  it('calls the API itself with the cookie token (it never reaches a browser) and, when the API refuses the session, redirects to the login page', async () => {
     const fetchMock = vi.fn().mockResolvedValue(json(401, { status: 'error', message: 'Staff authentication required' }));
     vi.stubGlobal('fetch', fetchMock);
     const { getStaffApiOk } = await import('./api-client');
 
     await expect(getStaffApiOk('/staff/properties')).rejects.toThrow('NEXT_REDIRECT /login?reason=expired');
 
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('https://api.internal.example/staff/properties');
     expect((init.headers as Record<string, string>)['x-staff-token']).toBe('stale-token');
     expect(nav.redirect).toHaveBeenCalledWith('/login?reason=expired');
   });

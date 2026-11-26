@@ -1,18 +1,18 @@
 /**
  * @file apps/admin/src/shared/services/api-client.ts
- * @shared Staff fetch helper
- * @dependencies staff-session
+ * @shared Staff fetch helper: the browser talks to this site's BFF (/api/proxy), server components to the API
+ * @dependencies session-failures, server/bff-http (server side only)
  */
 
-import type { ApiErrorBody, ApiOkBody } from '@resort-booking/shared-types';
-import {
-  STAFF_TOKEN_STORAGE_KEY,
-  clearStoredStaffToken,
-  readStoredStaffToken,
-  storeStaffToken,
-} from './staff-session';
+import type { ApiErrorBody, ApiOkBody, StaffSessionResult } from '@resort-booking/shared-types';
+import { endsSession } from '../utils/session-failures';
 
-export { STAFF_TOKEN_STORAGE_KEY };
+/**
+ * What a sign-in route answers in the browser: who signed in, but NEVER the token (the BFF put it in the httpOnly cookie).
+ */
+export interface SignedInAnswer extends Omit<StaffSessionResult, 'token'> {
+  signedIn: true;
+}
 
 /** Extra facts an error answer can carry: the machine code, and for a weak password every broken rule. */
 export interface ApiErrorDetails {
@@ -47,28 +47,36 @@ export function errorDetailsOf(payload: unknown): ApiErrorDetails {
   return { code: typeof body.code === 'string' ? body.code : undefined, problems };
 }
 
-/** A 401 with one of these codes means "the password or code you typed is wrong", not "your session ended". */
-const NOT_A_SESSION_FAILURES: ReadonlySet<string> = new Set(['STAFF_PASSWORD_MISMATCH', 'TWO_FACTOR_CODE_INVALID']);
+/** Where the browser sends API calls: this site's own BFF route (see app/api/proxy), never the API origin. */
+const PROXY_PREFIX = '/api/proxy';
 
-export async function resolveStaffToken(): Promise<string> {
+/**
+ * The URL and headers for an API path. In the browser it is the same-origin proxy: the httpOnly cookie travels with the
+ * request and the SERVER adds the session header, so no script ever holds the token. While a server component renders
+ * there is no browser, so it calls the API directly with the token from the cookie (the token stays on the server).
+ */
+async function resolveTransport(path: string, withSession: boolean): Promise<{ url: string; headers: Record<string, string> }> {
   if (typeof window !== 'undefined') {
-    return readStoredStaffToken();
+    return { url: `${PROXY_PREFIX}${path}`, headers: {} };
+  }
+  const { apiBaseUrl } = await import('../server/bff-http');
+  const url = `${apiBaseUrl()}${path}`;
+  if (!withSession) {
+    return { url, headers: {} };
   }
   const { cookies } = await import('next/headers');
-  return (await cookies()).get('staff_token')?.value ?? '';
+  return { url, headers: { 'x-staff-token': (await cookies()).get('staff_token')?.value ?? '' } };
 }
 
-export async function persistStaffSession(token: string): Promise<void> {
-  storeStaffToken(token);
-  await fetch('/api/session', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token }),
-  });
+/**
+ * The URL of a public (no session) API path: the same-origin proxy in the browser, the API itself on the server.
+ */
+export async function publicApiUrl(path: string): Promise<string> {
+  return (await resolveTransport(path, false)).url;
 }
 
+/** Signs this browser out locally: asks the server to drop the httpOnly cookie (the token itself is never in the page). */
 export async function clearStaffSession(): Promise<void> {
-  clearStoredStaffToken();
   await fetch('/api/session', { method: 'DELETE' });
 }
 
@@ -80,7 +88,6 @@ function endSessionInBrowser(): void {
   if (typeof window === 'undefined' || window.location.pathname.startsWith('/login')) {
     return;
   }
-  clearStoredStaffToken();
   void fetch('/api/session', { method: 'DELETE' }).catch((): void => undefined);
   window.location.assign('/login?reason=expired');
 }
@@ -113,26 +120,23 @@ export async function mutateStaffApiOk<T>(
   method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE',
   body?: unknown,
 ): Promise<T> {
-  const base = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3002';
-  const token = await resolveStaffToken();
-  const headers: Record<string, string> = {
-    'x-staff-token': token,
-  };
+  const { url, headers } = await resolveTransport(path, true);
   if (method !== 'GET' && method !== 'DELETE') {
     headers['Content-Type'] = 'application/json';
   }
   const init: RequestInit = {
     method,
     cache: 'no-store',
+    credentials: 'same-origin',
     headers,
   };
   if (body !== undefined && method !== 'GET') {
     init.body = JSON.stringify(body);
   }
-  const response = await fetch(`${base}${path}`, init);
+  const response = await fetch(url, init);
   const payload: unknown = await response.json();
   const details = errorDetailsOf(payload);
-  if (response.status === 401 && !(details.code !== undefined && NOT_A_SESSION_FAILURES.has(details.code))) {
+  if (response.status === 401 && endsSession(details.code)) {
     endSessionInBrowser();
     await endSessionOnServer();
   }
@@ -158,7 +162,7 @@ export async function mutateStaffApiOk<T>(
 }
 
 /**
- * Public login (no session header).
+ * Public login (no session). In the browser the BFF answers without a token; it is already in the httpOnly cookie.
  */
 export function postStaffLogin<T>(email: string, password: string): Promise<T> {
   return postStaffPublic<T>('/staff/login', { email, password }, 'Could not sign in');
@@ -168,8 +172,8 @@ export function postStaffLogin<T>(email: string, password: string): Promise<T> {
  * Public POST (no session header): sign-in and its second step.
  */
 export async function postStaffPublic<T>(path: string, body: unknown, failureMessage: string = 'Request failed'): Promise<T> {
-  const base = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3002';
-  const response = await fetch(`${base}${path}`, {
+  const { url } = await resolveTransport(path, false);
+  const response = await fetch(url, {
     method: 'POST',
     cache: 'no-store',
     headers: { 'Content-Type': 'application/json' },

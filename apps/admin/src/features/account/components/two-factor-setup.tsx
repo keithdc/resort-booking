@@ -1,18 +1,19 @@
 /**
  * @file apps/admin/src/features/account/components/two-factor-setup.tsx
  * @feature account
- * @dependencies staff-identity-api, clipboard utils
+ * @dependencies staff-identity-api, clipboard utils, qr-code
  */
 
 'use client';
 
 import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined';
 import type { TwoFactorRecoveryCodes, TwoFactorSetup } from '@resort-booking/shared-types';
-import { Alert, Box, Button, IconButton, Stack, TextField, Tooltip, Typography } from '@mui/material';
+import { Alert, Box, Button, Collapse, IconButton, Stack, TextField, Tooltip, Typography } from '@mui/material';
 import { useState } from 'react';
 import { enableTwoFactor } from '@/features/identity/services/staff-identity-api';
 import { ApiRequestError } from '@/shared/services/api-client';
 import { copyText } from '../utils/clipboard';
+import { QrCode } from './qr-code';
 
 interface TwoFactorSetupPanelProps {
   setup: TwoFactorSetup;
@@ -59,13 +60,14 @@ function Copyable({ label, value }: CopyableProps): React.JSX.Element {
 }
 
 /**
- * Step two of turning two-step verification on: the secret as text (no QR image), then one code from the app to
+ * Step two of turning two-step verification on: a QR code to scan (the key as text is the fallback), then one code from the app to
  * prove it works. The password typed at the start is sent again with the code. Nothing is protected until the code is accepted.
  */
 export function TwoFactorSetupPanel({ setup, currentPassword, onEnabled, onCancel }: TwoFactorSetupPanelProps): React.JSX.Element {
   const [code, setCode] = useState('');
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showLink, setShowLink] = useState(false);
 
   const onConfirm = async (): Promise<void> => {
     setPending(true);
@@ -88,12 +90,27 @@ export function TwoFactorSetupPanel({ setup, currentPassword, onEnabled, onCance
 
   return (
     <Stack spacing={2}>
-      <Typography color="text.secondary">
-        In your authenticator app (or password manager), add an account with the setup key below, or open the link. Then type the
-        6-digit code it shows.
+      <Typography color="text.secondary">Scan this QR code with your authenticator app, then enter the 6-digit code.</Typography>
+      <QrCode value={setup.otpauthUri} label="QR code for your authenticator app" />
+      <Typography variant="body2" color="text.secondary">
+        Can&apos;t scan? Enter this key in your authenticator app instead.
       </Typography>
       <Copyable label="Setup key" value={setup.secret} />
-      <Copyable label="Setup link" value={setup.otpauthUri} />
+      <Box>
+        <Button
+          size="small"
+          aria-expanded={showLink}
+          aria-controls="two-factor-setup-link"
+          onClick={(): void => setShowLink((shown) => !shown)}
+        >
+          {showLink ? 'Hide setup link' : 'Show setup link'}
+        </Button>
+        <Collapse in={showLink} unmountOnExit id="two-factor-setup-link">
+          <Box sx={{ pt: 1 }}>
+            <Copyable label="Setup link" value={setup.otpauthUri} />
+          </Box>
+        </Collapse>
+      </Box>
       {error !== null ? <Alert severity="error">{error}</Alert> : null}
       <Stack
         component="form"
