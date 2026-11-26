@@ -284,16 +284,8 @@ export function StayDetailDialog({ stay, onClose, onUpdated, onChanged }: StayDe
                     <CancellationBlock cancellation={stay.cancellation} />
                   </Box>
                 ) : null}
-                {stay.kind === 'reservation' ? (
-                  <Box sx={{ gridColumn: '1 / -1', minWidth: 0 }}>
-                    <RefundsBlock refunds={stay.refunds} />
-                  </Box>
-                ) : null}
-                {stay.kind === 'reservation' ? (
-                  <Box sx={{ gridColumn: '1 / -1', minWidth: 0 }}>
-                    <HistoryBlock stay={stay} />
-                  </Box>
-                ) : null}
+                {stay.kind === 'reservation' ? <RefundsBlock refunds={stay.refunds} /> : null}
+                {stay.kind === 'reservation' ? <HistoryBlock stay={stay} /> : null}
               </Box>
             </DialogContent>
             {sameDayLocked ? (
