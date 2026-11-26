@@ -34,17 +34,14 @@ The payment code runs on a **mock** provider today (`docs/05`, `docs/14`). The r
 
 Guest booking **confirmation**, **hold expiry** and **cancellation/refund** emails are not built. Only staff invitation and reset emails exist (`docs/12-email.md`).
 
-### 1.4 Booking features
+### 1.4 Booking features: decided to keep simple
 
-- **Rebooking with a bank-transfer balance:** a date change that needs more money currently supports card payment of the difference only.
-- **Extras:** priced extras are fixed at booking time. Missing: re-quote when extras change, approving or declining **on-request** extras (they stay "pending" for now), and the **guest** checkout choosing extras (only staff bookings store them today, in `reservation_extras`).
-- **Switching to another stay** on the same dates (today: cancel and book again).
-- **"Unpaid at hotel" follow-ups:** a reminder list of unpaid bookings by arrival date is in the report; automatic reminders and an optional deadline ("unpaid after check-in → flag") are not built.
+Not planned, on purpose (owner decision, keep the app easy to use): switching to another stay (cancel and book again), extras re-quote or an on-request approval flow (use a staff note, or add the extra when making the booking), and the guest checkout choosing extras (use the note). Still open and small: a date change that needs more money supports card payment of the difference only (no bank-transfer balance), and automatic reminders for unpaid-at-hotel bookings (the report already lists them by arrival date).
 
 ### 1.5 Quality work
 
-- **Refactoring pass for maintainability:** some files are long (the booking card, the reservations repository, the staff booking creator). Split by feature, keep behaviour the same, tests green throughout.
-- **Browser testing of the recent admin screens:** the New booking dialog, Mark as paid, the unpaid report, the audit member filter and staff notes are covered by component and database tests but have only been checked in a real browser in part. Use `docs/16-manual-test-guide.md` sections 14 and 15.
+- **Refactoring pass:** low priority. Only do it when a file gets in the way of a change.
+- **Browser testing of the recent admin screens:** low priority, owner will test over time (`docs/16-manual-test-guide.md` sections 14 and 15).
 - **Least-privilege roles in development:** the dev database still uses one owner role. Switching to `resort_owner` / `resort_app` / `resort_readonly` as in `docs/11-database-access.md` would catch permission mistakes earlier.
 
 ## 2. Waiting for an owner decision
@@ -91,7 +88,7 @@ Numbers refer to the doc that explains the question.
 
 ## 4. Known caveats
 
-- The **QR code for two-step verification** is proven by a decode test, but has not been scanned with a real authenticator app (Google Authenticator, Microsoft Authenticator, 1Password). Do this once.
+- The **QR code for two-step verification** was scanned with a real authenticator app by the owner and works.
 - **Real email** (Resend) has been tested only with mocks. Send one real invitation once the key and domain are set.
 - **Encrypted backups** (the `age` and `gpg` paths in `scripts/backup-db.sh`) and `shellcheck` have not been exercised.
 - The **guest checkout after Pay** and the cancel dialogs are tested at component level only.
