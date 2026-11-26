@@ -14,4 +14,5 @@ paths = [
 regexes = [
   '''dev-staff-token''',
   '''AtlanticOwner1!''',
+  '''MyOwner-Pass-77''', # fake password in a unit test (identity.service.spec.ts)
 ]
