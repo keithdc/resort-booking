@@ -71,7 +71,8 @@ export class TwoFactorController {
   }
 
   /**
-   * Switches two-factor off: current password plus a code or recovery code.
+   * Switches two-factor off: current password plus a code or recovery code. Every other session of this person is
+   * signed out (a stolen session must not outlive the change).
    */
   @Post('disable')
   @TenantExempt(SELF_ONLY)
@@ -79,8 +80,9 @@ export class TwoFactorController {
     @CurrentStaff() staff: StaffAccount,
     @Body() body: ConfirmTwoFactorDto,
     @Req() request: RequestWithId,
+    @Headers('x-staff-token') token: string | undefined,
   ): Promise<ApiOkBody<{ disabled: true }>> {
-    await this.twoFactor.disable(staff, body.currentPassword, body.code, contextOf(request));
+    await this.twoFactor.disable(staff, body.currentPassword, body.code, contextOf(request), token ?? '');
     return { status: 'ok', data: { disabled: true } };
   }
 

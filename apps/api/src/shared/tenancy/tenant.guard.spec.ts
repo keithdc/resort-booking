@@ -3,10 +3,11 @@
  * @shared TenantGuard: which ids it reads, and what it does with them
  */
 
-import { NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ExecutionContextHost } from '@nestjs/core/helpers/execution-context-host';
 import { Test } from '@nestjs/testing';
+import { httpMetrics } from '../http/http-metrics';
 import { TenancyService } from './tenancy.service';
 import { TenantGuard } from './tenant.guard';
 import { TenantScoped, type TenantRef } from './tenant-scope.decorator';
@@ -125,5 +126,47 @@ describe('TenantGuard', () => {
     const refs: TenantRef[] = Reflect.getMetadata('tenant:refs', FakeController.prototype.byBodyAndParam);
 
     expect(refs.map((ref) => `${ref.resource}:${ref.from}:${ref.key}`)).toEqual(['house:body:houseIds', 'discount:param:discountId']);
+  });
+
+  describe('refusals are visible (docs/13 R2-24)', () => {
+    it('logs a cross-tenant 404 at warn with the resource, route and request id only (never the id), counts it, and still answers 404', async () => {
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation((): void => undefined);
+      httpMetrics.takeWindow();
+      assertOwned.mockRejectedValue(new NotFoundException({ message: 'Not found', code: 'NOT_FOUND' }));
+      const request = { staff: STAFF, params: { propertyId: ID_1 }, query: {}, body: {}, requestId: 'req-12345678' };
+
+      await expect(guard.canActivate(context(FakeController.prototype.byParam, request))).rejects.toBeInstanceOf(NotFoundException);
+
+      expect(warn).toHaveBeenCalledTimes(1);
+      const line = String(warn.mock.calls[0]?.[0]);
+      expect(line).toBe('guard.denied guard=tenant resource=property route=FakeController.byParam req=req-12345678');
+      expect(line).not.toContain(ID_1);
+      expect(line).not.toContain('org-A');
+      expect(line).not.toContain('a@example.com');
+      expect(httpMetrics.takeWindow()).toMatchObject({ guardDenied: 1 });
+      warn.mockRestore();
+    });
+
+    it('does not log or count an error that is not a refusal, and rethrows it', async () => {
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation((): void => undefined);
+      httpMetrics.takeWindow();
+      assertOwned.mockRejectedValue(new Error('database down'));
+
+      await expect(guard.canActivate(context(FakeController.prototype.byParam, { staff: STAFF, params: { propertyId: ID_1 }, query: {}, body: {} }))).rejects.toThrow('database down');
+
+      expect(warn).not.toHaveBeenCalled();
+      expect(httpMetrics.takeWindow()).toBeNull();
+      warn.mockRestore();
+    });
+
+    it('logs nothing when the ids are the caller\'s own', async () => {
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation((): void => undefined);
+      httpMetrics.takeWindow();
+
+      await expect(guard.canActivate(context(FakeController.prototype.byParam, { staff: STAFF, params: { propertyId: ID_1 }, query: {}, body: {} }))).resolves.toBe(true);
+
+      expect(warn).not.toHaveBeenCalled();
+      warn.mockRestore();
+    });
   });
 });

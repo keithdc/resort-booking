@@ -6,6 +6,7 @@
 
 import { Controller, Get, Param } from '@nestjs/common';
 import type { ApiOkBody, PromotedOffer } from '@resort-booking/shared-types';
+import { PublicRateLimit } from '../../shared/http/public-rate-limit';
 import { OffersService } from './offers.service';
 
 @Controller()
@@ -16,6 +17,7 @@ export class OffersController {
    * Public: the discounts staff chose to advertise at a published property. No codes, no internals.
    */
   @Get('properties/:slug/offers')
+  @PublicRateLimit('read')
   public async list(@Param('slug') slug: string): Promise<ApiOkBody<PromotedOffer[]>> {
     return { status: 'ok', data: await this.offers.listForProperty(slug) };
   }

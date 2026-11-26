@@ -5,7 +5,7 @@
  */
 
 import { Injectable } from '@nestjs/common';
-import type { OrganizationSettings } from '@resort-booking/shared-types';
+import type { OrganizationSettings, StaffSessionInfo } from '@resort-booking/shared-types';
 import { DatabaseService } from '../../shared/database/database.service';
 import { isStaffRole, type StaffAccount, type StaffRole } from '../../shared/roles/staff-role';
 
@@ -41,6 +41,30 @@ interface StaffUserRow {
 export interface StaffCredentials extends StaffAccount {
   passwordHash: string;
   active: boolean;
+}
+
+/** What is stored about a new session besides the token hash: a coarse label and the salted hash of the sign-in IP. */
+export interface SessionDevice {
+  label: string | null;
+  ipHash: string | null;
+}
+
+export const NO_DEVICE: SessionDevice = { label: null, ipHash: null };
+
+/** A live session and the person behind it. */
+export interface LiveSession {
+  staff: StaffAccount;
+  sessionId: string;
+  lastUsedAt: Date;
+}
+
+interface SessionRow {
+  id: string;
+  device_label: string | null;
+  created_at: Date;
+  last_used_at: Date;
+  expires_at: Date;
+  current: boolean;
 }
 
 /** One staff row with its workspace name, joined in the same statement (no per-row lookups). */
@@ -181,33 +205,84 @@ export class IdentityRepository {
     await this.database.query('UPDATE staff_users SET password_hash = $2 WHERE id = $1', [id, passwordHash]);
   }
 
-  public async createSession(staffUserId: string, tokenHash: string, expiresAt: Date): Promise<void> {
+  public async createSession(staffUserId: string, tokenHash: string, expiresAt: Date, device: SessionDevice = NO_DEVICE): Promise<void> {
     await this.database.query(
       `
-      INSERT INTO staff_sessions (staff_user_id, token_hash, expires_at)
-      VALUES ($1, $2, $3)
+      INSERT INTO staff_sessions (staff_user_id, token_hash, expires_at, device_label, created_ip_hash)
+      VALUES ($1, $2, $3, $4, $5)
       `,
-      [staffUserId, tokenHash, expiresAt.toISOString()],
+      [staffUserId, tokenHash, expiresAt.toISOString(), device.label, device.ipHash],
     );
   }
 
   /**
-   * The person behind a live session. A switched-off account has no session that works, even if one is still
-   * stored.
+   * The person behind a live session. Live means: not past its absolute end, used within the idle window, and a
+   * switched-off account has no session that works even if one is still stored. Also answers which session row it is and
+   * when it was last used, so the caller can refresh that time (at most once a minute).
    */
-  public async findStaffBySessionTokenHash(tokenHash: string): Promise<StaffAccount | null> {
-    const result = await this.database.query<StaffUserRow>(
+  public async findLiveSession(tokenHash: string, idleSeconds: number): Promise<LiveSession | null> {
+    const result = await this.database.query<StaffUserRow & { session_id: string; session_last_used_at: Date }>(
       `
-      SELECT ${STAFF_COLUMNS}
+      SELECT ${STAFF_COLUMNS}, s.id AS session_id, s.last_used_at AS session_last_used_at
       FROM staff_sessions s
       INNER JOIN staff_users u ON u.id = s.staff_user_id
       INNER JOIN organizations o ON o.id = u.organization_id
-      WHERE s.token_hash = $1 AND s.expires_at > now() AND u.active
+      WHERE s.token_hash = $1
+        AND s.expires_at > now()
+        AND s.last_used_at > now() - ($2::double precision * interval '1 second')
+        AND u.active
       `,
-      [tokenHash],
+      [tokenHash, idleSeconds],
     );
     const row = result.rows[0];
-    return row === undefined ? null : mapStaff(row);
+    return row === undefined ? null : { staff: mapStaff(row), sessionId: row.session_id, lastUsedAt: new Date(row.session_last_used_at) };
+  }
+
+  /**
+   * Marks a session as used now. The `WHERE` makes it a no-op when another request already did so within the last
+   * minute, so a busy page costs at most one write a minute per session.
+   */
+  public async touchSession(sessionId: string): Promise<void> {
+    await this.database.query(
+      "UPDATE staff_sessions SET last_used_at = now() WHERE id = $1 AND last_used_at < now() - interval '1 minute'",
+      [sessionId],
+    );
+  }
+
+  /**
+   * The person's own live sessions, newest use first. `currentTokenHash` marks the one making the request.
+   */
+  public async listSessions(staffUserId: string, currentTokenHash: string, idleSeconds: number): Promise<StaffSessionInfo[]> {
+    const result = await this.database.query<SessionRow>(
+      `
+      SELECT id, device_label, created_at, last_used_at, expires_at, (token_hash = $2) AS current
+      FROM staff_sessions
+      WHERE staff_user_id = $1
+        AND expires_at > now()
+        AND last_used_at > now() - ($3::double precision * interval '1 second')
+      ORDER BY last_used_at DESC, created_at DESC
+      `,
+      [staffUserId, currentTokenHash, idleSeconds],
+    );
+    return result.rows.map(
+      (row: SessionRow): StaffSessionInfo => ({
+        id: row.id,
+        deviceLabel: row.device_label ?? 'Unknown device',
+        createdAt: new Date(row.created_at).toISOString(),
+        lastUsedAt: new Date(row.last_used_at).toISOString(),
+        expiresAt: new Date(row.expires_at).toISOString(),
+        current: row.current,
+      }),
+    );
+  }
+
+  /**
+   * Ends ONE session, only when it belongs to this person (the owner is part of the DELETE, so another person's id is
+   * simply "not found"). True when a session was removed.
+   */
+  public async deleteOwnSession(staffUserId: string, sessionId: string): Promise<boolean> {
+    const result = await this.database.query('DELETE FROM staff_sessions WHERE id = $1 AND staff_user_id = $2', [sessionId, staffUserId]);
+    return (result.rowCount ?? 0) > 0;
   }
 
   public async touchLastLogin(staffUserId: string): Promise<void> {
@@ -231,10 +306,14 @@ export class IdentityRepository {
   }
 
   /**
-   * Housekeeping: removes sessions that have expired. Returns how many.
+   * Housekeeping: removes sessions that ended: past their absolute end, or unused for longer than the idle window
+   * (they are already refused when read). Returns how many.
    */
-  public async purgeExpiredSessions(): Promise<number> {
-    const result = await this.database.query('DELETE FROM staff_sessions WHERE expires_at <= now()');
+  public async purgeExpiredSessions(idleSeconds: number): Promise<number> {
+    const result = await this.database.query(
+      "DELETE FROM staff_sessions WHERE expires_at <= now() OR last_used_at <= now() - ($1::double precision * interval '1 second')",
+      [idleSeconds],
+    );
     return result.rowCount ?? 0;
   }
 }

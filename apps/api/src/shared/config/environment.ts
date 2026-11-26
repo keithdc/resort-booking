@@ -154,6 +154,11 @@ export function validateEnvironment(env: Env): EnvironmentReport {
   } else if (!/^[0-9a-fA-F]{64}$/.test(twoFactorKey) && !/^[A-Za-z0-9+/_-]{43}=?$/.test(twoFactorKey)) {
     errors.push('TWO_FACTOR_ENCRYPTION_KEY is malformed: use 32 random bytes as 64 hex characters (or base64).');
   }
+  // The previous key (rotation, docs/13 R2-19) is optional but must be well formed when present.
+  const previousTwoFactorKey = env.TWO_FACTOR_ENCRYPTION_KEY_PREVIOUS?.trim() ?? '';
+  if (previousTwoFactorKey !== '' && !/^[0-9a-fA-F]{64}$/.test(previousTwoFactorKey) && !/^[A-Za-z0-9+/_-]{43}=?$/.test(previousTwoFactorKey)) {
+    errors.push('TWO_FACTOR_ENCRYPTION_KEY_PREVIOUS is malformed: use 32 random bytes as 64 hex characters (or base64).');
+  }
   const mail = mailEnvironmentProblems(env, production);
   errors.push(...mail.errors);
   warnings.push(...mail.warnings);

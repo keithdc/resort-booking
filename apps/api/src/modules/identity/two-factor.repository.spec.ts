@@ -47,6 +47,18 @@ describe('TwoFactorRepository', () => {
     await expect(repository.consumeRecoveryCode('u1', 'hash')).resolves.toBe(false);
   });
 
+  it('swaps the ciphertext during a key rotation only if the row still holds what was read', async () => {
+    await expect(repository.replaceSecret('u1', 'v1:new', 'v1:old')).resolves.toBe(true);
+
+    expect(sql()).toContain('SET secret_encrypted = $2');
+    expect(sql()).toContain('secret_encrypted = $3');
+    expect(sql()).not.toContain('last_used_step');
+    expect(params()).toEqual(['u1', 'v1:new', 'v1:old']);
+
+    query.mockResolvedValue({ rows: [], rowCount: 0 });
+    await expect(repository.replaceSecret('u1', 'v1:new', 'v1:old')).resolves.toBe(false);
+  });
+
   it('activates only an unconfirmed setup', async () => {
     await expect(repository.activate('u1', 9, ['h1', 'h2'])).resolves.toBe(true);
 

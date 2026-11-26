@@ -15,6 +15,7 @@ import {
   poolExecutor,
   type SqlExecutor,
 } from './migration-files';
+import { isDevelopment } from '../config/environment';
 import { compareMigrations, describeStaleBuild, type MigrationStatus } from './migration-status';
 import { DEFAULT_APP_ROLE } from './roles';
 
@@ -106,6 +107,9 @@ export class MigrationRunner implements OnModuleInit, OnModuleDestroy {
       await applyPendingMigrations(executor, {
         appRole: process.env.DB_APP_ROLE?.trim() || DEFAULT_APP_ROLE,
         onApplied: (file: string): void => this.logger.log(`Applied migration ${file}`),
+        // A developer edits a migration they have not shipped yet: report it. Anywhere else it stops the run (docs/13 R2-22).
+        strictChecksums: !isDevelopment(process.env),
+        onEdited: (message: string): void => this.logger.warn(message),
       });
     } catch (error: unknown) {
       if (isPermissionDenied(error)) {

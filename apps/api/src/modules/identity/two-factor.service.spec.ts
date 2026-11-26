@@ -526,7 +526,7 @@ describe('TwoFactorService', () => {
     it('a recovery code can prove the second factor when disabling', async () => {
       const codes = await enrolled();
 
-      await service.disable(STAFF, PASSWORD, codes[1] ?? '', CTX);
+      await service.disable(STAFF, PASSWORD, codes[1] ?? '', CTX, TOKEN);
 
       expect(await service.isEnabled(ME)).toBe(false);
     });
@@ -537,18 +537,42 @@ describe('TwoFactorService', () => {
       await enrolled();
       await service.createChallenge(ME);
 
-      await service.disable(STAFF, PASSWORD, codeNow(ME, 1), CTX);
+      await service.disable(STAFF, PASSWORD, codeNow(ME, 1), CTX, TOKEN);
 
       expect(store.states.has(ME)).toBe(false);
       expect(store.challenges.size).toBe(0);
       expect(audits.at(-1)).toMatchObject({ action: 'auth.two_factor_disabled', targetId: ME });
+    });
+
+    it('signs the person out everywhere else, keeping the session that made the change, and audits the count', async () => {
+      await enrolled();
+      deleteSessionsExcept.mockClear();
+
+      await service.disable(STAFF, PASSWORD, codeNow(ME, 1), CTX, TOKEN);
+
+      expect(deleteSessionsExcept).toHaveBeenCalledWith(ME, hashSessionToken(TOKEN));
+      expect(audits.at(-1)).toMatchObject({ action: 'auth.two_factor_disabled', metadata: { otherSessionsRevoked: 2 } });
+    });
+
+    it('a failed attempt revokes nothing', async () => {
+      await enrolled();
+      deleteSessionsExcept.mockClear();
+
+      await expect(service.disable(STAFF, 'nope', codeNow(ME, 1), CTX, TOKEN)).rejects.toBeDefined();
+
+      expect(deleteSessionsExcept).not.toHaveBeenCalled();
+    });
+
+    it('removes everything it should (status check)', async () => {
+      await enrolled();
+      await service.disable(STAFF, PASSWORD, codeNow(ME, 1), CTX, TOKEN);
       await expect(service.getStatus(ME)).resolves.toEqual({ enabled: false, enabledAt: null, setupPending: false, recoveryCodesRemaining: 0 });
     });
 
     it('a wrong password leaves it on', async () => {
       await enrolled();
 
-      await expect(service.disable(STAFF, 'nope', codeNow(ME, 1), CTX)).rejects.toMatchObject({ status: 401, response: { code: 'STAFF_PASSWORD_MISMATCH' } });
+      await expect(service.disable(STAFF, 'nope', codeNow(ME, 1), CTX, TOKEN)).rejects.toMatchObject({ status: 401, response: { code: 'STAFF_PASSWORD_MISMATCH' } });
 
       expect(await service.isEnabled(ME)).toBe(true);
     });
@@ -556,13 +580,13 @@ describe('TwoFactorService', () => {
     it('a wrong code leaves it on, even with the right password', async () => {
       await enrolled();
 
-      await expect(service.disable(STAFF, PASSWORD, '000000', CTX)).rejects.toMatchObject({ response: { code: 'TWO_FACTOR_CODE_INVALID' } });
+      await expect(service.disable(STAFF, PASSWORD, '000000', CTX, TOKEN)).rejects.toMatchObject({ response: { code: 'TWO_FACTOR_CODE_INVALID' } });
 
       expect(await service.isEnabled(ME)).toBe(true);
     });
 
     it('refuses when it is not on', async () => {
-      await expect(service.disable(STAFF, PASSWORD, '123456', CTX)).rejects.toMatchObject({ status: 409, response: { code: 'TWO_FACTOR_NOT_ENABLED' } });
+      await expect(service.disable(STAFF, PASSWORD, '123456', CTX, TOKEN)).rejects.toMatchObject({ status: 409, response: { code: 'TWO_FACTOR_NOT_ENABLED' } });
     });
 
     it('a replayed code cannot be used to disable', async () => {
@@ -571,7 +595,7 @@ describe('TwoFactorService', () => {
       const { challengeToken } = await service.createChallenge(ME);
       await service.completeChallenge(challengeToken, code, CTX);
 
-      await expect(service.disable(STAFF, PASSWORD, code, CTX)).rejects.toMatchObject({ response: { code: 'TWO_FACTOR_CODE_INVALID' } });
+      await expect(service.disable(STAFF, PASSWORD, code, CTX, TOKEN)).rejects.toMatchObject({ response: { code: 'TWO_FACTOR_CODE_INVALID' } });
     });
   });
 

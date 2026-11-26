@@ -69,8 +69,7 @@ export class UpsertHouseDto {
   public nightlyRateCents!: number;
 
   @IsString()
-  @MinLength(3)
-  @MaxLength(LIMITS.currencyCode)
+  @Matches(/^[A-Z]{3}$/, { message: 'currencyCode must be three capital letters, like EUR' })
   public currencyCode!: string;
 
   @IsBoolean()

@@ -6,6 +6,7 @@
 
 import { Body, Controller, Param, Post } from '@nestjs/common';
 import type { ApiOkBody, MockPaymentResult, PaymentSummary } from '@resort-booking/shared-types';
+import { PublicRateLimit } from '../../shared/http/public-rate-limit';
 import { MockPaymentDto } from './dto/mock-payment.dto';
 import { PaymentsService } from './payments.service';
 
@@ -17,6 +18,7 @@ export class PaymentsController {
    * Starts (or returns the open) payment for a card hold.
    */
   @Post('holds/:holdId/payment')
+  @PublicRateLimit('payment')
   public async start(@Param('holdId') holdId: string): Promise<ApiOkBody<PaymentSummary>> {
     return { status: 'ok', data: await this.payments.startPayment(holdId) };
   }
@@ -25,6 +27,7 @@ export class PaymentsController {
    * Test mode only: settle a payment as the provider would. 404 when a real provider is active.
    */
   @Post('payments/:paymentId/mock/complete')
+  @PublicRateLimit('payment')
   public async completeMock(
     @Param('paymentId') paymentId: string,
     @Body() body: MockPaymentDto,

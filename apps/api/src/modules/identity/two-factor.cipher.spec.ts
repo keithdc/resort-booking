@@ -14,13 +14,15 @@ import {
   parseTwoFactorKey,
   RECOVERY_CODE_COUNT,
   TwoFactorCipher,
+  UnreadableTwoFactorSecretError,
 } from './two-factor.cipher';
 
 const HEX_KEY = 'ab'.repeat(32);
 const USER = '2ae67f87-fcbf-4904-850f-a915246e0fab';
 
-function cipherWith(key: string | undefined): TwoFactorCipher {
-  const config = { get: (name: string): string | undefined => (name === 'TWO_FACTOR_ENCRYPTION_KEY' ? key : undefined) } as ConfigService;
+function cipherWith(key: string | undefined, previous?: string): TwoFactorCipher {
+  const values: Record<string, string | undefined> = { TWO_FACTOR_ENCRYPTION_KEY: key, TWO_FACTOR_ENCRYPTION_KEY_PREVIOUS: previous };
+  const config = { get: (name: string): string | undefined => values[name] } as ConfigService;
   return new TwoFactorCipher(config);
 }
 
@@ -137,5 +139,80 @@ describe('recovery codes', () => {
     expect(looksLikeRecoveryCode('ABCDE-FGHJ')).toBe(false);
     expect(looksLikeRecoveryCode('ABCDE-FGHJ0')).toBe(false);
     expect(looksLikeRecoveryCode('')).toBe(false);
+  });
+});
+
+describe('key rotation (docs/13 R2-19)', () => {
+  const OLD_KEY = 'ab'.repeat(32);
+  const NEW_KEY = 'cd'.repeat(32);
+  const secret = Buffer.from('12345678901234567890', 'ascii');
+
+  it('reads a secret made with the previous key, and says it should be re-encrypted', () => {
+    const stored = cipherWith(OLD_KEY).encrypt(secret, USER);
+    const rotated = cipherWith(NEW_KEY, OLD_KEY);
+
+    expect(rotated.decrypt(stored, USER).equals(secret)).toBe(true);
+    const fresh = rotated.reencrypt(stored, USER);
+    expect(fresh).not.toBeNull();
+    expect(fresh).not.toBe(stored);
+    expect(cipherWith(NEW_KEY).decrypt(fresh ?? '', USER).equals(secret)).toBe(true);
+  });
+
+  it('has nothing to re-encrypt for a secret already on the current key or one nobody can read', () => {
+    const rotated = cipherWith(NEW_KEY, OLD_KEY);
+
+    expect(rotated.reencrypt(rotated.encrypt(secret, USER), USER)).toBeNull();
+    expect(rotated.reencrypt('garbage', USER)).toBeNull();
+    expect(rotated.reencrypt(cipherWith('ef'.repeat(32)).encrypt(secret, USER), USER)).toBeNull();
+  });
+
+  it('writes new secrets with the current key only', () => {
+    const stored = cipherWith(NEW_KEY, OLD_KEY).encrypt(secret, USER);
+
+    expect(() => cipherWith(OLD_KEY).decrypt(stored, USER)).toThrow(UnreadableTwoFactorSecretError);
+    expect(cipherWith(NEW_KEY).decrypt(stored, USER).equals(secret)).toBe(true);
+  });
+
+  it('throws the typed error when no key reads the value (a rotated-away key)', () => {
+    const stored = cipherWith(OLD_KEY).encrypt(secret, USER);
+
+    expect(() => cipherWith(NEW_KEY).decrypt(stored, USER)).toThrow(UnreadableTwoFactorSecretError);
+    expect(() => cipherWith(NEW_KEY, 'ef'.repeat(32)).decrypt(stored, USER)).toThrow(UnreadableTwoFactorSecretError);
+  });
+
+  it('refuses a malformed previous key', () => {
+    expect(() => cipherWith(NEW_KEY, 'short')).toThrow('TWO_FACTOR_ENCRYPTION_KEY_PREVIOUS');
+  });
+});
+
+describe('recovery code hashes (docs/13 R2-19)', () => {
+  const cipher = cipherWith(HEX_KEY);
+
+  it('are HMACs bound to the key and the person, stable across spelling', () => {
+    const hash = cipher.hashRecoveryCode('abcde-fghjk', USER);
+
+    expect(hash).toMatch(/^h2:[0-9a-f]{64}$/);
+    expect(hash).toBe(cipher.hashRecoveryCode('ABCDEFGHJK', USER));
+    expect(hash).not.toBe(cipher.hashRecoveryCode('ABCDEFGHJK', 'someone-else'));
+    expect(hash).not.toBe(cipherWith('cd'.repeat(32)).hashRecoveryCode('ABCDEFGHJK', USER));
+    expect(hash).not.toBe(hashRecoveryCode('ABCDEFGHJK', USER));
+  });
+
+  it('are not recomputable from the code and the person alone (the point of the key)', () => {
+    expect(cipher.hashRecoveryCode('ABCDEFGHJK', USER)).not.toContain(hashRecoveryCode('ABCDEFGHJK', USER));
+  });
+
+  it('offers the current, the previous-key and the old plain hash as candidates, newest first', () => {
+    const rotated = cipherWith('cd'.repeat(32), HEX_KEY);
+
+    expect(rotated.recoveryHashCandidates('ABCDEFGHJK', USER)).toEqual([
+      rotated.hashRecoveryCode('ABCDEFGHJK', USER),
+      cipher.hashRecoveryCode('ABCDEFGHJK', USER),
+      hashRecoveryCode('ABCDEFGHJK', USER),
+    ]);
+    expect(cipher.recoveryHashCandidates('ABCDEFGHJK', USER)).toEqual([
+      cipher.hashRecoveryCode('ABCDEFGHJK', USER),
+      hashRecoveryCode('ABCDEFGHJK', USER),
+    ]);
   });
 });

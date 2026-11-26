@@ -8,6 +8,7 @@ import { ForbiddenException, Logger, UnauthorizedException } from '@nestjs/commo
 import { Reflector } from '@nestjs/core';
 import { ExecutionContextHost } from '@nestjs/core/helpers/execution-context-host';
 import { Test } from '@nestjs/testing';
+import { httpMetrics } from '../http/http-metrics';
 import { RoleGuard } from './role.guard';
 import { AllowRoles, RequireMoneyAccess, RequireRole } from './roles.decorator';
 import type { StaffAccount, StaffRole } from './staff-role';
@@ -107,5 +108,47 @@ describe('RoleGuard', () => {
     expect(() => guard.canActivate(context(AdminOnlyController, AdminOnlyController.prototype.adminRoute, undefined))).toThrow(
       UnauthorizedException,
     );
+  });
+
+  describe('refusals are visible (docs/13 R2-24)', () => {
+    it('logs a role refusal at warn with the route and the request id only, and counts it', () => {
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation((): void => undefined);
+      httpMetrics.takeWindow();
+      const host = new ExecutionContextHost(
+        [{ staff: account('employee'), requestId: 'req-12345678', originalUrl: '/staff/team?email=ada@example.com', params: { staffId: 'abc' } }],
+        AdminOnlyController,
+        AdminOnlyController.prototype.adminRoute,
+      );
+
+      expect(() => guard.canActivate(host)).toThrow(ForbiddenException);
+
+      expect(warn).toHaveBeenCalledTimes(1);
+      const line = String(warn.mock.calls[0]?.[0]);
+      expect(line).toBe('guard.denied guard=role route=AdminOnlyController.adminRoute req=req-12345678');
+      for (const personal of ['ada@example.com', 'Ada', 'o1', 's1', 'abc']) {
+        expect(line).not.toContain(personal);
+      }
+      expect(httpMetrics.takeWindow()).toMatchObject({ guardDenied: 1 });
+    });
+
+    it('logs and counts the missing money access refusal too, and says "none" when there is no request id', () => {
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation((): void => undefined);
+      httpMetrics.takeWindow();
+
+      expect(() => guard.canActivate(context(AdminOnlyController, AdminOnlyController.prototype.moneyRoute, account('employee', false)))).toThrow(ForbiddenException);
+
+      expect(String(warn.mock.calls[0]?.[0])).toBe('guard.denied guard=role route=AdminOnlyController.moneyRoute req=none');
+      expect(httpMetrics.takeWindow()).toMatchObject({ guardDenied: 1 });
+    });
+
+    it('logs and counts nothing for an allowed request', () => {
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation((): void => undefined);
+      httpMetrics.takeWindow();
+
+      expect(guard.canActivate(context(AdminOnlyController, AdminOnlyController.prototype.adminRoute, account('admin')))).toBe(true);
+
+      expect(warn).not.toHaveBeenCalled();
+      expect(httpMetrics.takeWindow()).toBeNull();
+    });
   });
 });

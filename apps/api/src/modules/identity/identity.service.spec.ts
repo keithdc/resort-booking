@@ -5,6 +5,7 @@
  */
 
 import { Logger, ServiceUnavailableException } from '@nestjs/common';
+import { randomBytes, scryptSync } from 'node:crypto';
 import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import type { OrganizationSettings, TwoFactorChallenge } from '@resort-booking/shared-types';
@@ -52,12 +53,15 @@ const SETTINGS: OrganizationSettings = {
 describe('IdentityService', () => {
   const findStaffByEmail = jest.fn<Promise<StaffWithHash | null>, [string]>();
   const findStaffById = jest.fn<Promise<StaffWithHash | null>, [string]>();
-  const findStaffBySessionTokenHash = jest.fn<Promise<StaffAccount | null>, [string]>();
+  const findLiveSession = jest.fn<Promise<{ staff: StaffAccount; sessionId: string; lastUsedAt: Date } | null>, [string, number]>();
+  const touchSession = jest.fn<Promise<void>, [string]>();
+  const listSessions = jest.fn<Promise<unknown[]>, [string, string, number]>();
+  const deleteOwnSession = jest.fn<Promise<boolean>, [string, string]>();
   const touchLastLogin = jest.fn<Promise<void>, [string]>();
   const auditRecord = jest.fn<Promise<boolean>, [AuditEntry]>();
-  const createSession = jest.fn<Promise<void>, [string, string, Date]>();
+  const createSession = jest.fn<Promise<void>, [string, string, Date, unknown?]>();
   const deleteSessionsExcept = jest.fn<Promise<number>, [string, string | null]>();
-  const purgeExpiredSessions = jest.fn<Promise<number>, []>();
+  const purgeExpiredSessions = jest.fn<Promise<number>, [number]>();
   const updateStaffPassword = jest.fn<Promise<void>, [string, string]>();
   const countStaffUsers = jest.fn<Promise<number>, []>();
   const getSettings = jest.fn<Promise<OrganizationSettings | null>, []>();
@@ -97,7 +101,10 @@ describe('IdentityService', () => {
           useValue: {
             findStaffByEmail,
             findStaffById,
-            findStaffBySessionTokenHash,
+            findLiveSession,
+            touchSession,
+            listSessions,
+            deleteOwnSession,
             createSession,
             deleteSessionsExcept,
             purgeExpiredSessions,
@@ -196,7 +203,7 @@ describe('IdentityService', () => {
 
       expect(result.token).toMatch(/^[0-9a-f]{64}$/);
       expect(result.staff.id).toBe(STAFF_ID);
-      expect(createSession).toHaveBeenCalledWith(STAFF_ID, hashSessionToken(result.token), expect.any(Date));
+      expect(createSession).toHaveBeenCalledWith(STAFF_ID, hashSessionToken(result.token), expect.any(Date), expect.objectContaining({ ipHash: 'ip:203.0.113.7' }));
       expect(touchLastLogin).toHaveBeenCalledWith(STAFF_ID);
       expect(auditRecord).toHaveBeenCalledWith(expect.objectContaining({ action: 'auth.login', metadata: { twoFactor: true } }));
     });
@@ -246,10 +253,45 @@ describe('IdentityService', () => {
 
       expect(result.token).toMatch(/^[0-9a-f]{64}$/);
       expect(result.staff.email).toBe('owner@example.com');
-      expect(createSession).toHaveBeenCalledWith(STAFF_ID, hashSessionToken(result.token), expect.any(Date));
+      expect(createSession).toHaveBeenCalledWith(STAFF_ID, hashSessionToken(result.token), expect.any(Date), expect.objectContaining({ ipHash: 'ip:203.0.113.7' }));
       expect(createSession.mock.calls[0]?.[1]).not.toBe(result.token);
       expect(recordSuccess).toHaveBeenCalledWith('owner@example.com');
       expect(logs.join('\n')).toContain('login.success');
+    });
+
+    it('re-hashes a password stored in the old format after a correct sign-in (R2-27)', async () => {
+      const salt = randomBytes(16);
+      const legacy = `${salt.toString('hex')}:${scryptSync('Correct-horse-9', salt, 64).toString('hex')}`;
+      findStaffByEmail.mockResolvedValue({ ...owner(), passwordHash: legacy });
+
+      await service.login('owner@example.com', 'Correct-horse-9', CONTEXT);
+
+      expect(updateStaffPassword).toHaveBeenCalledTimes(1);
+      const upgraded = updateStaffPassword.mock.calls[0]?.[1] ?? '';
+      expect(updateStaffPassword.mock.calls[0]?.[0]).toBe(STAFF_ID);
+      expect(upgraded).toMatch(/^scrypt[$]16384[$]8[$]1[$]/);
+      expect(upgraded).not.toContain('Correct-horse-9');
+    });
+
+    it('leaves a current-format hash alone, and a wrong password never triggers a re-hash', async () => {
+      findStaffByEmail.mockResolvedValue(owner());
+      await service.login('owner@example.com', 'Correct-horse-9', CONTEXT);
+
+      const salt = randomBytes(16);
+      findStaffByEmail.mockResolvedValue({ ...owner(), passwordHash: `${salt.toString('hex')}:${scryptSync('Correct-horse-9', salt, 64).toString('hex')}` });
+      await service.login('owner@example.com', 'Wrong-password-7', CONTEXT).catch(() => undefined);
+
+      expect(updateStaffPassword).not.toHaveBeenCalled();
+    });
+
+    it('still signs in when saving the upgraded hash fails', async () => {
+      const salt = randomBytes(16);
+      findStaffByEmail.mockResolvedValue({ ...owner(), passwordHash: `${salt.toString('hex')}:${scryptSync('Correct-horse-9', salt, 64).toString('hex')}` });
+      updateStaffPassword.mockRejectedValue(new Error('db down'));
+
+      const result = sessionOf(await service.login('owner@example.com', 'Correct-horse-9', CONTEXT));
+
+      expect(result.token).toMatch(/^[0-9a-f]{64}$/);
     });
 
     it('answers with the role and the workspace name, and notes the time of the last login', async () => {
@@ -363,7 +405,8 @@ describe('IdentityService', () => {
       const text = logs.join('\n');
       expect(text).toContain('login.failed');
       expect(text).toContain('req-test-0001');
-      expect(text).toContain('203.0.113.7');
+      expect(text).not.toContain('203.0.113.7');
+      expect(text).toMatch(/ip#[0-9a-f]{12}/);
       expect(text).toMatch(/email#[0-9a-f]{12}/);
       expect(text).not.toContain('owner@example.com');
       expect(text).not.toContain('Wrong-password-7');
@@ -388,12 +431,45 @@ describe('IdentityService', () => {
 
       expect(session.token).toMatch(/^[0-9a-f]{64}$/);
       expect(session.staff).toEqual(account);
-      expect(createSession).toHaveBeenCalledWith(STAFF_ID, hashSessionToken(session.token), expect.any(Date));
+      expect(createSession).toHaveBeenCalledWith(STAFF_ID, hashSessionToken(session.token), expect.any(Date), { label: null, ipHash: null });
       expect(new Date(session.expiresAt).getTime()).toBeGreaterThan(Date.now());
     });
   });
 
   describe('updateProfile', () => {
+    async function buildProfileService(): Promise<{ service: IdentityService; deleteExcept: jest.Mock }> {
+      const deleteExcept = jest.fn().mockResolvedValue(3);
+      const updateStaffProfile = jest.fn().mockResolvedValue({ id: STAFF_ID, organizationId: ORG, fullName: 'Owner', email: 'new@example.com', role: 'admin', organizationName: 'H', canManageRefunds: true });
+      const moduleRef = await Test.createTestingModule({
+        providers: [
+          IdentityService,
+          { provide: IdentityRepository, useValue: { updateStaffProfile, deleteSessionsExcept: deleteExcept } },
+          { provide: ConfigService, useValue: { get: (): undefined => undefined } },
+          { provide: LoginLimiter, useValue: {} },
+          { provide: TwoFactorService, useValue: {} },
+          { provide: AuditService, useValue: {} },
+        ],
+      }).compile();
+      return { service: moduleRef.get(IdentityService), deleteExcept };
+    }
+
+    it('signs out every other session when the EMAIL changes, keeping the caller\'s', async () => {
+      const { service: profile, deleteExcept } = await buildProfileService();
+
+      await profile.updateProfile(STAFF_ID, { fullName: 'Owner', email: 'New@Example.com' }, { currentEmail: 'old@example.com', token: 'abc' });
+
+      expect(deleteExcept).toHaveBeenCalledWith(STAFF_ID, hashSessionToken('abc'));
+    });
+
+    it('keeps the other sessions when only the name changes (or the email differs by case only)', async () => {
+      const { service: profile, deleteExcept } = await buildProfileService();
+
+      await profile.updateProfile(STAFF_ID, { fullName: 'New Name', email: 'NEW@example.com' }, { currentEmail: 'new@example.com', token: 'abc' });
+      await profile.updateProfile(STAFF_ID, { fullName: 'New Name', email: 'new@example.com' });
+
+      expect(deleteExcept).not.toHaveBeenCalled();
+    });
+
     it('answers 409 EMAIL_TAKEN when another account already uses the email', async () => {
       const updateStaffProfile = jest.fn().mockRejectedValue(Object.assign(new Error('duplicate key'), { code: '23505' }));
       const moduleRef = await Test.createTestingModule({
@@ -415,30 +491,120 @@ describe('IdentityService', () => {
   });
 
   describe('sessions', () => {
-    it('knows a person only by the hash of a stored, unexpired session token', async () => {
-      findStaffBySessionTokenHash.mockResolvedValue({
-        id: STAFF_ID,
-        organizationId: ORG,
-        fullName: 'Owner',
-        email: 'owner@example.com',
-        role: 'admin',
-        organizationName: 'Humphreys',
-        canManageRefunds: true,
-      });
+    const account: StaffAccount = {
+      id: STAFF_ID,
+      organizationId: ORG,
+      fullName: 'Owner',
+      email: 'owner@example.com',
+      role: 'admin',
+      organizationName: 'Humphreys',
+      canManageRefunds: true,
+    };
+    const AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
+
+    it('knows a person only by the hash of a stored, live session token, with the idle window in seconds', async () => {
+      findLiveSession.mockResolvedValue({ staff: account, sessionId: 'sess-1', lastUsedAt: new Date() });
 
       await expect(service.staffFromToken('abc')).resolves.toMatchObject({ id: STAFF_ID });
 
-      expect(findStaffBySessionTokenHash).toHaveBeenCalledWith(hashSessionToken('abc'));
+      expect(findLiveSession).toHaveBeenCalledWith(hashSessionToken('abc'), 30 * 60);
     });
 
     it('has no master token: a STAFF_TOKEN setting opens nothing', async () => {
       settings.STAFF_TOKEN = 'dev-staff-token';
-      findStaffBySessionTokenHash.mockResolvedValue(null);
+      findLiveSession.mockResolvedValue(null);
 
       await expect(service.staffFromToken('dev-staff-token')).resolves.toBeNull();
 
       expect(findStaffByEmail).not.toHaveBeenCalled();
-      expect(findStaffBySessionTokenHash).toHaveBeenCalledWith(hashSessionToken('dev-staff-token'));
+      expect(findLiveSession).toHaveBeenCalledWith(hashSessionToken('dev-staff-token'), 30 * 60);
+    });
+
+    it('refreshes last use only when it is over a minute old, so a busy page writes once a minute', async () => {
+      touchSession.mockResolvedValue(undefined);
+      findLiveSession.mockResolvedValueOnce({ staff: account, sessionId: 'sess-1', lastUsedAt: new Date(Date.now() - 10 * 1000) });
+      await service.staffFromToken('abc');
+      expect(touchSession).not.toHaveBeenCalled();
+
+      findLiveSession.mockResolvedValueOnce({ staff: account, sessionId: 'sess-1', lastUsedAt: new Date(Date.now() - 61 * 1000) });
+      await service.staffFromToken('abc');
+      expect(touchSession).toHaveBeenCalledWith('sess-1');
+    });
+
+    it('a failed refresh never refuses a valid session', async () => {
+      touchSession.mockRejectedValue(new Error('db hiccup'));
+      findLiveSession.mockResolvedValue({ staff: account, sessionId: 'sess-1', lastUsedAt: new Date(Date.now() - 5 * 60 * 1000) });
+
+      await expect(service.staffFromToken('abc')).resolves.toMatchObject({ id: STAFF_ID });
+    });
+
+    it('uses the configured idle limit', async () => {
+      settings.STAFF_SESSION_IDLE_MINUTES = '45';
+      service = await build();
+      findLiveSession.mockResolvedValue(null);
+
+      await service.staffFromToken('abc');
+
+      expect(findLiveSession).toHaveBeenCalledWith(hashSessionToken('abc'), 45 * 60);
+    });
+
+    it('stores the device label and the IP HASH of a new session, never the raw User-Agent or IP', async () => {
+      await service.startSession(account, { ip: '203.0.113.7', userAgent: AGENT });
+
+      expect(createSession.mock.calls[0]?.[3]).toEqual({ label: 'Chrome on macOS', ipHash: 'ip:203.0.113.7' });
+      expect(createSession.mock.calls[0]?.[3]).not.toHaveProperty('ip');
+      expect(JSON.stringify(createSession.mock.calls[0])).not.toContain('AppleWebKit');
+    });
+
+    it('gives admins a shorter absolute lifetime (8 hours) than employees (12 hours) by default', async () => {
+      const before = Date.now();
+      const admin = await service.startSession(account);
+      const employee = await service.startSession({ ...account, role: 'employee' });
+
+      const hours = (iso: string): number => (new Date(iso).getTime() - before) / 3_600_000;
+      expect(hours(admin.expiresAt)).toBeGreaterThan(7.99);
+      expect(hours(admin.expiresAt)).toBeLessThan(8.01);
+      expect(hours(employee.expiresAt)).toBeGreaterThan(11.99);
+      expect(hours(employee.expiresAt)).toBeLessThan(12.01);
+    });
+
+    it('takes the absolute lifetimes from the environment', async () => {
+      settings.STAFF_SESSION_MAX_HOURS = '24';
+      settings.STAFF_ADMIN_SESSION_MAX_HOURS = '2';
+      service = await build();
+      const before = Date.now();
+
+      const admin = await service.startSession(account);
+      const employee = await service.startSession({ ...account, role: 'employee' });
+
+      expect((new Date(admin.expiresAt).getTime() - before) / 3_600_000).toBeCloseTo(2, 1);
+      expect((new Date(employee.expiresAt).getTime() - before) / 3_600_000).toBeCloseTo(24, 1);
+    });
+
+    it('lists only the caller\'s sessions, marking the current token\'s hash', async () => {
+      listSessions.mockResolvedValue([]);
+
+      await expect(service.listSessions(STAFF_ID, 'abc')).resolves.toEqual([]);
+
+      expect(listSessions).toHaveBeenCalledWith(STAFF_ID, hashSessionToken('abc'), 30 * 60);
+    });
+
+    it('revokes one session of the caller, and answers 404 SESSION_NOT_FOUND for any other id', async () => {
+      deleteOwnSession.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+
+      await expect(service.revokeSession(STAFF_ID, 'mine')).resolves.toBeUndefined();
+      await expect(service.revokeSession(STAFF_ID, 'theirs')).rejects.toMatchObject({ status: 404, response: { code: 'SESSION_NOT_FOUND' } });
+
+      expect(deleteOwnSession).toHaveBeenNthCalledWith(1, STAFF_ID, 'mine');
+      expect(deleteOwnSession).toHaveBeenNthCalledWith(2, STAFF_ID, 'theirs');
+    });
+
+    it('signs out every other session and keeps the one making the request', async () => {
+      deleteSessionsExcept.mockResolvedValue(2);
+
+      await expect(service.revokeOtherSessions(STAFF_ID, 'abc')).resolves.toBe(2);
+
+      expect(deleteSessionsExcept).toHaveBeenCalledWith(STAFF_ID, hashSessionToken('abc'));
     });
 
     it('signs a person out everywhere', async () => {
@@ -449,10 +615,12 @@ describe('IdentityService', () => {
       expect(deleteSessionsExcept).toHaveBeenCalledWith(STAFF_ID, null);
     });
 
-    it('purges expired sessions', async () => {
+    it('purges ended sessions (expired or idle) with the idle window', async () => {
       purgeExpiredSessions.mockResolvedValue(7);
 
       await expect(service.purgeExpiredSessions()).resolves.toBe(7);
+
+      expect(purgeExpiredSessions).toHaveBeenCalledWith(30 * 60);
     });
   });
 
@@ -560,7 +728,7 @@ describe('IdentityService', () => {
 
       await service.onModuleInit();
 
-      expect(insertStaffUser).toHaveBeenCalledWith(ORG, 'Owner', 'boss@example.com', expect.stringMatching(/^[0-9a-f]{32}:/));
+      expect(insertStaffUser).toHaveBeenCalledWith(ORG, 'Owner', 'boss@example.com', expect.stringMatching(/^scrypt[$]16384[$]8[$]1[$][0-9a-f]{32}[$]/));
     });
 
     it('has no fallback password: it stops with a clear message when the environment gives none', async () => {

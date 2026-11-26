@@ -56,11 +56,11 @@ describe('RegistrationController', () => {
   });
 
   it('previews an invitation with the caller IP', async () => {
-    preview.mockResolvedValue({ organizationName: 'Humphreys', email: 'new@example.com', role: 'employee' });
+    preview.mockResolvedValue({ organizationName: 'Humphreys', email: 'new@example.com', role: 'employee', isReset: false });
 
     await expect(controller.preview(TOKEN, request())).resolves.toEqual({
       status: 'ok',
-      data: { organizationName: 'Humphreys', email: 'new@example.com', role: 'employee' },
+      data: { organizationName: 'Humphreys', email: 'new@example.com', role: 'employee', isReset: false },
     });
 
     expect(preview).toHaveBeenCalledWith(TOKEN, { ip: '203.0.113.7', requestId: 'req-1' });

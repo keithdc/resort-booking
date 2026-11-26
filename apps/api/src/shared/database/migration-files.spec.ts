@@ -88,13 +88,14 @@ describe('lockdownMigrationTable', () => {
 });
 
 describe('restrictFinancialTables', () => {
-  it('narrows the money and audit tables for the app role, one statement each, and does nothing else', async () => {
+  it('narrows the money and audit tables and hides the erasure ledger from the app role, one statement each, and does nothing else', async () => {
     const { sql, seen } = executor({ ledgerExists: true, applied: [] });
 
     await restrictFinancialTables(sql, 'resort_app');
 
-    expect(seen).toHaveLength(5);
+    expect(seen).toHaveLength(6);
     expect(seen.join('\n')).toContain('public.audit_log');
+    expect(seen.join('\n')).toContain('public.privacy_erasure_ledger');
     expect(seen.join('\n')).toContain('public.payment_webhook_events');
     expect(seen.every((text: string) => text.startsWith('DO $$') && text.includes('"resort_app"'))).toBe(true);
   });

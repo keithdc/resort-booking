@@ -7,6 +7,7 @@ import { HttpException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import type { Hold, HouseAvailability, HouseSearchResult, PropertyAvailability, Quote } from '@resort-booking/shared-types';
 import type { Request } from 'express';
+import { PublicRateLimitGuard } from '../../shared/http/public-rate-limit';
 import { AvailabilityService } from './availability.service';
 import type { CreateHoldDto } from './dto/create-hold.dto';
 import { QuoteQueryDto } from './dto/quote-query.dto';
@@ -79,7 +80,10 @@ describe('InventoryController guardrails', () => {
           },
         },
       ],
-    }).compile();
+    })
+      .overrideGuard(PublicRateLimitGuard)
+      .useValue({ canActivate: (): boolean => true })
+      .compile();
     controller = moduleRef.get(InventoryController);
   });
 

@@ -209,7 +209,7 @@ describe('TeamService', () => {
       expect(identity.assertPasswordAcceptable).toHaveBeenCalledWith(GOOD_PASSWORD, 'ada@example.com');
       const passed = repo.registerWorkspace.mock.calls[0]?.[0];
       expect(passed).toMatchObject({ organizationName: 'Humphreys', fullName: 'Ada Lovelace', email: 'ada@example.com' });
-      expect(passed?.passwordHash).toMatch(/^[0-9a-f]+:[0-9a-f]+$/);
+      expect(passed?.passwordHash).toMatch(/^scrypt[$]\d+[$]\d+[$]\d+[$][0-9a-f]+[$][0-9a-f]+$/);
       expect(JSON.stringify(passed)).not.toContain(GOOD_PASSWORD);
       expect(session.staff).toMatchObject({ role: 'admin', organizationName: 'Humphreys', canManageRefunds: true });
       expect(recordBy).toHaveBeenCalledWith(
@@ -643,7 +643,7 @@ describe('TeamService', () => {
     it('shows only the workspace name, the email and the role of an open invitation', async () => {
       repo.findInviteByTokenHash.mockResolvedValue(inviteRecord());
 
-      await expect(service.preview(TOKEN, CONTEXT)).resolves.toEqual({ organizationName: 'Humphreys', email: 'new@example.com', role: 'employee' });
+      await expect(service.preview(TOKEN, CONTEXT)).resolves.toEqual({ organizationName: 'Humphreys', email: 'new@example.com', role: 'employee', isReset: false });
 
       expect(repo.findInviteByTokenHash).toHaveBeenCalledWith(hashSessionToken(TOKEN));
       expect(limiter.checkInvitePreview).toHaveBeenCalledWith('203.0.113.7');
@@ -671,6 +671,14 @@ describe('TeamService', () => {
     });
   });
 
+  describe('preview of a reset link', () => {
+    it('says isReset for a link tied to an existing member', async () => {
+      repo.findInviteByTokenHash.mockResolvedValue(inviteRecord({ staffUserId: 'eve-1' }));
+
+      await expect(service.preview(TOKEN, CONTEXT)).resolves.toMatchObject({ isReset: true });
+    });
+  });
+
   describe('accept', () => {
     const input = { token: TOKEN, password: GOOD_PASSWORD, fullName: ' Chosen Name ' };
     const account: StaffAccount = { id: 'new-1', organizationId: ORG, fullName: 'Chosen Name', email: 'new@example.com', role: 'employee', organizationName: 'Humphreys', canManageRefunds: false };
@@ -687,7 +695,7 @@ describe('TeamService', () => {
       expect(identity.assertPasswordAcceptable).toHaveBeenCalledWith(GOOD_PASSWORD, 'new@example.com');
       const passed = repo.acceptInvite.mock.calls[0]?.[0];
       expect(passed).toMatchObject({ tokenHash: hashSessionToken(TOKEN), fullName: 'Chosen Name' });
-      expect(passed?.passwordHash).toMatch(/^[0-9a-f]+:[0-9a-f]+$/);
+      expect(passed?.passwordHash).toMatch(/^scrypt[$]\d+[$]\d+[$]\d+[$][0-9a-f]+[$][0-9a-f]+$/);
       expect(JSON.stringify(passed)).not.toContain(GOOD_PASSWORD);
       expect(session.staff).toEqual(account);
       expect(recordBy).toHaveBeenCalledWith(
@@ -703,6 +711,15 @@ describe('TeamService', () => {
 
       expect(repo.acceptInvite.mock.calls[0]?.[0].fullName).toBeNull();
       expect(repo.acceptInvite.mock.calls[1]?.[0].fullName).toBeNull();
+    });
+
+    it('never renames the member on an access-reset link, even if a name is sent', async () => {
+      repo.findInviteByTokenHash.mockResolvedValue(inviteRecord({ staffUserId: 'eve-1' }));
+      repo.acceptInvite.mockResolvedValue({ account, inviteId: 'inv-1', reset: true });
+
+      await service.accept(input, CONTEXT);
+
+      expect(repo.acceptInvite.mock.calls[0]?.[0].fullName).toBeNull();
     });
 
     it('refuses a weak password and uses up nothing', async () => {

@@ -117,6 +117,14 @@ describe('TWO_FACTOR_ENCRYPTION_KEY', () => {
     expect(validateEnvironment(production).errors).toEqual([]);
   });
 
+  it('may have a previous key for rotation; a malformed one is refused and never printed', () => {
+    expect(validateEnvironment({ ...production, TWO_FACTOR_ENCRYPTION_KEY_PREVIOUS: 'cd'.repeat(32) }).errors).toEqual([]);
+    expect(validateEnvironment({ ...production, TWO_FACTOR_ENCRYPTION_KEY_PREVIOUS: '' }).errors).toEqual([]);
+    const report = validateEnvironment({ ...production, TWO_FACTOR_ENCRYPTION_KEY_PREVIOUS: 'old-key-but-wrong' });
+    expect(report.errors.join(' ')).toContain('TWO_FACTOR_ENCRYPTION_KEY_PREVIOUS is malformed');
+    expect(JSON.stringify(report)).not.toContain('old-key-but-wrong');
+  });
+
   it('never prints the key', () => {
     const report = validateEnvironment({ ...production, TWO_FACTOR_ENCRYPTION_KEY: 'top-secret-but-wrong' });
     expect(JSON.stringify(report)).not.toContain('top-secret-but-wrong');

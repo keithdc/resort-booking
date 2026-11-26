@@ -11,6 +11,8 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 import { assertDatabaseEnvironment } from './shared/config/database-environment';
 import { assertEnvironment } from './shared/config/environment';
+import { accessLogMiddleware } from './shared/http/access-log';
+import { startMetricsSummary } from './shared/http/http-metrics';
 import { ApiExceptionFilter } from './shared/filters/api-exception.filter';
 import { trustProxySetting } from './shared/http/client-ip';
 import { requestIdMiddleware } from './shared/http/request-id';
@@ -35,6 +37,18 @@ async function bootstrap(): Promise<void> {
   // from every route except POST /payments/webhooks/*, and webhookSizeGuard refuses an oversized webhook unread.
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false, rawBody: true });
   app.disable('x-powered-by');
+  // First, so every response is logged and counted, including the ones the body parser or the size guards refuse (413):
+  // the request id, then one structured line per request (docs/13 R2-24; no query strings, bodies, IPs or emails).
+  app.use(requestIdMiddleware);
+  const accessLogger = new Logger('Http');
+  app.use(
+    accessLogMiddleware({
+      log: (line: string): void => accessLogger.log(line),
+      warn: (line: string): void => accessLogger.warn(line),
+      error: (line: string): void => accessLogger.error(line),
+    }),
+  );
+  startMetricsSummary((line: string): void => accessLogger.log(line));
   app.use(webhookSizeGuard);
   app.useBodyParser('json', { limit: JSON_BODY_LIMIT });
   app.useBodyParser('urlencoded', { limit: JSON_BODY_LIMIT, extended: false });
@@ -42,7 +56,6 @@ async function bootstrap(): Promise<void> {
 
   // TRUST_PROXY=<hops> only when a reverse proxy sits in front: otherwise X-Forwarded-For is client-controlled.
   app.set('trust proxy', trustProxySetting(process.env.TRUST_PROXY));
-  app.use(requestIdMiddleware);
   app.use(securityHeadersMiddleware);
   app.use(urlLengthMiddleware);
 

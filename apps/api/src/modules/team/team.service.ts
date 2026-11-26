@@ -228,7 +228,7 @@ export class TeamService {
   public async preview(token: string, context: PublicContext): Promise<InvitePreview> {
     await this.limiter.checkInvitePreview(context.ip);
     const invite = await this.openInvite(token);
-    return { organizationName: invite.organizationName, email: invite.email, role: invite.role };
+    return { organizationName: invite.organizationName, email: invite.email, role: invite.role, isReset: invite.staffUserId !== null };
   }
 
   /**
@@ -243,7 +243,8 @@ export class TeamService {
       throw this.emailTaken();
     }
     const passwordHash = await hashPassword(input.password);
-    const trimmed = input.fullName?.trim();
+    // A reset link only sets a password: it never renames an existing member, whatever the body says.
+    const trimmed = invite.staffUserId === null ? input.fullName?.trim() : undefined;
     let used: Awaited<ReturnType<TeamRepository['acceptInvite']>>;
     try {
       used = await this.team.acceptInvite({

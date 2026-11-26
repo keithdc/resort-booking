@@ -21,9 +21,9 @@ import { createSessionToken, hashSessionToken, verifyPassword } from './identity
 import { IdentityRepository } from './identity.repository';
 import {
   generateRecoveryCodes,
-  hashRecoveryCode,
   looksLikeRecoveryCode,
   TwoFactorCipher,
+  UnreadableTwoFactorSecretError,
 } from './two-factor.cipher';
 import { TwoFactorLimiter } from './two-factor-limiter';
 import { TwoFactorRepository, type TwoFactorState } from './two-factor.repository';
@@ -119,7 +119,7 @@ export class TwoFactorService {
     if (state.enabledAt !== null) {
       throw new ConflictException({ message: 'Two-factor authentication is already on', code: 'TWO_FACTOR_ALREADY_ENABLED' });
     }
-    const step = matchTotp(this.cipher.decrypt(state.secretEncrypted, staff.id), code, Date.now());
+    const step = matchTotp(this.secretOf(state.secretEncrypted, staff.id), code, Date.now());
     if (step === null) {
       throw await this.wrongCode(staff, context, 'enable');
     }
@@ -127,7 +127,7 @@ export class TwoFactorService {
     const activated = await this.store.activate(
       staff.id,
       step,
-      recoveryCodes.map((item): string => hashRecoveryCode(item, staff.id)),
+      recoveryCodes.map((item): string => this.cipher.hashRecoveryCode(item, staff.id)),
     );
     if (!activated) {
       throw new ConflictException({ message: 'Two-factor authentication is already on', code: 'TWO_FACTOR_ALREADY_ENABLED' });
@@ -142,11 +142,19 @@ export class TwoFactorService {
     return { recoveryCodes };
   }
 
-  /** Switches two-factor off. Needs the current password AND a valid code (or an unused recovery code). */
-  public async disable(staff: StaffAccount, password: string, code: string, context: TwoFactorContext): Promise<void> {
+  /**
+   * Switches two-factor off. Needs the current password AND a valid code (or an unused recovery code), and signs the
+   * person out everywhere else: `currentToken` is the session making the change and stays signed in.
+   */
+  public async disable(staff: StaffAccount, password: string, code: string, context: TwoFactorContext, currentToken: string): Promise<void> {
     await this.proveBothFactors(staff, password, code, context, 'disable');
     await this.store.remove(staff.id);
-    await this.audit.recordBy(actorOf(staff, context), 'auth.two_factor_disabled', { targetType: 'staff_user', targetId: staff.id });
+    const revoked = await this.identity.deleteSessionsExcept(staff.id, currentToken === '' ? null : hashSessionToken(currentToken));
+    await this.audit.recordBy(actorOf(staff, context), 'auth.two_factor_disabled', {
+      targetType: 'staff_user',
+      targetId: staff.id,
+      metadata: { otherSessionsRevoked: revoked },
+    });
   }
 
   /** Replaces all recovery codes with ten new ones (this once only). Needs the password and a code. */
@@ -160,7 +168,7 @@ export class TwoFactorService {
     const recoveryCodes = generateRecoveryCodes();
     await this.store.replaceRecoveryCodes(
       staff.id,
-      recoveryCodes.map((item): string => hashRecoveryCode(item, staff.id)),
+      recoveryCodes.map((item): string => this.cipher.hashRecoveryCode(item, staff.id)),
     );
     await this.audit.recordBy(actorOf(staff, context), 'auth.recovery_codes_regenerated', { targetType: 'staff_user', targetId: staff.id });
     return { recoveryCodes };
@@ -287,16 +295,55 @@ export class TwoFactorService {
       return null;
     }
     if (looksLikeTotpCode(input)) {
-      const step = matchTotp(this.cipher.decrypt(state.secretEncrypted, staffUserId), input, Date.now());
+      const step = matchTotp(this.secretOf(state.secretEncrypted, staffUserId), input, Date.now());
       if (step === null || !(await this.store.acceptStep(staffUserId, step))) {
         return null;
       }
+      await this.moveSecretToCurrentKey(staffUserId, state.secretEncrypted);
       return 'totp';
     }
-    if (looksLikeRecoveryCode(input) && (await this.store.consumeRecoveryCode(staffUserId, hashRecoveryCode(input, staffUserId)))) {
-      return 'recovery';
+    if (looksLikeRecoveryCode(input)) {
+      // Current-key hash first, then the previous key's and the pre-R2-19 plain hash: codes issued earlier keep working.
+      for (const hash of this.cipher.recoveryHashCandidates(input, staffUserId)) {
+        if (await this.store.consumeRecoveryCode(staffUserId, hash)) {
+          return 'recovery';
+        }
+      }
     }
     return null;
+  }
+
+  /**
+   * Reads the stored secret. A value no configured key can read (the key was rotated away, the row was damaged) is a
+   * controlled 401 with its own code and an error line to alert on, not a 500: an admin resets that person's
+   * two-factor from the team page (docs/13 R2-19).
+   */
+  private secretOf(secretEncrypted: string, staffUserId: string): Buffer {
+    try {
+      return this.cipher.decrypt(secretEncrypted, staffUserId);
+    } catch (error: unknown) {
+      if (!(error instanceof UnreadableTwoFactorSecretError)) {
+        throw error;
+      }
+      this.logger.error(`two_factor.secret_unreadable staff=${staffUserId}: check TWO_FACTOR_ENCRYPTION_KEY(_PREVIOUS), then reset this person's two-factor`);
+      throw new UnauthorizedException({
+        message: 'Two-factor sign-in is not available for this account right now. Ask an admin to reset it.',
+        code: 'TWO_FACTOR_UNAVAILABLE',
+      });
+    }
+  }
+
+  /** After a successful code: a secret still on the previous key is re-encrypted with the current one. Never fails the sign-in. */
+  private async moveSecretToCurrentKey(staffUserId: string, secretEncrypted: string): Promise<void> {
+    const fresh = this.cipher.reencrypt(secretEncrypted, staffUserId);
+    if (fresh === null) {
+      return;
+    }
+    try {
+      await this.store.replaceSecret(staffUserId, fresh, secretEncrypted);
+    } catch {
+      this.logger.warn(`two_factor.rekey_failed staff=${staffUserId}`);
+    }
   }
 
   /** Counts, audits and builds the 401 for a wrong code. */

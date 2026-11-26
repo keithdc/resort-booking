@@ -7,6 +7,7 @@ import {
   assertIdentifier,
   buildRoleStatements,
   quoteLiteral,
+  OWNER_ONLY_TABLES,
   RESTRICTED_TABLES,
   restrictedTableStatements,
   roleOptionsFromEnv,
@@ -167,12 +168,20 @@ describe('buildRoleStatements', () => {
   it('skips a table that does not exist and one the connected role cannot change', () => {
     const statements = restrictedTableStatements('resort_app');
 
-    expect(statements).toHaveLength(RESTRICTED_TABLES.length);
+    expect(statements).toHaveLength(RESTRICTED_TABLES.length + OWNER_ONLY_TABLES.length);
     for (const statement of statements) {
       expect(statement).toContain("to_regclass('public.");
       expect(statement).toContain("pg_has_role(current_user");
       expect(statement).toContain("rolname = 'resort_app'");
     }
+  });
+
+  it('takes every right on the erasure ledger away from the app role', () => {
+    const ledger = restrictedTableStatements('resort_app').filter((statement: string): boolean => statement.includes('privacy_erasure_ledger'));
+
+    expect(ledger).toHaveLength(1);
+    expect(ledger[0]).toContain('REVOKE ALL ON public.privacy_erasure_ledger FROM "resort_app"');
+    expect(ledger[0]).not.toContain('GRANT');
   });
 
   it('refuses an unsafe role name in the restricted statements', () => {

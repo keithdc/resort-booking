@@ -5,12 +5,31 @@
  */
 
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import type { GeocodeHit } from '@resort-booking/shared-types';
 import { fetchBoundedJson } from './geocode-fetch';
+import { TtlCache } from './geocode-cache';
 import { mergeReverseHits } from './geocode.rules';
 
-const USER_AGENT = 'resort-booking-admin/0.1 (direct-booking prototype)';
-const GEOCODE_HEADERS = { Accept: 'application/json', 'User-Agent': USER_AGENT };
+/** The most suggestions a search returns, whatever the upstream sends. */
+export const GEOCODE_MAX_HITS = 7;
+/** Longest text kept for any one field of a hit (an upstream cannot make us store or forward a huge label). */
+export const GEOCODE_MAX_FIELD_LENGTH = 200;
+
+/**
+ * The User-Agent Nominatim and Photon ask for: the application and its version, and optionally where to reach the
+ * operator (GEOCODE_CONTACT, for example the public URL of the site). No staff or guest data ever goes in it.
+ */
+export function geocodeUserAgent(contact: string | undefined): string {
+  const trimmed = contact?.trim() ?? '';
+  const safe = /^[\x21-\x7e]{1,100}$/.test(trimmed) ? trimmed : '';
+  return safe === '' ? 'resort-booking/1.0 (booking software; address lookup)' : `resort-booking/1.0 (booking software; address lookup; ${safe})`;
+}
+
+/** Lower-cased, trimmed, single-spaced: "Rue  de Paris " and "rue de paris" are one lookup. */
+export function normalizeGeocodeQuery(query: string): string {
+  return query.trim().replace(/\s+/g, ' ').toLowerCase();
+}
 
 interface PhotonProperties {
   name?: string;
@@ -56,26 +75,53 @@ interface NominatimHit {
 
 @Injectable()
 export class GeocodeService {
-  /**
-   * Type-ahead for staff pins. Photon is built for autocomplete; Nominatim is the fallback.
-   */
-  public async search(query: string): Promise<GeocodeHit[]> {
-    const photon = await this.searchPhoton(query);
-    if (photon.length > 0) {
-      return photon;
-    }
-    return this.searchNominatim(query);
+  private readonly headers: Record<string, string>;
+  private readonly searches = new TtlCache<GeocodeHit[]>();
+  private readonly reverses = new TtlCache<GeocodeHit>();
+
+  public constructor(config: ConfigService) {
+    this.headers = { Accept: 'application/json', 'User-Agent': geocodeUserAgent(config.get<string>('GEOCODE_CONTACT')) };
   }
 
   /**
-   * Pin drop: Nominatim first (town/postcode/country), Photon fills any blanks.
+   * Type-ahead for staff pins. Photon is built for autocomplete; Nominatim is the fallback. A found answer is cached for
+   * a few minutes by normalised query (the upstreams are free services with a usage policy); "nothing found" is not, so
+   * a hiccup is retried at once. At most GEOCODE_MAX_HITS suggestions.
+   */
+  public async search(query: string): Promise<GeocodeHit[]> {
+    const key = normalizeGeocodeQuery(query);
+    const cached = this.searches.get(key);
+    if (cached !== undefined) {
+      return cached;
+    }
+    const photon = await this.searchPhoton(query);
+    const hits = (photon.length > 0 ? photon : await this.searchNominatim(query)).slice(0, GEOCODE_MAX_HITS).map(capHit);
+    if (hits.length > 0) {
+      this.searches.set(key, hits);
+    }
+    return hits;
+  }
+
+  /**
+   * Pin drop: Nominatim first (town/postcode/country), Photon fills any blanks. Cached by the point rounded to about
+   * 10 m (4 decimals) when something was found.
    */
   public async reverse(latitude: number, longitude: number): Promise<GeocodeHit | null> {
+    const key = `${latitude.toFixed(4)},${longitude.toFixed(4)}`;
+    const cached = this.reverses.get(key);
+    if (cached !== undefined) {
+      return cached;
+    }
     const [nominatim, photon] = await Promise.all([
       this.reverseNominatim(latitude, longitude),
       this.reversePhoton(latitude, longitude),
     ]);
-    return mergeReverseHits(nominatim, photon);
+    const merged = mergeReverseHits(nominatim, photon);
+    const hit = merged === null ? null : capHit(merged);
+    if (hit !== null) {
+      this.reverses.set(key, hit);
+    }
+    return hit;
   }
 
   private async searchPhoton(query: string): Promise<GeocodeHit[]> {
@@ -85,7 +131,7 @@ export class GeocodeService {
     url.searchParams.set('lang', 'en');
     url.searchParams.set('lat', '46.6');
     url.searchParams.set('lon', '2.2');
-    const payload = await fetchBoundedJson(url, GEOCODE_HEADERS);
+    const payload = await fetchBoundedJson(url, this.headers);
     if (payload === null) {
       return [];
     }
@@ -104,7 +150,7 @@ export class GeocodeService {
     url.searchParams.set('lat', String(latitude));
     url.searchParams.set('lon', String(longitude));
     url.searchParams.set('lang', 'en');
-    const payload = await fetchBoundedJson(url, GEOCODE_HEADERS);
+    const payload = await fetchBoundedJson(url, this.headers);
     if (payload === null) {
       return null;
     }
@@ -129,7 +175,7 @@ export class GeocodeService {
     url.searchParams.set('lon', String(longitude));
     url.searchParams.set('format', 'json');
     url.searchParams.set('addressdetails', '1');
-    const payload = await fetchBoundedJson(url, GEOCODE_HEADERS);
+    const payload = await fetchBoundedJson(url, this.headers);
     if (payload === null) {
       return null;
     }
@@ -146,7 +192,7 @@ export class GeocodeService {
     url.searchParams.set('format', 'json');
     url.searchParams.set('addressdetails', '1');
     url.searchParams.set('limit', '6');
-    const payload = await fetchBoundedJson(url, GEOCODE_HEADERS);
+    const payload = await fetchBoundedJson(url, this.headers);
     if (payload === null) {
       return [];
     }
@@ -155,6 +201,12 @@ export class GeocodeService {
     }
     return payload.filter(isNominatimHit).map(mapNominatim).filter(isPlacedHit);
   }
+}
+
+/** Cuts every text field to a sane length. */
+function capHit(hit: GeocodeHit): GeocodeHit {
+  const cap = (text: string): string => text.slice(0, GEOCODE_MAX_FIELD_LENGTH);
+  return { ...hit, label: cap(hit.label), addressLine: cap(hit.addressLine), city: cap(hit.city), postalCode: cap(hit.postalCode) };
 }
 
 function isPhotonFeature(value: unknown): value is PhotonFeature {

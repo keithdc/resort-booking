@@ -36,12 +36,60 @@ describe('IdentityRepository sessions', () => {
     expect(query.mock.calls[0]?.[0]).toContain('$2::text IS NULL');
   });
 
-  it('purges expired sessions and reports the count (zero when the driver gives none)', async () => {
-    await expect(repository.purgeExpiredSessions()).resolves.toBe(2);
+  it('purges sessions past their absolute end OR idle too long, and reports the count (zero when the driver gives none)', async () => {
+    await expect(repository.purgeExpiredSessions(1800)).resolves.toBe(2);
     expect(query.mock.calls[0]?.[0]).toContain('expires_at <= now()');
+    expect(query.mock.calls[0]?.[0]).toContain('last_used_at <= now()');
+    expect(query.mock.calls[0]?.[1]).toEqual([1800]);
 
     query.mockResolvedValue({ rows: [], rowCount: null });
-    await expect(repository.purgeExpiredSessions()).resolves.toBe(0);
+    await expect(repository.purgeExpiredSessions(1800)).resolves.toBe(0);
+  });
+
+  it('stores a new session with its device label and IP hash only', async () => {
+    await repository.createSession('s1', 'hash', new Date('2030-01-01T00:00:00Z'), { label: 'Chrome on macOS', ipHash: 'iphash' });
+
+    expect(query.mock.calls[0]?.[0]).toContain('device_label, created_ip_hash');
+    expect(query.mock.calls[0]?.[1]).toEqual(['s1', 'hash', '2030-01-01T00:00:00.000Z', 'Chrome on macOS', 'iphash']);
+  });
+
+  it('refreshes last use only when the stored time is over a minute old (one write a minute at most)', async () => {
+    await repository.touchSession('sess-1');
+
+    expect(query.mock.calls[0]?.[0]).toContain("last_used_at < now() - interval '1 minute'");
+    expect(query.mock.calls[0]?.[1]).toEqual(['sess-1']);
+  });
+
+  it('lists only the person\'s own live sessions, flags the current one by hash, and never selects the token hash out', async () => {
+    query.mockResolvedValue({
+      rows: [
+        { id: 'a', device_label: 'Chrome on macOS', created_at: new Date('2030-01-01T08:00:00Z'), last_used_at: new Date('2030-01-01T09:00:00Z'), expires_at: new Date('2030-01-01T16:00:00Z'), current: true },
+        { id: 'b', device_label: null, created_at: new Date('2030-01-01T07:00:00Z'), last_used_at: new Date('2030-01-01T07:30:00Z'), expires_at: new Date('2030-01-01T15:00:00Z'), current: false },
+      ],
+      rowCount: 2,
+    });
+
+    const sessions = await repository.listSessions('s1', 'cur-hash', 1800);
+
+    const sql = query.mock.calls[0]?.[0] ?? '';
+    expect(sql).toContain('staff_user_id = $1');
+    expect(sql).toContain('expires_at > now()');
+    expect(sql).toContain('last_used_at > now()');
+    expect(query.mock.calls[0]?.[1]).toEqual(['s1', 'cur-hash', 1800]);
+    expect(sessions).toEqual([
+      { id: 'a', deviceLabel: 'Chrome on macOS', createdAt: '2030-01-01T08:00:00.000Z', lastUsedAt: '2030-01-01T09:00:00.000Z', expiresAt: '2030-01-01T16:00:00.000Z', current: true },
+      { id: 'b', deviceLabel: 'Unknown device', createdAt: '2030-01-01T07:00:00.000Z', lastUsedAt: '2030-01-01T07:30:00.000Z', expiresAt: '2030-01-01T15:00:00.000Z', current: false },
+    ]);
+    expect(JSON.stringify(sessions)).not.toContain('hash');
+  });
+
+  it('ends one session only when it belongs to the person: the owner is part of the DELETE', async () => {
+    await expect(repository.deleteOwnSession('s1', 'sess-9')).resolves.toBe(true);
+    expect(query.mock.calls[0]?.[0]).toContain('id = $1 AND staff_user_id = $2');
+    expect(query.mock.calls[0]?.[1]).toEqual(['sess-9', 's1']);
+
+    query.mockResolvedValue({ rows: [], rowCount: 0 });
+    await expect(repository.deleteOwnSession('s1', 'someone-elses')).resolves.toBe(false);
   });
 });
 
@@ -59,8 +107,14 @@ describe('IdentityRepository accounts', () => {
     active: true,
     can_manage_refunds: false,
     organization_name: 'Humphreys',
+    session_id: 'sess-1',
+    session_last_used_at: new Date('2030-01-01T09:00:00Z'),
     ...overrides,
   });
+
+  async function liveStaff(hash: string): Promise<unknown> {
+    return (await repository.findLiveSession(hash, 1800))?.staff;
+  }
 
   beforeEach(async () => {
     jest.resetAllMocks();
@@ -72,11 +126,14 @@ describe('IdentityRepository accounts', () => {
   });
 
   it('finds the person behind a session only while their account is switched on, with role and workspace name in ONE statement', async () => {
-    const account = await repository.findStaffBySessionTokenHash('hash');
+    const live = await repository.findLiveSession('hash', 1800);
+    const account = live?.staff;
 
     expect(query).toHaveBeenCalledTimes(1);
     const sql = query.mock.calls[0]?.[0] ?? '';
     expect(sql).toContain('s.expires_at > now()');
+    expect(sql).toContain('s.last_used_at > now()');
+    expect(query.mock.calls[0]?.[1]).toEqual(['hash', 1800]);
     expect(sql).toContain('u.active');
     expect(sql).toContain('INNER JOIN organizations o');
     expect(account).toEqual({
@@ -92,12 +149,19 @@ describe('IdentityRepository accounts', () => {
     expect(JSON.stringify(account)).not.toContain('salt:hash');
   });
 
+  it('answers which session row it is and when it was last used', async () => {
+    await expect(repository.findLiveSession('hash', 1800)).resolves.toMatchObject({
+      sessionId: 'sess-1',
+      lastUsedAt: new Date('2030-01-01T09:00:00Z'),
+    });
+  });
+
   it('reads the refund permission from the database on EVERY lookup (no cache), so a change applies at once', async () => {
     query.mockResolvedValueOnce({ rows: [row({ role: 'employee', can_manage_refunds: true })], rowCount: 1 });
     query.mockResolvedValueOnce({ rows: [row({ role: 'employee', can_manage_refunds: false })], rowCount: 1 });
 
-    await expect(repository.findStaffBySessionTokenHash('hash')).resolves.toMatchObject({ role: 'employee', canManageRefunds: true });
-    await expect(repository.findStaffBySessionTokenHash('hash')).resolves.toMatchObject({ role: 'employee', canManageRefunds: false });
+    await expect(liveStaff('hash')).resolves.toMatchObject({ role: 'employee', canManageRefunds: true });
+    await expect(liveStaff('hash')).resolves.toMatchObject({ role: 'employee', canManageRefunds: false });
 
     expect(query).toHaveBeenCalledTimes(2);
     expect(query.mock.calls[0]?.[0]).toContain('u.can_manage_refunds');
@@ -107,14 +171,14 @@ describe('IdentityRepository accounts', () => {
     query.mockResolvedValueOnce({ rows: [row({ role: 'admin', can_manage_refunds: false })], rowCount: 1 });
     query.mockResolvedValueOnce({ rows: [row({ role: 'employee', can_manage_refunds: false })], rowCount: 1 });
 
-    await expect(repository.findStaffBySessionTokenHash('a')).resolves.toMatchObject({ canManageRefunds: true });
-    await expect(repository.findStaffBySessionTokenHash('b')).resolves.toMatchObject({ canManageRefunds: false });
+    await expect(liveStaff('a')).resolves.toMatchObject({ canManageRefunds: true });
+    await expect(liveStaff('b')).resolves.toMatchObject({ canManageRefunds: false });
   });
 
   it('never turns an unknown role value into admin', async () => {
     query.mockResolvedValue({ rows: [row({ role: 'superuser' })], rowCount: 1 });
 
-    await expect(repository.findStaffBySessionTokenHash('hash')).resolves.toMatchObject({ role: 'employee' });
+    await expect(liveStaff('hash')).resolves.toMatchObject({ role: 'employee' });
   });
 
   it('finds an account by email without regard to case, and reports its switched-on state for the sign-in', async () => {
@@ -132,7 +196,7 @@ describe('IdentityRepository accounts', () => {
 
     await expect(repository.findStaffByEmail('ghost@example.com')).resolves.toBeNull();
     await expect(repository.findStaffById('nobody')).resolves.toBeNull();
-    await expect(repository.findStaffBySessionTokenHash('nope')).resolves.toBeNull();
+    await expect(repository.findLiveSession('nope', 1800)).resolves.toBeNull();
   });
 
   it('inserts an account as an admin by default (first start), with the given role otherwise, lower-casing the email', async () => {

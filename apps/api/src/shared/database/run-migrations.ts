@@ -28,6 +28,7 @@ async function main(): Promise<void> {
   try {
     const applied = await applyPendingMigrations(poolExecutor(pool), {
       appRole: process.env.DB_APP_ROLE?.trim() || DEFAULT_APP_ROLE,
+      strictChecksums: true,
       onApplied: (file: string): void => {
         process.stdout.write(`applied ${file}\n`);
       },

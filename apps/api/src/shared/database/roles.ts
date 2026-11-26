@@ -140,13 +140,34 @@ export const RESTRICTED_TABLES: readonly RestrictedTable[] = [
 ];
 
 /**
+ * Tables the API never touches: the app role gets no right at all. Only the owner-run privacy commands read and write
+ * them (docs/15). Migration 038 creates the erasure ledger, which holds keyed hashes of erased people.
+ */
+export const OWNER_ONLY_TABLES: readonly string[] = ['privacy_erasure_ledger'];
+
+/**
  * The statements that give the app role its narrow rights on RESTRICTED_TABLES: everything is taken away first, then
- * SELECT and INSERT (and UPDATE of named columns) are granted. A table that does not exist yet is skipped, and so is
- * one the connected role may not change, so the statements are safe to run after any migration and again later.
+ * SELECT and INSERT (and UPDATE of named columns) are granted. OWNER_ONLY_TABLES lose every right. A table that does
+ * not exist yet is skipped, and so is one the connected role may not change, so the statements are safe to run after
+ * any migration and again later.
  */
 export function restrictedTableStatements(appRole: string): string[] {
   const app = assertIdentifier(appRole, 'The app role');
-  return RESTRICTED_TABLES.map((entry: RestrictedTable): string => {
+  const hidden = OWNER_ONLY_TABLES.map((name: string): string => {
+    const table = assertIdentifier(name, 'The table name');
+    return `
+      DO $$
+      BEGIN
+        IF to_regclass('public.${table}') IS NOT NULL
+           AND pg_has_role(current_user, (SELECT relowner FROM pg_class WHERE oid = to_regclass('public.${table}')), 'MEMBER')
+           AND EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${app}') THEN
+          REVOKE ALL ON public.${table} FROM "${app}";
+        END IF;
+      END
+      $$
+    `.replace(/\s+/g, ' ').trim();
+  });
+  const narrowed = RESTRICTED_TABLES.map((entry: RestrictedTable): string => {
     const table = assertIdentifier(entry.table, 'The table name');
     const columns = entry.updatableColumns.map((column: string): string => `"${assertIdentifier(column, 'The column name')}"`);
     const update = columns.length === 0 ? '' : `GRANT UPDATE (${columns.join(', ')}) ON public.${table} TO "${app}";`;
@@ -164,6 +185,7 @@ export function restrictedTableStatements(appRole: string): string[] {
       $$
     `.replace(/\s+/g, ' ').trim();
   });
+  return [...narrowed, ...hidden];
 }
 
 /**

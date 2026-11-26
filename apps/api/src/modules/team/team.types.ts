@@ -68,6 +68,8 @@ export interface InvitePreview {
   organizationName: string;
   email: string;
   role: StaffRole;
+  /** True for an access-reset link for an existing member: the page asks for a new password only. */
+  isReset: boolean;
 }
 
 export interface MemberChange {

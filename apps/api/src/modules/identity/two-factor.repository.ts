@@ -84,6 +84,18 @@ export class TwoFactorRepository {
     return (result.rowCount ?? 0) > 0;
   }
 
+  /**
+   * Swaps the stored ciphertext of a secret for a re-encrypted copy (key rotation). Only when the row still holds the
+   * ciphertext that was read (`expected`), so a concurrent setup is never overwritten. The secret itself does not change.
+   */
+  public async replaceSecret(staffUserId: string, secretEncrypted: string, expected: string): Promise<boolean> {
+    const result = await this.database.query(
+      'UPDATE staff_two_factor SET secret_encrypted = $2 WHERE staff_user_id = $1 AND secret_encrypted = $3',
+      [staffUserId, secretEncrypted, expected],
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
   /** Switches two-factor on once, storing the accepted step and the recovery code hashes. False if already on. */
   public async activate(staffUserId: string, step: number, recoveryCodeHashes: string[]): Promise<boolean> {
     const result = await this.database.query(

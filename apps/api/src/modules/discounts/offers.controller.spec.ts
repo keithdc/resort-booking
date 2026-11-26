@@ -3,9 +3,12 @@
  * @feature discounts
  */
 
+import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { GUARDS_METADATA } from '@nestjs/common/constants';
 import type { PromotedOffer } from '@resort-booking/shared-types';
+import { PublicRateLimitGuard } from '../../shared/http/public-rate-limit';
+import { RedisService } from '../../shared/redis/redis.service';
 import { OffersController } from './offers.controller';
 import { OffersService } from './offers.service';
 
@@ -17,7 +20,11 @@ describe('OffersController', () => {
     jest.resetAllMocks();
     const moduleRef = await Test.createTestingModule({
       controllers: [OffersController],
-      providers: [{ provide: OffersService, useValue: { listForProperty } }],
+      providers: [
+        { provide: OffersService, useValue: { listForProperty } },
+        { provide: RedisService, useValue: {} },
+        { provide: ConfigService, useValue: { get: (): undefined => undefined } },
+      ],
     }).compile();
     controller = moduleRef.get(OffersController);
   });
@@ -28,8 +35,8 @@ describe('OffersController', () => {
     expect(listForProperty).toHaveBeenCalledWith('alpine-lake');
   });
 
-  it('is public: no staff guard on the route or the class', () => {
+  it('is public: no staff guard on the class, only the per-IP limiter on the route', () => {
     expect(Reflect.getMetadata(GUARDS_METADATA, OffersController)).toBeUndefined();
-    expect(Reflect.getMetadata(GUARDS_METADATA, OffersController.prototype.list)).toBeUndefined();
+    expect(Reflect.getMetadata(GUARDS_METADATA, OffersController.prototype.list)).toEqual([PublicRateLimitGuard]);
   });
 });

@@ -6,6 +6,7 @@
 
 import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import type { ApiOkBody, ExtraService } from '@resort-booking/shared-types';
+import { PublicRateLimit } from '../../shared/http/public-rate-limit';
 import { StaffGuard } from '../identity/staff.guard';
 import { UpsertExtraDto } from './dto/upsert-extra.dto';
 import { ExtrasService } from './extras.service';
@@ -20,6 +21,7 @@ export class ExtrasController {
   public constructor(private readonly extras: ExtrasService) {}
 
   @Get('properties/:slug/extras')
+  @PublicRateLimit('read')
   public async listPublished(@Param('slug') slug: string): Promise<ApiOkBody<ExtraService[]>> {
     return { status: 'ok', data: await this.extras.listPublishedForSlug(slug) };
   }

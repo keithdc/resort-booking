@@ -22,6 +22,7 @@ import {
 import { CreateHoldDto } from './dto/create-hold.dto';
 import { QuoteQueryDto } from './dto/quote-query.dto';
 import { SearchQueryDto } from './dto/search-query.dto';
+import { PublicRateLimit } from '../../shared/http/public-rate-limit';
 import { clientIp } from '../../shared/http/client-ip';
 import { HoldRateLimiter } from './hold-rate-limiter';
 import { InventoryService } from './inventory.service';
@@ -99,6 +100,7 @@ export class InventoryController {
    * Reads a hold, including expired ones so the guest form can stay filled.
    */
   @Get('holds/:id')
+  @PublicRateLimit('read')
   public async getHold(@Param('id') id: string): Promise<ApiOkBody<Hold>> {
     return { status: 'ok', data: await this.inventory.getHold(id) };
   }

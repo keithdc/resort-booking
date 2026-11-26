@@ -71,10 +71,10 @@ describe('TwoFactorController', () => {
     disable.mockResolvedValue(undefined);
     regenerateRecoveryCodes.mockResolvedValue(CODES);
 
-    await expect(controller.disable(STAFF, { currentPassword: 'pw', code: '123456' }, request())).resolves.toEqual({ status: 'ok', data: { disabled: true } });
+    await expect(controller.disable(STAFF, { currentPassword: 'pw', code: '123456' }, request(), 'tok')).resolves.toEqual({ status: 'ok', data: { disabled: true } });
     await expect(controller.regenerate(STAFF, { currentPassword: 'pw', code: 'AAAAA-BBBBB' }, request())).resolves.toEqual({ status: 'ok', data: CODES });
 
-    expect(disable).toHaveBeenCalledWith(STAFF, 'pw', '123456', CONTEXT);
+    expect(disable).toHaveBeenCalledWith(STAFF, 'pw', '123456', CONTEXT, 'tok');
     expect(regenerateRecoveryCodes).toHaveBeenCalledWith(STAFF, 'pw', 'AAAAA-BBBBB', CONTEXT);
   });
 

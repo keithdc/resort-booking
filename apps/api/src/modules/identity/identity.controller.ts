@@ -7,17 +7,26 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Headers,
   NotFoundException,
+  Param,
   Patch,
   Post,
   Req,
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
-import type { ApiOkBody, Organization, OrganizationSettings, TwoFactorChallenge } from '@resort-booking/shared-types';
-import type { AuditChangeCarrier } from '../../shared/audit/audit.types';
+import type {
+  ApiOkBody,
+  Organization,
+  OrganizationSettings,
+  StaffSessionList,
+  StaffSessionsEnded,
+  TwoFactorChallenge,
+} from '@resort-booking/shared-types';
+import type { AuditChangeCarrier, AuditMetadata } from '../../shared/audit/audit.types';
 import { Audited } from '../../shared/audit/audited.decorator';
 import { clientIp } from '../../shared/http/client-ip';
 import { RoleGuard } from '../../shared/roles/role.guard';
@@ -31,8 +40,15 @@ import { TwoFactorLoginDto } from './dto/two-factor.dto';
 import { UpdateStaffProfileDto } from './dto/update-staff-profile.dto';
 import { IdentityService } from './identity.service';
 import { StaffGuard, type StaffRequest } from './staff.guard';
+import { PublicRateLimit } from '../../shared/http/public-rate-limit';
 import { CurrentStaff } from '../../shared/tenancy/current-staff.decorator';
 import { TenantExempt } from '../../shared/tenancy/tenant-scope.decorator';
+
+/** The count out of a revoke-others answer, for the audit row (0 when the answer has another shape). */
+function sessionsEndedOf(result: unknown): number {
+  const data = typeof result === 'object' && result !== null && 'data' in result ? result.data : null;
+  return typeof data === 'object' && data !== null && 'sessionsEnded' in data && typeof data.sessionsEnded === 'number' ? data.sessionsEnded : 0;
+}
 
 @Controller()
 export class IdentityController {
@@ -42,6 +58,7 @@ export class IdentityController {
    * Public stub: which operator this deployment belongs to.
    */
   @Get('identity/organization')
+  @PublicRateLimit('read')
   public async getOrganization(): Promise<ApiOkBody<Organization>> {
     const organization = await this.identity.getOrganization();
     if (organization === null) {
@@ -59,7 +76,7 @@ export class IdentityController {
     @Body() body: StaffLoginDto,
     @Req() request: RequestWithId,
   ): Promise<ApiOkBody<StaffSessionResult | TwoFactorChallenge>> {
-    const context = { ip: clientIp(request), requestId: request.requestId };
+    const context = { ip: clientIp(request), requestId: request.requestId, userAgent: request.header('user-agent') };
     return { status: 'ok', data: await this.identity.login(body.email, body.password, context) };
   }
 
@@ -68,7 +85,7 @@ export class IdentityController {
    */
   @Post('staff/login/two-factor')
   public async loginTwoFactor(@Body() body: TwoFactorLoginDto, @Req() request: RequestWithId): Promise<ApiOkBody<StaffSessionResult>> {
-    const context = { ip: clientIp(request), requestId: request.requestId };
+    const context = { ip: clientIp(request), requestId: request.requestId, userAgent: request.header('user-agent') };
     return { status: 'ok', data: await this.identity.completeTwoFactorLogin(body.challengeToken, body.code, context) };
   }
 
@@ -101,6 +118,53 @@ export class IdentityController {
   }
 
   /**
+   * The signed-in person's own live sessions ("signed-in devices"): a coarse device label and times, never the token,
+   * an IP or the raw User-Agent. The session making the request is flagged `current`.
+   */
+  @Get('staff/me/sessions')
+  @UseGuards(StaffGuard, RoleGuard)
+  @AllowRoles('admin', 'employee')
+  @TenantExempt('acts only on the signed-in staff member (the id comes from the session, never from the request)')
+  public async listSessions(
+    @CurrentStaff() staff: StaffAccount,
+    @Headers('x-staff-token') token: string | undefined,
+  ): Promise<ApiOkBody<StaffSessionList>> {
+    return { status: 'ok', data: { sessions: await this.identity.listSessions(staff.id, token ?? '') } };
+  }
+
+  /**
+   * "Sign out everywhere else": ends every session of the signed-in person except this one.
+   */
+  @Post('staff/me/sessions/revoke-others')
+  @UseGuards(StaffGuard, RoleGuard)
+  @AllowRoles('admin', 'employee')
+  @Audited({
+    action: 'auth.sessions_revoked_others',
+    targetType: 'staff_user',
+    details: ({ result }): AuditMetadata => ({ sessionsEnded: sessionsEndedOf(result) }),
+  })
+  @TenantExempt('acts only on the signed-in staff member (the id comes from the session, never from the request)')
+  public async revokeOthers(
+    @CurrentStaff() staff: StaffAccount,
+    @Headers('x-staff-token') token: string | undefined,
+  ): Promise<ApiOkBody<StaffSessionsEnded>> {
+    return { status: 'ok', data: { sessionsEnded: await this.identity.revokeOtherSessions(staff.id, token ?? '') } };
+  }
+
+  /**
+   * Ends one of the signed-in person's OWN sessions. The owner is part of the SQL, so another person's session is 404.
+   */
+  @Delete('staff/me/sessions/:id')
+  @UseGuards(StaffGuard, RoleGuard)
+  @AllowRoles('admin', 'employee')
+  @Audited({ action: 'auth.session_revoked', targetType: 'staff_session', targetParam: 'id' })
+  @TenantExempt('the session must belong to the signed-in staff member: the owner is part of the DELETE statement')
+  public async revokeSession(@CurrentStaff() staff: StaffAccount, @Param('id') id: string): Promise<ApiOkBody<{ revoked: true }>> {
+    await this.identity.revokeSession(staff.id, id);
+    return { status: 'ok', data: { revoked: true } };
+  }
+
+  /**
    * Signed-in owner profile.
    */
   @Get('staff/me')
@@ -115,7 +179,7 @@ export class IdentityController {
   }
 
   /**
-   * Name and login email for the owner account.
+   * Name and login email for the owner account. Changing the email signs the person out of every other device.
    */
   @Patch('staff/me')
   @UseGuards(StaffGuard, RoleGuard)
@@ -125,11 +189,13 @@ export class IdentityController {
   public async patchMe(
     @Req() request: StaffRequest,
     @Body() body: UpdateStaffProfileDto,
+    @Headers('x-staff-token') token: string | undefined,
   ): Promise<ApiOkBody<StaffAccount>> {
     if (request.staff === undefined) {
       throw new UnauthorizedException({ message: 'Staff authentication required', code: 'STAFF_UNAUTHORIZED' });
     }
-    return { status: 'ok', data: await this.identity.updateProfile(request.staff.id, body) };
+    const session = { currentEmail: request.staff.email, token: token ?? '' };
+    return { status: 'ok', data: await this.identity.updateProfile(request.staff.id, body, session) };
   }
 
   /**

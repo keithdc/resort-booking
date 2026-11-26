@@ -32,7 +32,7 @@ describe('dummyPasswordHash', (): void => {
   it('is a real hash in the same format, shared by every caller', async (): Promise<void> => {
     const first = await dummyPasswordHash();
 
-    expect(first).toMatch(/^[0-9a-f]{32}:[0-9a-f]{128}$/);
+    expect(first).toMatch(/^scrypt[$]16384[$]8[$]1[$][0-9a-f]{32}[$][0-9a-f]{128}$/);
     expect(await dummyPasswordHash()).toBe(first);
   });
 

@@ -18,6 +18,7 @@ import type {
   ChangeStaffPasswordRequest,
   Organization,
   OrganizationSettings,
+  StaffSessionInfo,
   TwoFactorChallenge,
   UpdateOrganizationSettingsRequest,
   UpdateStaffProfileRequest,
@@ -33,26 +34,36 @@ import {
   dummyPasswordHash,
   hashPassword,
   hashSessionToken,
+  passwordNeedsRehash,
   verifyPassword,
 } from './identity.password';
 import { validatePassword } from '../../shared/validation/password-policy';
 import { PasswordTooWeakException } from '../../shared/validation/password-too-weak.exception';
-import { IdentityRepository } from './identity.repository';
+import { deviceLabelFromUserAgent } from './identity.device-label';
+import { IdentityRepository, NO_DEVICE, type SessionDevice } from './identity.repository';
+import { resolveSessionPolicy, type SessionPolicy } from './identity.session-policy';
 import { diffOrganizationSettings, settingsAuditMetadata } from './organization-settings-diff';
 import { LoginLimiter } from './login-limiter';
 import { TwoFactorService } from './two-factor.service';
 
-const SESSION_MS = 7 * 24 * 60 * 60 * 1000;
+/** A session's last-used time is refreshed at most this often (one write a minute per session, not one per request). */
+const TOUCH_EVERY_MS = 60 * 1000;
 
 /** Where a sign-in attempt came from, for the limiter and the auth log. */
 export interface LoginContext {
   ip: string | undefined;
   requestId: string | undefined;
+  /** The browser's User-Agent: only a coarse device label is kept from it. */
+  userAgent?: string | undefined;
 }
+
+/** What a new session records about where it was opened. */
+export type SessionOrigin = Pick<LoginContext, 'ip' | 'userAgent'>;
 
 @Injectable()
 export class IdentityService implements OnModuleInit {
   private readonly logger = new Logger('Auth');
+  private readonly policy: SessionPolicy;
 
   public constructor(
     private readonly identity: IdentityRepository,
@@ -60,7 +71,9 @@ export class IdentityService implements OnModuleInit {
     private readonly limiter: LoginLimiter,
     private readonly audit: AuditService,
     private readonly twoFactor: TwoFactorService,
-  ) {}
+  ) {
+    this.policy = resolveSessionPolicy((name: string): string | undefined => this.config.get<string>(name));
+  }
 
   public async onModuleInit(): Promise<void> {
     await this.ensureOwnerAccount();
@@ -127,7 +140,8 @@ export class IdentityService implements OnModuleInit {
     }
 
     const staff = await this.identity.findStaffByEmail(address);
-    const matches = await verifyPassword(password, staff === null ? await dummyPasswordHash() : staff.passwordHash);
+    // The network key keeps one source from filling the shared hashing queue (docs/13 R2-18).
+    const matches = await verifyPassword(password, staff === null ? await dummyPasswordHash() : staff.passwordHash, context.ip);
     // A switched-off account fails exactly like a wrong password: nothing tells the caller it exists.
     if (staff === null || !matches || !staff.active) {
       await this.limiter.recordFailure(address, context.ip);
@@ -144,6 +158,7 @@ export class IdentityService implements OnModuleInit {
     }
 
     await this.limiter.recordSuccess(address);
+    await this.upgradePasswordHash(staff.id, staff.passwordHash, password);
     if (await this.twoFactor.isEnabled(staff.id)) {
       this.logger.log(`login.second_factor_required staff=${staff.id} ${who}`);
       return this.twoFactor.createChallenge(staff.id);
@@ -170,7 +185,7 @@ export class IdentityService implements OnModuleInit {
 
   /** Opens the session and writes the success to the logs; shared by both ways of signing in. */
   private async finishLogin(staff: StaffAccount, context: LoginContext, who: string, secondFactor: boolean): Promise<StaffSessionResult> {
-    const session = await this.startSession(staff);
+    const session = await this.startSession(staff, context);
     await this.identity.touchLastLogin(staff.id);
     this.logger.log(`login.success staff=${staff.id} ${who}`);
     await this.audit.record({
@@ -188,10 +203,11 @@ export class IdentityService implements OnModuleInit {
    * Opens a session for an account that has just proved who it is (signing in, registering, accepting an
    * invitation). The token is returned once; only its hash is stored.
    */
-  public async startSession(staff: StaffAccount): Promise<StaffSessionResult> {
+  public async startSession(staff: StaffAccount, origin?: SessionOrigin): Promise<StaffSessionResult> {
     const token = createSessionToken();
-    const expiresAt = new Date(Date.now() + SESSION_MS);
-    await this.identity.createSession(staff.id, hashSessionToken(token), expiresAt);
+    const lifetime = staff.role === 'admin' ? this.policy.adminMaxMs : this.policy.employeeMaxMs;
+    const expiresAt = new Date(Date.now() + lifetime);
+    await this.identity.createSession(staff.id, hashSessionToken(token), expiresAt, this.deviceOf(origin));
     return {
       token,
       expiresAt: expiresAt.toISOString(),
@@ -207,6 +223,17 @@ export class IdentityService implements OnModuleInit {
     };
   }
 
+  /** The coarse label and the salted IP hash for a new session (never the raw User-Agent or IP). */
+  private deviceOf(origin: SessionOrigin | undefined): SessionDevice {
+    if (origin === undefined) {
+      return NO_DEVICE;
+    }
+    return {
+      label: deviceLabelFromUserAgent(origin.userAgent),
+      ipHash: origin.ip === undefined ? null : this.audit.hashIp(origin.ip),
+    };
+  }
+
   public async logout(token: string): Promise<void> {
     await this.identity.deleteSessionByTokenHash(hashSessionToken(token));
   }
@@ -216,7 +243,37 @@ export class IdentityService implements OnModuleInit {
    * hash and must not be expired.
    */
   public async staffFromToken(token: string): Promise<StaffAccount | null> {
-    return this.identity.findStaffBySessionTokenHash(hashSessionToken(token));
+    const live = await this.identity.findLiveSession(hashSessionToken(token), this.policy.idleMs / 1000);
+    if (live === null) {
+      return null;
+    }
+    // Keeps the idle clock honest without a write per request. A failed write never refuses a valid session.
+    if (Date.now() - live.lastUsedAt.getTime() >= TOUCH_EVERY_MS) {
+      await this.identity.touchSession(live.sessionId).catch((error: unknown): void => {
+        this.logger.warn(`session.touch_failed ${error instanceof Error ? error.message : 'unknown error'}`);
+      });
+    }
+    return live.staff;
+  }
+
+  /** The person's own live sessions (never anyone else's), the calling one flagged `current`. */
+  public listSessions(staffId: string, currentToken: string): Promise<StaffSessionInfo[]> {
+    return this.identity.listSessions(staffId, hashSessionToken(currentToken), this.policy.idleMs / 1000);
+  }
+
+  /** Signs ONE of the person's own sessions out. Another person's id (or an unknown one) is "not found". */
+  public async revokeSession(staffId: string, sessionId: string): Promise<void> {
+    if (!(await this.identity.deleteOwnSession(staffId, sessionId))) {
+      throw new NotFoundException({ message: 'Session not found', code: 'SESSION_NOT_FOUND' });
+    }
+    this.logger.log(`session.revoked staff=${staffId}`);
+  }
+
+  /** Signs the person out everywhere except the session making the request. */
+  public async revokeOtherSessions(staffId: string, currentToken: string): Promise<number> {
+    const removed = await this.identity.deleteSessionsExcept(staffId, hashSessionToken(currentToken));
+    this.logger.log(`session.revoked_others staff=${staffId} count=${String(removed)}`);
+    return removed;
   }
 
   /**
@@ -242,10 +299,19 @@ export class IdentityService implements OnModuleInit {
    * Removes expired sessions (called hourly).
    */
   public purgeExpiredSessions(): Promise<number> {
-    return this.identity.purgeExpiredSessions();
+    return this.identity.purgeExpiredSessions(this.policy.idleMs / 1000);
   }
 
-  public async updateProfile(staffId: string, input: UpdateStaffProfileRequest): Promise<StaffAccount> {
+  /**
+   * Saves name and sign-in email. When the EMAIL changes, every other session of the person is signed out (docs/13 R2-17:
+   * a stolen session must not keep working after the address that resets the password was swapped). `session` is the
+   * caller's current email and token: the token's session stays signed in.
+   */
+  public async updateProfile(
+    staffId: string,
+    input: UpdateStaffProfileRequest,
+    session?: { currentEmail: string; token: string },
+  ): Promise<StaffAccount> {
     const email = input.email.trim().toLowerCase();
     if (email === '' || input.fullName.trim() === '') {
       throw new BadRequestException({ message: 'Name and email are required', code: 'STAFF_PROFILE_INVALID' });
@@ -261,6 +327,10 @@ export class IdentityService implements OnModuleInit {
     }
     if (saved === null) {
       throw new NotFoundException({ message: 'Staff not found', code: 'STAFF_NOT_FOUND' });
+    }
+    if (session !== undefined && session.token !== '' && session.currentEmail.trim().toLowerCase() !== email) {
+      const removed = await this.identity.deleteSessionsExcept(staffId, hashSessionToken(session.token));
+      this.logger.log(`email.changed staff=${staffId} otherSessionsRevoked=${String(removed)}`);
     }
     return saved;
   }
@@ -346,9 +416,30 @@ export class IdentityService implements OnModuleInit {
     this.logger.warn(message);
   }
 
-  /** Who is asking, for the auth log: never the email or password itself, only a short hash of the email. */
+  /**
+   * A correct password is the only moment its plain text is at hand: an old-format or low-cost hash is replaced by one
+   * at the current cost (docs/13 R2-27). Never fails the sign-in; the next one tries again.
+   */
+  private async upgradePasswordHash(staffId: string, stored: string, password: string): Promise<void> {
+    if (!passwordNeedsRehash(stored)) {
+      return;
+    }
+    try {
+      await this.identity.updateStaffPassword(staffId, await hashPassword(password));
+    } catch {
+      this.logger.warn(`password.rehash_failed staff=${staffId}`);
+    }
+  }
+
+  /**
+   * Who is asking, for the auth log: never the email, the password or the IP, only short salted hashes of the email
+   * and of the normalised network (an IPv6 address is first cut to its /64, see `clientIp`), plus the request id.
+   */
   private describe(email: string, context: LoginContext): string {
-    return `email#${fingerprint(email).slice(0, 12)} ip=${context.ip ?? 'unknown'} req=${context.requestId ?? 'none'}`;
+    // Startup already refuses a production run without the salt, so reading it plainly here cannot log unsalted hashes there.
+    const salt = this.config.get<string>('IP_HASH_SALT')?.trim() ?? '';
+    const network = context.ip === undefined ? 'unknown' : `#${fingerprint(context.ip, salt).slice(0, 12)}`;
+    return `email#${fingerprint(email, salt).slice(0, 12)} ip${network} req=${context.requestId ?? 'none'}`;
   }
 }
 

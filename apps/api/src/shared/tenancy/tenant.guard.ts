@@ -4,16 +4,18 @@
  * @dependencies TenancyService, TenantScoped metadata
  */
 
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import { CanActivate, ExecutionContext, Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { StaffProfile } from '@resort-booking/shared-types';
 import type { Request } from 'express';
+import { httpMetrics } from '../http/http-metrics';
 import { UUID_LIKE } from '../validation/uuid-like';
 import { TenancyService } from './tenancy.service';
 import { TENANT_REFS, type TenantRef } from './tenant-scope.decorator';
 
 interface RequestWithStaff extends Request {
   staff?: StaffProfile;
+  requestId?: string;
 }
 
 /**
@@ -23,6 +25,8 @@ interface RequestWithStaff extends Request {
  */
 @Injectable()
 export class TenantGuard implements CanActivate {
+  private readonly logger = new Logger(TenantGuard.name);
+
   public constructor(
     private readonly reflector: Reflector,
     private readonly tenancy: TenancyService,
@@ -37,10 +41,21 @@ export class TenantGuard implements CanActivate {
     const refs = this.reflector.getAllAndMerge<TenantRef[]>(TENANT_REFS, [context.getHandler(), context.getClass()]);
     for (const ref of refs) {
       const ids = idsFrom(request, ref);
-      if (ids.length === 1) {
-        await this.tenancy.assertOwned(ref.resource, staff.organizationId, ids[0] ?? '');
-      } else {
-        await this.tenancy.assertAllOwned(ref.resource, staff.organizationId, ids);
+      try {
+        if (ids.length === 1) {
+          await this.tenancy.assertOwned(ref.resource, staff.organizationId, ids[0] ?? '');
+        } else {
+          await this.tenancy.assertAllOwned(ref.resource, staff.organizationId, ids);
+        }
+      } catch (error: unknown) {
+        if (error instanceof NotFoundException) {
+          // Probing across tenants (docs/13 R2-24): counted, and logged with the route and request id only, never the ids.
+          httpMetrics.recordGuardDenial();
+          this.logger.warn(
+            `guard.denied guard=tenant resource=${ref.resource} route=${context.getClass().name}.${context.getHandler().name} req=${request.requestId ?? 'none'}`,
+          );
+        }
+        throw error;
       }
     }
     return true;

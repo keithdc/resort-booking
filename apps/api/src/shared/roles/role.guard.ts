@@ -7,11 +7,13 @@
 import { CanActivate, ExecutionContext, ForbiddenException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
+import { httpMetrics } from '../http/http-metrics';
 import { ALLOWED_ROLES, REQUIRES_MONEY_ACCESS } from './roles.decorator';
 import { hasMoneyAccess, type StaffAccount, type StaffRole } from './staff-role';
 
 interface RequestWithStaff extends Request {
   staff?: StaffAccount;
+  requestId?: string;
 }
 
 @Injectable()
@@ -35,21 +37,31 @@ export class RoleGuard implements CanActivate {
     ]);
     if (allowed === undefined) {
       this.logger.error(`Route ${context.getClass().name}.${context.getHandler().name} has no role declaration`);
-      throw new ForbiddenException({ message: 'This action is not allowed for your role', code: 'FORBIDDEN_ROLE' });
+      throw this.deny(context, 'This action is not allowed for your role');
     }
     if (!allowed.includes(staff.role)) {
-      throw new ForbiddenException({ message: 'This action is not allowed for your role', code: 'FORBIDDEN_ROLE' });
+      throw this.deny(context, 'This action is not allowed for your role');
     }
     const needsMoneyAccess = this.reflector.getAllAndOverride<boolean | undefined>(REQUIRES_MONEY_ACCESS, [
       context.getHandler(),
       context.getClass(),
     ]);
     if (needsMoneyAccess === true && !hasMoneyAccess(staff)) {
-      throw new ForbiddenException({
-        message: 'You need refund access for this. Ask an admin to turn it on for you.',
-        code: 'FORBIDDEN_ROLE',
-      });
+      throw this.deny(context, 'You need refund access for this. Ask an admin to turn it on for you.');
     }
     return true;
+  }
+
+  /**
+   * The 403, counted and logged at warn with the route and the request id only (docs/13 R2-24): probing for routes a role
+   * cannot call shows up as a rising count, without a name, email or id in the line.
+   */
+  private deny(context: ExecutionContext, message: string): ForbiddenException {
+    httpMetrics.recordGuardDenial();
+    const request = context.switchToHttp().getRequest<RequestWithStaff>();
+    this.logger.warn(
+      `guard.denied guard=role route=${context.getClass().name}.${context.getHandler().name} req=${request.requestId ?? 'none'}`,
+    );
+    return new ForbiddenException({ message, code: 'FORBIDDEN_ROLE' });
   }
 }

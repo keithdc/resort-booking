@@ -9,6 +9,7 @@ import {
   IsIn,
   IsInt,
   IsString,
+  Matches,
   Max,
   MaxLength,
   Min,
@@ -36,8 +37,7 @@ export class UpsertExtraDto {
   public priceCents!: number;
 
   @IsString()
-  @MinLength(3)
-  @MaxLength(LIMITS.currencyCode)
+  @Matches(/^[A-Z]{3}$/, { message: 'currencyCode must be three capital letters, like EUR' })
   public currencyCode!: string;
 
   @IsBoolean()

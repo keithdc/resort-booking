@@ -15,8 +15,10 @@ import type {
   PropertySummary,
   StaffProfile,
 } from '@resort-booking/shared-types';
+import { PublicRateLimit } from '../../shared/http/public-rate-limit';
 import { CurrentStaff } from '../../shared/tenancy/current-staff.decorator';
 import { StaffGuard } from '../identity/staff.guard';
+import { GeocodeLimiter } from './geocode-limiter';
 import { GeocodeQueryDto } from './dto/geocode.query.dto';
 import { GeocodeReverseQueryDto } from './dto/geocode-reverse.query.dto';
 import { UpsertHouseDto } from './dto/upsert-house.dto';
@@ -31,9 +33,13 @@ import { TenantExempt, TenantScoped } from '../../shared/tenancy/tenant-scope.de
 
 @Controller()
 export class PropertyController {
-  public constructor(private readonly properties: PropertyService) {}
+  public constructor(
+    private readonly properties: PropertyService,
+    private readonly geocodeLimiter: GeocodeLimiter,
+  ) {}
 
   @Get('properties')
+  @PublicRateLimit('read')
   public async listProperties(): Promise<ApiOkBody<PropertySummary[]>> {
     return { status: 'ok', data: await this.properties.listPublishedProperties() };
   }
@@ -42,7 +48,11 @@ export class PropertyController {
   @RequireRole('admin')
   @UseGuards(StaffGuard, RoleGuard)
   @TenantExempt('no tenant data: only forwards an address search')
-  public async reverseGeocode(@Query() query: GeocodeReverseQueryDto): Promise<ApiOkBody<GeocodeHit | null>> {
+  public async reverseGeocode(
+    @CurrentStaff() staff: StaffProfile,
+    @Query() query: GeocodeReverseQueryDto,
+  ): Promise<ApiOkBody<GeocodeHit | null>> {
+    await this.geocodeLimiter.check(staff.id);
     return { status: 'ok', data: await this.properties.reverseAddress(query.lat, query.lon) };
   }
 
@@ -50,7 +60,8 @@ export class PropertyController {
   @RequireRole('admin')
   @UseGuards(StaffGuard, RoleGuard)
   @TenantExempt('no tenant data: only forwards an address search')
-  public async geocode(@Query() query: GeocodeQueryDto): Promise<ApiOkBody<GeocodeHit[]>> {
+  public async geocode(@CurrentStaff() staff: StaffProfile, @Query() query: GeocodeQueryDto): Promise<ApiOkBody<GeocodeHit[]>> {
+    await this.geocodeLimiter.check(staff.id);
     return { status: 'ok', data: await this.properties.searchAddress(query.q) };
   }
 
@@ -185,16 +196,19 @@ export class PropertyController {
   }
 
   @Get('properties/:slug')
+  @PublicRateLimit('read')
   public async getProperty(@Param('slug') slug: string): Promise<ApiOkBody<PropertyDetail>> {
     return { status: 'ok', data: await this.properties.getPublishedProperty(slug) };
   }
 
   @Get('properties/:slug/houses')
+  @PublicRateLimit('read')
   public async listHouses(@Param('slug') slug: string): Promise<ApiOkBody<HouseSummary[]>> {
     return { status: 'ok', data: await this.properties.listPublishedHouses(slug) };
   }
 
   @Get('properties/:slug/request-options')
+  @PublicRateLimit('read')
   public async listRequestOptions(
     @Param('slug') slug: string,
   ): Promise<ApiOkBody<HouseRequestOption[]>> {
@@ -202,6 +216,7 @@ export class PropertyController {
   }
 
   @Get('properties/:slug/houses/:houseSlug')
+  @PublicRateLimit('read')
   public async getHouse(
     @Param('slug') slug: string,
     @Param('houseSlug') houseSlug: string,

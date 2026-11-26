@@ -11,6 +11,11 @@
     "migrate": "ts-node --compiler-options '{\"module\":\"commonjs\"}' src/shared/database/run-migrations.ts",
     "db:setup-roles": "ts-node --compiler-options '{\"module\":\"commonjs\"}' src/shared/database/setup-roles.ts",
     "db:verify-roles": "ts-node --compiler-options '{\"module\":\"commonjs\"}' src/shared/database/verify-roles.ts",
+    "privacy:retention": "ts-node --compiler-options '{\"module\":\"commonjs\"}' src/shared/privacy/privacy-cli.ts retention",
+    "privacy:erase-guest": "ts-node --compiler-options '{\"module\":\"commonjs\"}' src/shared/privacy/privacy-cli.ts erase-guest",
+    "privacy:export-guest": "ts-node --compiler-options '{\"module\":\"commonjs\"}' src/shared/privacy/privacy-cli.ts export-guest",
+    "privacy:erase-staff": "ts-node --compiler-options '{\"module\":\"commonjs\"}' src/shared/privacy/privacy-cli.ts erase-staff",
+    "privacy:reapply-erasures": "ts-node --compiler-options '{\"module\":\"commonjs\"}' src/shared/privacy/privacy-cli.ts reapply-erasures",
     "test:db": "jest database-roles.integration"
   },
   "dependencies": {
