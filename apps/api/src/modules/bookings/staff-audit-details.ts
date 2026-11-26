@@ -108,7 +108,16 @@ export function createBookingAuditDetails(input: AuditDetailsInput): AuditMetada
     currency: text(booking?.currencyCode),
     paymentMethod: text(booking?.paymentMethod),
     paymentStatus: text(booking?.paymentStatus),
+    ...extrasFacts(booking?.extras),
   };
+}
+
+/** The extras on a booking: how many, what the instant ones add, and their names (never a note or a guest detail). */
+function extrasFacts(extras: unknown): AuditMetadata {
+  const list = Array.isArray(extras) ? (extras as unknown[]) : [];
+  const names = list.map((extra: unknown): string | null => text(field(extra, 'name'))).filter((name): name is string => name !== null);
+  const addedCents = list.reduce((sum: number, extra: unknown): number => sum + (whole(field(extra, 'lineCents')) ?? 0), 0);
+  return { extrasCount: list.length, extrasCents: addedCents, extraNames: names.slice(0, 10) };
 }
 
 /** Staff ticked a pay-at-hotel booking as paid: the booking reference and the amount recorded as received. */

@@ -6,7 +6,7 @@
 
 'use client';
 
-import type { GuestBooking, RefundSummary } from '@resort-booking/shared-types';
+import type { BookingExtra, GuestBooking, RefundSummary } from '@resort-booking/shared-types';
 import { Alert, Box, Button, Chip, Container, Snackbar, Stack, TextField, Typography } from '@mui/material';
 import { EmailField, isValidEmail } from '@resort-booking/ui/contact';
 import { useEffect, useRef, useState } from 'react';
@@ -162,6 +162,7 @@ function BookingView({
         <Detail term="Check-in" value={booking.checkIn} />
         <Detail term="Check-out" value={booking.checkOut} />
         <Detail term="Guests" value={String(booking.guestCount)} />
+        {booking.extras.length > 0 ? <Detail term="Extras" value={booking.extras.map(extraText).join('; ')} /> : null}
         <Detail term="Total" value={formatCents(booking.totalCents, booking.currencyCode)} />
       </Box>
       {cancelled && booking.refund !== null ? <RefundNotice refund={booking.refund} reference={booking.reference} /> : null}
@@ -216,6 +217,15 @@ function BookingView({
       <Button onClick={onAnother}>Look up another booking</Button>
     </Stack>
   );
+}
+
+/** One extra on the booking: a priced one with what it adds to the total, a request as waiting for the property. */
+function extraText(extra: BookingExtra): string {
+  const what = `${extra.name} × ${String(extra.quantity)}`;
+  if (extra.kind === 'instant') {
+    return extra.lineCents > 0 ? `${what} (${formatCents(extra.lineCents, extra.currencyCode)})` : what;
+  }
+  return extra.status === 'declined' ? `${what} (not available)` : `${what} (requested: the property will confirm, nothing charged yet)`;
 }
 
 function Detail({ term, value }: { term: string; value: string }): React.JSX.Element {

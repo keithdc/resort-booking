@@ -6,10 +6,12 @@
 
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import type { Quote, StaffCreateBookingRequest, StaffReservation } from '@resort-booking/shared-types';
+import type { ExtraService, Quote, StaffCreateBookingRequest, StaffReservation } from '@resort-booking/shared-types';
 import { DatabaseService } from '../../shared/database/database.service';
 import type { StaffAccount } from '../../shared/roles/staff-role';
 import { DiscountsService } from '../discounts/discounts.service';
+import { ExtrasRepository } from '../extras/extras.repository';
+import { ReservationExtrasRepository } from '../extras/reservation-extras.repository';
 import { PropertyRepository } from '../property/property.repository';
 import { ReservationsService } from '../reservations/reservations.service';
 import { InventoryRepository } from './inventory.repository';
@@ -41,7 +43,13 @@ function quote(overrides: Partial<Quote> = {}): Quote {
   } as Quote;
 }
 
+function extra(overrides: Partial<ExtraService> = {}): ExtraService {
+  return { id: 'ex-1', organizationId: 'org', propertyId: 'prop', name: 'Breakfast basket', description: '', kind: 'instant', priceCents: 1800, currencyCode: 'EUR', published: true, ...overrides };
+}
+
 describe('StaffBookingCreator', () => {
+  const listPublishedForBooking = jest.fn();
+  const insertAllExtras = jest.fn();
   const getHouseById = jest.fn();
   const getQuote = jest.fn();
   const insertStaffBooking = jest.fn();
@@ -54,6 +62,8 @@ describe('StaffBookingCreator', () => {
   beforeEach(async (): Promise<void> => {
     jest.resetAllMocks();
     getHouseById.mockResolvedValue({ id: 'house', propertyId: 'prop', organizationId: 'org', propertyTimezone: 'Europe/Paris' });
+    listPublishedForBooking.mockResolvedValue([extra(), extra({ id: 'ex-2', name: 'Extra pillows', kind: 'on_request', priceCents: 0 })]);
+    insertAllExtras.mockResolvedValue(undefined);
     getQuote.mockResolvedValue(quote());
     insertStaffBooking.mockResolvedValue('new-1');
     recordRedemptions.mockResolvedValue(undefined);
@@ -69,6 +79,8 @@ describe('StaffBookingCreator', () => {
         { provide: DatabaseService, useValue: { withClient: (run: (client: unknown) => Promise<unknown>): Promise<unknown> => run({ query: clientQuery }) } },
         { provide: DiscountsService, useValue: { recordRedemptions } },
         { provide: ReservationsService, useValue: { getPolicySnapshot, getReservation } },
+        { provide: ExtrasRepository, useValue: { listPublishedForBooking } },
+        { provide: ReservationExtrasRepository, useValue: { insertAll: insertAllExtras } },
       ],
     }).compile();
     creator = moduleRef.get(StaffBookingCreator);
@@ -98,6 +110,47 @@ describe('StaffBookingCreator', () => {
       expect(getQuote).not.toHaveBeenCalled();
     });
 
+    it('adds no extras line and does not look at the catalog when none are chosen', async () => {
+      const result = await creator.quote(STAFF, REQUEST);
+
+      expect(result.extras).toEqual([]);
+      expect(result.extrasCents).toBe(0);
+      expect(listPublishedForBooking).not.toHaveBeenCalled();
+    });
+
+    it('adds an instant extra (price x quantity) to the total and an on-request extra at nothing, keeping the stay figures', async () => {
+      const result = await creator.quote(STAFF, { ...REQUEST, extras: [{ extraId: 'ex-1', quantity: 2 }, { extraId: 'ex-2', quantity: 3 }] });
+
+      expect(listPublishedForBooking).toHaveBeenCalledWith('prop', 'org');
+      expect(result.extrasCents).toBe(3600);
+      expect(result.totalCents).toBe(86400 + 3600);
+      expect(result.subtotalCents).toBe(96000);
+      expect(result.discountCents).toBe(9600);
+      expect(result.extras).toEqual([
+        { extraId: 'ex-1', name: 'Breakfast basket', kind: 'instant', quantity: 2, unitPriceCents: 1800, lineCents: 3600, currencyCode: 'EUR' },
+        { extraId: 'ex-2', name: 'Extra pillows', kind: 'on_request', quantity: 3, unitPriceCents: 0, lineCents: 0, currencyCode: 'EUR' },
+      ]);
+    });
+
+    it('answers 404 for an extra the stay\'s property does not offer (another property, another organization, unpublished or unknown)', async () => {
+      await expect(creator.quote(STAFF, { ...REQUEST, extras: [{ extraId: 'elsewhere', quantity: 1 }] })).rejects.toMatchObject({
+        status: 404,
+        response: { code: 'EXTRA_NOT_FOUND' },
+      });
+    });
+
+    it('refuses the same extra twice and a priced extra in another currency than the stay', async () => {
+      await expect(creator.quote(STAFF, { ...REQUEST, extras: [{ extraId: 'ex-1', quantity: 1 }, { extraId: 'ex-1', quantity: 2 }] })).rejects.toMatchObject({
+        status: 400,
+        response: { code: 'DUPLICATE_EXTRA' },
+      });
+      listPublishedForBooking.mockResolvedValue([extra({ currencyCode: 'USD' })]);
+      await expect(creator.quote(STAFF, { ...REQUEST, extras: [{ extraId: 'ex-1', quantity: 1 }] })).rejects.toMatchObject({
+        status: 400,
+        response: { code: 'EXTRA_CURRENCY_MISMATCH' },
+      });
+    });
+
     it('accepts a check-in today in the property\'s own time zone', async () => {
       const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' }).format(new Date());
       const tomorrow = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' }).format(new Date(Date.now() + 86_400_000));
@@ -121,6 +174,32 @@ describe('StaffBookingCreator', () => {
       expect(JSON.parse(String(input.priceSnapshot))).toMatchObject({ totalCents: 86400, discountCents: 9600 });
       expect(JSON.parse(String(input.policySnapshot))).toMatchObject({ rebookable: false });
       expect(clientQuery.mock.calls.map((call) => String(call[0]))).toEqual(['BEGIN', 'COMMIT']);
+    });
+
+    it('saves the extras in the same transaction, with the whole total (stay plus instant extras) on the booking', async () => {
+      await creator.create(STAFF, { ...REQUEST, extras: [{ extraId: 'ex-1', quantity: 2 }, { extraId: 'ex-2', quantity: 1 }] });
+
+      const input = insertStaffBooking.mock.calls[0]?.[1] as Record<string, unknown>;
+      expect(input.totalCents).toBe(86400 + 3600);
+      // The saved price keeps the stay's own total and says what the extras add on top.
+      expect(JSON.parse(String(input.priceSnapshot))).toMatchObject({ totalCents: 86400, extrasCents: 3600, discountCents: 9600 });
+      expect(insertAllExtras).toHaveBeenCalledTimes(1);
+      expect(insertAllExtras.mock.calls[0]?.[1]).toMatchObject({ organizationId: 'org', propertyId: 'prop', bookingId: 'new-1' });
+      expect((insertAllExtras.mock.calls[0]?.[1] as { lines: unknown[] }).lines).toHaveLength(2);
+      expect(clientQuery.mock.calls.map((call) => String(call[0]))).toEqual(['BEGIN', 'COMMIT']);
+    });
+
+    it('saves nothing when an extra is refused', async () => {
+      await expect(creator.create(STAFF, { ...REQUEST, extras: [{ extraId: 'elsewhere', quantity: 1 }] })).rejects.toMatchObject({ status: 404 });
+      expect(insertStaffBooking).not.toHaveBeenCalled();
+      expect(insertAllExtras).not.toHaveBeenCalled();
+    });
+
+    it('rolls the booking back when its extras cannot be saved', async () => {
+      insertAllExtras.mockRejectedValue(new Error('extras insert failed'));
+
+      await expect(creator.create(STAFF, { ...REQUEST, extras: [{ extraId: 'ex-1', quantity: 1 }] })).rejects.toThrow('extras insert failed');
+      expect(clientQuery.mock.calls.map((call) => String(call[0]))).toEqual(['BEGIN', 'ROLLBACK']);
     });
 
     it('counts the discounts it applied toward their use limits, in the same transaction', async () => {

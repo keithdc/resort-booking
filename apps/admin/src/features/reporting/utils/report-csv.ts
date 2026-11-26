@@ -8,7 +8,7 @@
  */
 
 import type { StaffReport, StaffReservation } from '@resort-booking/shared-types';
-import { bookingNights, bookingStatusLabel, bookingPaymentLabel } from './report-labels';
+import { bookingNights, bookingPaymentStatusLabel, bookingStatusLabel, paymentMethodLabel } from './report-labels';
 
 export type CsvCell = string | number;
 
@@ -65,10 +65,12 @@ export function buildReportCsv(report: StaffReport, context: CsvContext): string
     ['Nights booked', report.occupiedNights],
     ['Occupancy (%)', report.occupancyPercent],
     ...(withMoney ? [['Average nightly rate', money(report.averageNightlyCents)]] : []),
+    ['Unpaid at hotel (bookings in the period)', report.unpaidAtHotelCount],
+    ...(withMoney ? [['Unpaid at hotel (still to collect)', money(report.unpaidAtHotelCents)]] : []),
     ['Cancelled bookings', report.cancellationReasons.reduce((sum: number, row): number => sum + row.cancelledCount, 0)],
     ['Cancellation rate (%)', report.cancellationRatePercent],
     [],
-    ['Reference', 'Guest', 'Email', 'Property', 'Stay', 'Check-in', 'Check-out', 'Nights', 'Guests', ...(withMoney ? ['Amount'] : []), 'Payment method', 'Status'],
+    ['Reference', 'Guest', 'Email', 'Property', 'Stay', 'Check-in', 'Check-out', 'Nights', 'Guests', ...(withMoney ? ['Amount'] : []), 'Payment method', 'Payment status', 'Paid on', 'Status'],
     ...report.pipeline.map((booking: StaffReservation): CsvCell[] => [
       booking.reference,
       booking.bookerName,
@@ -80,7 +82,9 @@ export function buildReportCsv(report: StaffReport, context: CsvContext): string
       bookingNights(booking),
       booking.guestCount,
       ...(withMoney ? [money(booking.totalCents)] : []),
-      bookingPaymentLabel(booking),
+      paymentMethodLabel(booking.paymentMethod),
+      bookingPaymentStatusLabel(booking),
+      booking.paidAt === null ? '' : booking.paidAt.slice(0, 10),
       bookingStatusLabel(booking),
     ]),
   ];

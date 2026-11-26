@@ -30,6 +30,7 @@ type GlanceInput = Pick<
   | 'netRevenueCents'
   | 'grossRevenueCents'
   | 'refundedCents'
+  | 'unpaidAtHotelCents'
   | 'reservationCount'
   | 'occupancyPercent'
   | 'occupiedNights'
@@ -50,8 +51,10 @@ export function buildGlanceCards(report: GlanceInput): GlanceCard[] {
       metric: 'revenue',
       label: 'Revenue',
       value: formatCents(report.netRevenueCents, currencyCode),
-      secondary: `Paid by guests ${formatCents(report.grossRevenueCents, currencyCode)} · Refunded ${formatCents(report.refundedCents, currencyCode)}`,
-      explanation: 'Money you kept: what guests paid for nights in this period, minus refunds.',
+      secondary: `Paid by guests ${formatCents(report.grossRevenueCents, currencyCode)} · Refunded ${formatCents(report.refundedCents, currencyCode)}${
+        report.unpaidAtHotelCents > 0 ? ` · To collect ${formatCents(report.unpaidAtHotelCents, currencyCode)}` : ''
+      }`,
+      explanation: 'Money you kept: what guests paid for nights in this period, minus refunds. Pay-at-hotel bookings count once marked as paid.',
       change: compareAmounts(report.netRevenueCents, previous.netRevenueCents),
     },
     {
@@ -60,7 +63,7 @@ export function buildGlanceCards(report: GlanceInput): GlanceCard[] {
       label: 'Bookings',
       value: String(report.reservationCount),
       secondary: null,
-      explanation: 'Confirmed, paid bookings with at least one night in this period.',
+      explanation: 'Confirmed bookings with at least one night in this period.',
       change: compareAmounts(report.reservationCount, previous.reservationCount),
     },
     {

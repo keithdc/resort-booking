@@ -97,6 +97,30 @@ describe('ReportsPage', () => {
     expect(screen.getByText('1 booking')).toBeTruthy();
   });
 
+  it('takes you to the bookings tab filtered to what is unpaid at the hotel, soonest check-in first', async () => {
+    const base = staffReport();
+    const unpaid = (id: string, reference: string, checkIn: string, checkOut: string): StaffReport['pipeline'][number] => ({
+      ...(base.pipeline[1] ?? base.stays[0]!),
+      id, reference, paymentMethod: 'pay_at_hotel', paymentStatus: 'pending', paidCents: 0, checkIn, checkOut, bookerName: `Guest ${reference}`,
+    });
+    mocks.fetchStaffReport.mockResolvedValue({
+      ...base,
+      pipeline: [...base.pipeline, unpaid('u2', 'BK-LATE00000', '2027-07-29', '2027-07-30'), unpaid('u1', 'BK-SOON00000', '2027-07-16', '2027-07-17')],
+      unpaidAtHotelCount: 2,
+      unpaidAtHotelCents: 20000,
+      attention: { ...base.attention, unpaidAtHotelCount: 2, unpaidAtHotelCents: 20000, unpaidAtHotelArrivalsNext7DaysCount: 1 },
+    });
+    mocks.navigation.query = 'tab=bookings';
+    render(<ReportsPage />);
+    await screen.findByRole('heading', { name: 'At a glance' });
+
+    fireEvent.click(screen.getByRole('button', { name: '2 unpaid at hotel' }));
+
+    expect(screen.getByText('2 bookings')).toBeTruthy();
+    const rows = screen.getAllByRole('row').slice(1);
+    expect(rows.map((row) => row.textContent)).toEqual([expect.stringContaining('BK-SOON00000'), expect.stringContaining('BK-LATE00000')]);
+  });
+
   it('downloads the CSV with a file named after the period', async () => {
     render(<ReportsPage />);
     await screen.findByRole('heading', { name: 'At a glance' });

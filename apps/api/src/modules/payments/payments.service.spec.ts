@@ -89,6 +89,7 @@ const CHANGED_BOOKING: GuestBooking = {
   canChangeDates: true,
   changeDatesBlockedReason: null,
   replacedByReference: null,
+  extras: [],
 };
 
 function expired(): ConflictException {

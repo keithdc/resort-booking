@@ -35,10 +35,11 @@ A booking staff make for a guest who pays at the property (`payment_method = 'pa
 `payment_status = 'pending'` and `paid_cents = 0`. There is no row in `payments`: no provider is involved, so nothing here is
 reconciled automatically. A person ticks **Mark as paid** once the guest has paid at the desk.
 
-- **Who:** admins and employees. It moves no money out, it is audited, and the front desk is who takes the cash. An admin can still
-  see every tick in the audit log (`booking.marked_paid`: who, role, reference, amount; never the guest's details). If you want
-  only admins (or refund-access holders) to tick, change `@AllowRoles` on `POST /staff/reservations/:id/mark-paid` and the role
-  matrix in `tenant-isolation.spec.ts`; it is a one-line decision, see the open question in the hand-over notes.
+- **Who:** admins, and employees an admin gave **refund access** on the Team page (`@RequireMoneyAccess()`, the same permission as retrying a
+  refund; the service checks it again). Recording money received is a money action, so an employee without it gets 403 `FORBIDDEN_ROLE`
+  and the admin screen shows the button greyed out with "Ask an admin, or an admin can give you refund access on the Team page".
+  Every tick is audited (`booking.marked_paid`: who, role, whether it was via refund access, reference, amount; never the guest's
+  details). Creating the booking and cancelling it while pending stay open to every employee.
 - **What it writes:** `payment_status = 'paid'`, `paid_at`, `marked_paid_by_staff_id`, `paid_cents = total_cents`, in one
   conditional `UPDATE` (only a confirmed, pending pay-at-hotel row matches), so a double click or two people ticking cannot count
   it twice (the second gets 409 `ALREADY_PAID`). The database also refuses `paid -> pending`, even for the owner role (trigger from
@@ -46,9 +47,22 @@ reconciled automatically. A person ticks **Mark as paid** once the guest has pai
 - **Cancelling:** a pending booking is cancelled with a refund row of 0, "no refund under the policy", status `succeeded`; no
   person has anything to do. A booking marked paid and later cancelled gets a normal policy refund, as a **manual** refund
   (`provider = manual`, no online payment is on record): the person sends the money back and uses "Mark as refunded".
-- **Reconciling cash:** list what is still to collect with
+- **Reconciling cash:** the admin app shows what is still to collect: **Unpaid at hotel** on the home/Reports "Needs your attention" list (count,
+  amount for admins, how many arrive within 7 days, how many already passed check-in), the **Unpaid at hotel** filter in the Reports
+  Bookings tab (soonest check-in first), and **To collect** under Revenue and on the Payments tab. The same list in SQL (an index covers it):
   `SELECT id, check_in, total_cents, currency_code FROM inventory_blocks WHERE payment_status = 'pending' AND kind = 'reservation' AND status = 'confirmed' ORDER BY check_in;`
-  (an index covers it). Pending bookings with a check-in in the past are the ones to chase. There is no screen for this yet.
+  Pending bookings with a check-in in the past are the ones to chase.
+- **Reports: collected versus booked.** `grossRevenueCents` ("Paid by guests") and `netRevenueCents` ("Revenue") count a pay-at-hotel
+  booking only once it is **paid**; the booked value of the period (`revenueCents`, the nights chart, property rows) still counts every
+  confirmed booking. The difference is `unpaidAtHotelCents` ("To collect"), per period in the report and as of today in the attention
+  block (`attention.unpaidAtHotelCount/Cents/ArrivalsNext7DaysCount/PastCount`). Employees get the counts, never the amounts (the report
+  is redacted by role as before; `moneyHidden`). `report_bookings` (the read-only role's view, migration 042) gained `payment_status` and `paid_at`.
+  The CSV has "Payment status" and "Paid on" columns and two summary rows.
+- **Extras on the booking** (migration 041, `reservation_extras`): an instant extra adds price x quantity to `total_cents` (so the amount
+  to collect, the amount marked paid and any later refund include it); an on-request extra is noted and charges nothing. The table is
+  insert-and-read for the app role (only `status` can change), prices and quantities never change (trigger, even for the owner), no
+  DELETE (owner-run maintenance only) and it is tied to the booking's organization and property by composite foreign keys. A booking
+  with a **priced** extra cannot have its dates changed (409 `EXTRAS_ON_BOOKING`): cancel and book again. Marking paid is unchanged.
 - **Not done yet (phase 2):** the **Credit card** option, which will give the guest a payment link and confirm the booking when the
   provider reports the payment. It will reuse the hold and payment code of the guest checkout.
 

@@ -6,6 +6,7 @@
 
 import { ConflictException, Logger, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import type { BookingExtra } from '@resort-booking/shared-types';
 import { Client, type PoolClient } from 'pg';
 import { DatabaseService } from '../../shared/database/database.service';
 import { PaymentsService } from '../payments/payments.service';
@@ -58,6 +59,7 @@ function row(overrides: Partial<BookingRow> = {}): BookingRow {
     currency_code: 'EUR',
     policy_snapshot: snapshot(),
     price_snapshot: null,
+    priced_extras_count: 0,
     rebook_of_id: null,
     replaced_by_id: null,
     payments: [{ id: 'pay-1', provider: 'mock', providerRef: 'mock_pi_abc', refundableCents: 96000 }],
@@ -97,6 +99,7 @@ function fakeClient(log: string[], query: jest.Mock): PoolClient {
 
 describe('BookingsService', () => {
   const findByReference = jest.fn<Promise<BookingRow[]>, [{ low: string; high: string }, string]>();
+  const listExtras = jest.fn<Promise<BookingExtra[]>, [string]>();
   const findById = jest.fn<Promise<BookingRow | null>, [string]>();
   const lockForCancel = jest.fn<Promise<'confirmed' | 'cancelled' | 'other' | null>, [PoolClient, string]>();
   const markCancelled = jest.fn<Promise<void>, [PoolClient, string]>();
@@ -120,6 +123,7 @@ describe('BookingsService', () => {
     log = [];
     withClientCalls = 0;
     findByReference.mockResolvedValue([row()]);
+    listExtras.mockResolvedValue([]);
     findById.mockResolvedValue(cancelled());
     lockForCancel.mockImplementation(() => {
       log.push('lock');
@@ -151,7 +155,7 @@ describe('BookingsService', () => {
         BookingReader,
         RefundIssuer,
         { provide: RefundTimings, useValue: { values: { providerTimeoutMs: 20_000, leaseSeconds: 150 } } },
-        { provide: BookingsRepository, useValue: { findByReference, findById, lockForCancel, markCancelled, insertRefund, completeRefund } },
+        { provide: BookingsRepository, useValue: { findByReference, findById, listExtras, lockForCancel, markCancelled, insertRefund, completeRefund } },
         { provide: PaymentsService, useValue: { describeProvider, issueRefund } },
         { provide: ReservationsService, useValue: { getPolicySnapshot } },
         {
@@ -197,7 +201,32 @@ describe('BookingsService', () => {
         canChangeDates: true,
         changeDatesBlockedReason: null,
         replacedByReference: null,
+        extras: [],
       });
+    });
+
+    it('lists the extras on the booking, requests as pending', async () => {
+      const extras: BookingExtra[] = [
+        { id: 'e1', extraServiceId: 'x1', name: 'Extra pillows', kind: 'on_request', quantity: 2, unitPriceCents: 0, lineCents: 0, currencyCode: 'EUR', status: 'pending' },
+      ];
+      listExtras.mockResolvedValue(extras);
+
+      const booking = await service.lookup(REQUEST);
+
+      expect(booking.extras).toEqual(extras);
+      expect(listExtras).toHaveBeenCalledWith(ID);
+      // A request with nothing to pay does not stop the dates from being changed online.
+      expect(booking.canChangeDates).toBe(true);
+    });
+
+    it('cannot change dates online when the booking has a priced extra, and says why', async () => {
+      findByReference.mockResolvedValue([row({ priced_extras_count: 1 })]);
+
+      const booking = await service.lookup(REQUEST);
+
+      expect(booking.canChangeDates).toBe(false);
+      expect(booking.changeDatesBlockedReason).toContain('paid extras');
+      expect(booking.canCancel).toBe(true);
     });
 
     it('exposes only the contract fields: no phone, no email, no staff data', async () => {
@@ -206,7 +235,7 @@ describe('BookingsService', () => {
       expect(Object.keys(booking).sort()).toEqual([
         'bookerName', 'cancelBlockedReason', 'canCancel', 'checkIn', 'checkOut', 'currencyCode', 'guestCount', 'propertyName',
         'rebookable', 'reference', 'refund', 'refundQuote', 'reservationId', 'status', 'stayName', 'totalCents',
-        'canChangeDates', 'changeDatesBlockedReason', 'replacedByReference',
+        'canChangeDates', 'changeDatesBlockedReason', 'replacedByReference', 'extras',
       ].sort());
     });
 

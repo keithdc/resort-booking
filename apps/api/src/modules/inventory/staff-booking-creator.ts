@@ -6,7 +6,8 @@
 
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type {
-  Quote,
+  StaffBookingExtraChoice,
+  StaffBookingQuote,
   StaffBookingQuoteRequest,
   StaffCreateBookingRequest,
   StaffReservation,
@@ -14,6 +15,9 @@ import type {
 import { DatabaseService } from '../../shared/database/database.service';
 import type { StaffAccount } from '../../shared/roles/staff-role';
 import { DiscountsService } from '../discounts/discounts.service';
+import { priceExtras, type PricedExtras } from '../extras/booking-extras';
+import { ExtrasRepository } from '../extras/extras.repository';
+import { ReservationExtrasRepository } from '../extras/reservation-extras.repository';
 import { PropertyRepository } from '../property/property.repository';
 import { ReservationsService } from '../reservations/reservations.service';
 import { InventoryRepository } from './inventory.repository';
@@ -45,13 +49,16 @@ export class StaffBookingCreator {
     private readonly database: DatabaseService,
     private readonly discounts: DiscountsService,
     private readonly reservations: ReservationsService,
+    private readonly extras: ExtrasRepository,
+    private readonly bookingExtras: ReservationExtrasRepository,
   ) {}
 
   /**
-   * What the stay would cost, and whether the dates are free. Unlike a guest quote it also works for a stay that is
-   * not published yet; a check-in in the past (property time) or too far ahead is still refused.
+   * What the booking would cost, and whether the dates are free. Unlike a guest quote it also works for a stay that is
+   * not published yet; a check-in in the past (property time) or too far ahead is still refused. Chosen extras are
+   * priced in: an instant extra adds its price to the total, an on-request one adds nothing (see `StaffBookingQuote`).
    */
-  public async quote(staff: StaffAccount, request: StaffBookingQuoteRequest): Promise<Quote> {
+  public async quote(staff: StaffAccount, request: StaffBookingQuoteRequest): Promise<StaffBookingQuote> {
     const house = await this.houses.getHouseById(request.houseId);
     if (house === null || house.organizationId !== staff.organizationId) {
       throw new NotFoundException({ message: 'Stay not found', code: 'HOUSE_NOT_FOUND' });
@@ -63,10 +70,12 @@ export class StaffBookingCreator {
     if (daysFromToday(today, request.checkIn) > MAX_BOOKING_ADVANCE_DAYS) {
       throw new BadRequestException({ message: 'That date is too far ahead to book yet', code: 'CHECK_IN_TOO_FAR' });
     }
-    return this.quotes.getQuote(
+    const stay = await this.quotes.getQuote(
       { houseId: request.houseId, checkIn: request.checkIn, checkOut: request.checkOut, guestCount: request.guestCount },
       false,
     );
+    const priced = await this.priceChosenExtras(house.propertyId, house.organizationId, request.extras ?? [], stay.currencyCode);
+    return { ...stay, totalCents: stay.totalCents + priced.extrasCents, extras: priced.lines, extrasCents: priced.extrasCents };
   }
 
   /**
@@ -82,6 +91,9 @@ export class StaffBookingCreator {
       throw new NotFoundException({ message: 'Stay not found', code: 'HOUSE_NOT_FOUND' });
     }
     const policy = await this.reservations.getPolicySnapshot(house.propertyId);
+    // The saved price keeps the stay's own figures (nights, discounts, stay total) and the extras on top: the booking's
+    // `total_cents` is the whole of it, so what is owed and what is refunded later both include the extras.
+    const stayTotalCents = quote.totalCents - quote.extrasCents;
     try {
       const id = await this.database.withClient(async (client): Promise<string> => {
         await client.query('BEGIN');
@@ -99,9 +111,15 @@ export class StaffBookingCreator {
             guestNote: request.guestNote.trim(),
             totalCents: quote.totalCents,
             currencyCode: quote.currencyCode,
-            priceSnapshot: JSON.stringify(snapshotOf(quote)),
+            priceSnapshot: JSON.stringify({ ...snapshotOf({ ...quote, totalCents: stayTotalCents }), extrasCents: quote.extrasCents }),
             policySnapshot: JSON.stringify(policy),
             createdByStaffId: staff.id,
+          });
+          await this.bookingExtras.insertAll(client, {
+            organizationId: house.organizationId,
+            propertyId: house.propertyId,
+            bookingId,
+            lines: quote.extras,
           });
           // Discounts count toward their use limits once a booking exists, whoever made it.
           await this.discounts.recordRedemptions(client, bookingId, quote.discounts);
@@ -119,6 +137,30 @@ export class StaffBookingCreator {
       }
       throw error;
     }
+  }
+
+  /**
+   * The chosen extras priced against what the stay's property offers (published extras of that property and
+   * organization only). Anything else, a repeat, or a currency that does not match the stay is refused.
+   */
+  private async priceChosenExtras(
+    propertyId: string,
+    organizationId: string,
+    choices: readonly StaffBookingExtraChoice[],
+    currencyCode: string,
+  ): Promise<Extract<PricedExtras, { ok: true }>> {
+    if (choices.length === 0) {
+      return { ok: true, lines: [], extrasCents: 0 };
+    }
+    const offered = await this.extras.listPublishedForBooking(propertyId, organizationId);
+    const priced = priceExtras(offered, choices, currencyCode);
+    if (!priced.ok) {
+      if (priced.problem.code === 'EXTRA_NOT_FOUND') {
+        throw new NotFoundException({ message: priced.problem.message, code: priced.problem.code });
+      }
+      throw new BadRequestException({ message: priced.problem.message, code: priced.problem.code });
+    }
+    return priced;
   }
 
   private datesUnavailable(): ConflictException {

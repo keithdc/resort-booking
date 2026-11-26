@@ -137,6 +137,8 @@ export const RESTRICTED_TABLES: readonly RestrictedTable[] = [
     ],
   },
   { table: 'payment_webhook_events', updatableColumns: ['status', 'attempts', 'error', 'updated_at', 'processed_at'] },
+  // Extras on a booking (migration 041): the price and quantity are fixed once saved; only the status can move.
+  { table: 'reservation_extras', updatableColumns: ['status', 'updated_at'] },
 ];
 
 /**

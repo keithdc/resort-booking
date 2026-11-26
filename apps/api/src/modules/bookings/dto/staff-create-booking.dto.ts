@@ -4,9 +4,26 @@
  * @dependencies class-validator, class-transformer
  */
 
-import type { StaffBookingQuoteRequest, StaffCreateBookingRequest } from '@resort-booking/shared-types';
-import { Transform } from 'class-transformer';
-import { IsEmail, IsIn, IsInt, IsOptional, IsPhoneNumber, IsString, Matches, Max, MaxLength, Min, MinLength, ValidateIf } from 'class-validator';
+import type { StaffBookingExtraChoice, StaffBookingQuoteRequest, StaffCreateBookingRequest } from '@resort-booking/shared-types';
+import { Transform, Type } from 'class-transformer';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsEmail,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsPhoneNumber,
+  IsString,
+  Matches,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+  ValidateIf,
+  ValidateNested,
+} from 'class-validator';
+import { MAX_EXTRA_QUANTITY, MAX_EXTRAS_PER_BOOKING } from '../../extras/booking-extras';
 import { LIMITS } from '../../../shared/validation/limits';
 import { UUID_LIKE } from '../../../shared/validation/uuid-like';
 
@@ -20,7 +37,18 @@ function Trimmed(): PropertyDecorator {
   });
 }
 
-/** The stay, the dates and the party size: enough to price a booking. */
+/** One extra of the stay's property, and how many. */
+export class StaffBookingExtraChoiceDto implements StaffBookingExtraChoice {
+  @Matches(UUID_LIKE)
+  public extraId!: string;
+
+  @IsInt()
+  @Min(1)
+  @Max(MAX_EXTRA_QUANTITY)
+  public quantity!: number;
+}
+
+/** The stay, the dates, the party size and the extras: enough to price a booking. */
 export class StaffBookingQuoteDto implements StaffBookingQuoteRequest {
   @Matches(UUID_LIKE)
   public houseId!: string;
@@ -35,6 +63,14 @@ export class StaffBookingQuoteDto implements StaffBookingQuoteRequest {
   @Min(1)
   @Max(LIMITS.capacity)
   public guestCount!: number;
+
+  /** Optional. Each extra once; the API checks they are published extras of this stay's property. */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_EXTRAS_PER_BOOKING)
+  @ValidateNested({ each: true })
+  @Type(() => StaffBookingExtraChoiceDto)
+  public extras?: StaffBookingExtraChoiceDto[];
 }
 
 /**

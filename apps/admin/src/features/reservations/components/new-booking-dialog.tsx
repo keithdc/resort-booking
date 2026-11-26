@@ -10,7 +10,9 @@ import type { PropertySummary, StaffReservation } from '@resort-booking/shared-t
 import { EmailField, PhoneField } from '@resort-booking/ui/contact';
 import {
   Alert,
+  Box,
   Button,
+  Checkbox,
   CircularProgress,
   Dialog,
   DialogActions,
@@ -29,7 +31,8 @@ import {
   Typography,
 } from '@mui/material';
 import { useNewBooking } from '../hooks/use-new-booking';
-import { NEW_BOOKING_MAX_NIGHTS, NEW_BOOKING_MAX_NOTE, NEW_BOOKING_PAYMENT_OPTIONS } from '../utils/new-booking';
+import { extraPriceText, NEW_BOOKING_MAX_EXTRA_QUANTITY, NEW_BOOKING_MAX_NIGHTS, NEW_BOOKING_MAX_NOTE, NEW_BOOKING_PAYMENT_OPTIONS } from '../utils/new-booking';
+import { formatCents } from '@/shared/utils/money';
 import { NewBookingQuoteSummary } from './new-booking-quote-summary';
 
 interface NewBookingDialogProps {
@@ -145,6 +148,59 @@ export function NewBookingDialog({ open, properties, defaultPropertyId, defaultD
             </Stack>
           ) : null}
           {state.quoteError !== null ? <Alert severity="error">{state.quoteError}</Alert> : null}
+
+          {state.extras.length > 0 ? (
+            <Box component="fieldset" sx={{ border: 0, m: 0, p: 0, minWidth: 0 }}>
+              <Typography variant="subtitle2" component="legend" sx={{ pb: 0.5 }}>
+                Extras
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', pb: 0.5 }}>
+                The extras this property offers guests. Priced extras are added to the total; an extra on request is only noted, nothing is charged until
+                it is confirmed.
+              </Typography>
+              <Stack spacing={0.5} component="ul" sx={{ listStyle: 'none', m: 0, p: 0 }}>
+                {state.extras.map((extra): React.JSX.Element => {
+                  const quantity = state.extraQuantities[extra.id] ?? 0;
+                  return (
+                    <Stack key={extra.id} component="li" direction="row" spacing={1} alignItems="center" justifyContent="space-between">
+                      <FormControlLabel
+                        sx={{ alignItems: 'flex-start', m: 0, flex: 1, minWidth: 0 }}
+                        control={
+                          <Checkbox
+                            size="small"
+                            checked={quantity > 0}
+                            onChange={(event): void => state.setExtraQuantity(extra.id, event.target.checked ? 1 : 0)}
+                          />
+                        }
+                        label={
+                          <>
+                            <Typography component="span" variant="body2" sx={{ display: 'block' }}>
+                              {extra.name}
+                            </Typography>
+                            <Typography component="span" variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                              {extraPriceText(extra, (cents: number): string => formatCents(cents, extra.currencyCode))}
+                            </Typography>
+                          </>
+                        }
+                      />
+                      {quantity > 0 ? (
+                        <TextField
+                          label="How many"
+                          type="number"
+                          size="small"
+                          value={quantity}
+                          onChange={(event): void => state.setExtraQuantity(extra.id, Math.max(1, Number.parseInt(event.target.value, 10) || 1))}
+                          slotProps={{ htmlInput: { min: 1, max: NEW_BOOKING_MAX_EXTRA_QUANTITY, 'aria-label': `How many ${extra.name}` }, inputLabel: { shrink: true } }}
+                          sx={{ width: 96, flexShrink: 0 }}
+                        />
+                      ) : null}
+                    </Stack>
+                  );
+                })}
+              </Stack>
+            </Box>
+          ) : null}
+
           {quote !== null ? <NewBookingQuoteSummary quote={quote} /> : null}
 
           <Typography variant="subtitle2" component="h3" sx={{ pt: 1 }}>

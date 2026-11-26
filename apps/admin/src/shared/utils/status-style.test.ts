@@ -40,6 +40,10 @@ describe('bookingFilterStyle', () => {
     expect(new Set(icons).size).toBe(4);
     expect(bookingFilterStyle('awaiting_payment').tone).toBe('warning');
   });
+
+  it('has its own words for the money still to collect at the hotel', () => {
+    expect(bookingFilterStyle('unpaid_at_hotel')).toEqual({ label: 'Unpaid at hotel', tone: 'warning', icon: 'hold' });
+  });
 });
 
 describe('refundStyle', () => {

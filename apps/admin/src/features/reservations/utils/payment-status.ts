@@ -4,7 +4,7 @@
  * @dependencies shared-types — words and rules for "paid" and "pay at hotel" (display only)
  */
 
-import type { StaffPaymentMethod, StaffReservation } from '@resort-booking/shared-types';
+import type { BookingExtra, StaffPaymentMethod, StaffReservation } from '@resort-booking/shared-types';
 
 type PaymentFields = Pick<StaffReservation, 'paymentMethod' | 'paymentStatus'>;
 
@@ -45,4 +45,19 @@ export function paymentMethodText(method: StaffPaymentMethod | null): string {
 /** Staff can tick a booking as paid only while it is a confirmed, pending pay-at-hotel booking. */
 export function canMarkPaid(stay: Pick<StaffReservation, 'kind' | 'status' | 'paymentStatus' | 'paymentMethod'>): boolean {
   return stay.kind === 'reservation' && stay.status === 'confirmed' && stay.paymentStatus === 'pending' && stay.paymentMethod === 'pay_at_hotel';
+}
+
+/** What someone without refund access is told on a pending booking (the API refuses the tick with code FORBIDDEN_ROLE). */
+export const MARK_PAID_NEEDS_ACCESS_MESSAGE = 'Ask an admin, or an admin can give you refund access on the Team page, to mark this booking as paid.';
+
+/**
+ * One extra on a booking, in words: what was chosen, how many and what it adds. An instant extra shows its line (it is in
+ * the booking total); a request says nothing is charged, and a declined one says so.
+ */
+export function bookingExtraText(extra: BookingExtra, money: (cents: number) => string): string {
+  const what = `${extra.name} × ${String(extra.quantity)}`;
+  if (extra.kind === 'instant') {
+    return `${what} · ${extra.lineCents > 0 ? money(extra.lineCents) : 'Free'}`;
+  }
+  return `${what} · ${extra.status === 'declined' ? 'Declined' : 'On request: waiting for the property to confirm, nothing charged'}`;
 }

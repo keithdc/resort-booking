@@ -9,6 +9,7 @@ import type { DiscountUsageRow, StaffReport } from '@resort-booking/shared-types
 import { formatCents } from '@/shared/utils/money';
 import { buildPaymentShares, type PaymentShare } from '../utils/payment-shares';
 import { MetricInfo } from './metric-info';
+import { useMoneyHidden } from './money-visibility';
 import { EmptyNote, ReportSection } from './report-section';
 import { stickyFirstColumn } from '@/shared/utils/sticky-first-column';
 
@@ -21,6 +22,7 @@ interface PaymentsTabProps {
  */
 export function PaymentsTab({ report }: PaymentsTabProps): React.JSX.Element {
   const shares = buildPaymentShares(report.paymentMethods);
+  const moneyHidden = useMoneyHidden();
   return (
     <>
       <ReportSection section="paymentMethods">
@@ -43,6 +45,11 @@ export function PaymentsTab({ report }: PaymentsTabProps): React.JSX.Element {
             ))}
           </Box>
         )}
+        {report.unpaidAtHotelCents > 0 && !moneyHidden ? (
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 2, maxWidth: 640 }}>
+            Of this, {formatCents(report.unpaidAtHotelCents, report.currencyCode)} comes from pay-at-hotel bookings not marked as paid yet. <MetricInfo metric="toCollect" />
+          </Typography>
+        ) : null}
       </ReportSection>
 
       <ReportSection section="discounts">

@@ -62,6 +62,7 @@ function booking(): StaffReservation {
       },
     ],
     changes: [],
+    extras: [],
   };
 }
 
@@ -78,6 +79,8 @@ function report(): StaffReport {
     reservationCount: 4,
     occupiedNights: 12,
     revenueCents: 128000,
+    unpaidAtHotelCount: 2,
+    unpaidAtHotelCents: 52000,
     averageNightlyCents: 10666,
     occupancyPercent: 13,
     upcomingStayCount: 2,
@@ -111,7 +114,7 @@ function report(): StaffReport {
     cancellationReasons: [{ reason: 'guest_request', cancelledCount: 1, paidCents: 32000, refundedCents: 8000 }],
     refunds: row.refunds,
     discountUsage: [{ discountId: 'd1', label: 'Long stay', redemptionCount: 2, discountCents: 9800 }],
-    attention: { unpaidHoldCount: 1, refundsToPayCount: 1, refundsToPayCents: 8000, arrivalsTodayCount: 1, arrivalsNext7DaysCount: 2 },
+    attention: { unpaidHoldCount: 1, refundsToPayCount: 1, refundsToPayCents: 8000, arrivalsTodayCount: 1, arrivalsNext7DaysCount: 2, unpaidAtHotelCount: 2, unpaidAtHotelCents: 52000, unpaidAtHotelArrivalsNext7DaysCount: 1, unpaidAtHotelPastCount: 1 },
     previous: {
       from: '2026-11-01',
       to: '2026-12-01',
@@ -124,6 +127,7 @@ function report(): StaffReport {
       netRevenueCents: 90000,
       cancelledCount: 0,
       cancellationRatePercent: 0,
+      unpaidAtHotelCents: 0,
     },
   };
 }

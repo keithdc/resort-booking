@@ -112,13 +112,14 @@ const ROLE_MATRIX: Record<string, StaffRole[]> = {
   'GET /staff/configuration': BOTH,
   'GET /staff/reservations/:id/cancel-preview': BOTH,
   'POST /staff/reservations/:id/cancel': BOTH,
-  // Booking for a guest who pays at the property, and ticking it paid when they did: the front desk does both, audited.
+  // Booking for a guest who pays at the property: the front desk does it, audited. Ticking it PAID is money access (below).
   'POST /staff/reservations/quote': BOTH,
   'POST /staff/reservations': BOTH,
-  'POST /staff/reservations/:id/mark-paid': BOTH,
   'POST /staff/reservations/:id/change-dates/quote': BOTH,
   'POST /staff/reservations/:id/change-dates': BOTH,
   'GET /staff/refunds': BOTH,
+  // The published extras of a property, for the New booking form (the full list with unpublished ones stays admin-only).
+  'GET /staff/properties/:propertyId/booking-extras': BOTH,
   'GET /staff/properties': BOTH,
   'GET /staff/me': BOTH,
   'PATCH /staff/me': BOTH,
@@ -132,9 +133,10 @@ const ROLE_MATRIX: Record<string, StaffRole[]> = {
   'POST /staff/me/two-factor/enable': BOTH,
   'POST /staff/me/two-factor/disable': BOTH,
   'POST /staff/me/two-factor/recovery-codes/regenerate': BOTH,
-  // Money out: an admin, or an employee with the refund permission (@RequireMoneyAccess, see MONEY_ACCESS_ROUTES).
+  // Money in and out: an admin, or an employee with the refund permission (@RequireMoneyAccess, see MONEY_ACCESS_ROUTES).
   'POST /staff/refunds/:id/retry': BOTH,
   'POST /staff/refunds/:id/mark-paid': BOTH,
+  'POST /staff/reservations/:id/mark-paid': BOTH,
   // Everything that sets the business up: admin only.
   'GET /staff/properties/:propertyId/configuration': ADMIN,
   'PUT /staff/properties/:propertyId/configuration': ADMIN,
@@ -197,10 +199,10 @@ const EMPLOYEE_MONEY_ROUTES_GATED_IN_SERVICE: Record<string, string> = {
  * Pure money-out routes: the ROUTE needs money access (`@RequireMoneyAccess`): an admin, or an employee an admin gave
  * "can handle refunds and money actions". Both are audited with who, the booking reference and the amount.
  */
-const MONEY_ACCESS_ROUTES: string[] = ['POST /staff/refunds/:id/retry', 'POST /staff/refunds/:id/mark-paid'];
+const MONEY_ACCESS_ROUTES: string[] = ['POST /staff/refunds/:id/retry', 'POST /staff/refunds/:id/mark-paid', 'POST /staff/reservations/:id/mark-paid'];
 
 /** Path fragments that mark a route as touching money. */
-const MONEY_PATH_PARTS = ['/refund', '/cancel', '/change-dates', '/payment', '/rate-periods', '/discounts'];
+const MONEY_PATH_PARTS = ['/refund', '/mark-paid', '/cancel', '/change-dates', '/payment', '/rate-periods', '/discounts'];
 
 /** Routes under /staff that are public on purpose: they create or end a session, or open one through an invitation. */
 const PUBLIC_STAFF_ROUTES = new Set([

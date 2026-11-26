@@ -77,7 +77,7 @@ describe('report with money hidden', () => {
   });
 
   it('does not print "0,00 to send back" for refunds to pay', () => {
-    const attention = { unpaidHoldCount: 0, refundsToPayCount: 2, refundsToPayCents: 0, arrivalsTodayCount: 0, arrivalsNext7DaysCount: 0 };
+    const attention = { ...staffReport().attention, unpaidHoldCount: 0, refundsToPayCount: 2, refundsToPayCents: 0, arrivalsTodayCount: 0, arrivalsNext7DaysCount: 0 };
     expect(buildAttentionItems(attention, 'EUR', true).find((item) => item.key === 'refundsToPay')?.detail).toBeNull();
     render(hidden(<AttentionStrip attention={attention} currencyCode="EUR" onOpenTab={vi.fn()} />));
 

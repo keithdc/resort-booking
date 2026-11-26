@@ -55,6 +55,7 @@ function booking(overrides: Partial<GuestBooking> = {}): GuestBooking {
     canChangeDates: true,
     changeDatesBlockedReason: null,
     replacedByReference: null,
+    extras: [],
     ...overrides,
   };
 }

@@ -11,7 +11,7 @@ import type {
   StaffCancelPreview,
   StaffCancelResult,
   StaffChangeResult,
-  Quote,
+  StaffBookingQuote,
   StaffRefund,
   StaffReservation,
 } from '@resort-booking/shared-types';
@@ -54,7 +54,7 @@ export class StaffBookingsController {
   @AllowRoles('admin', 'employee')
   @HttpCode(200)
   @TenantScoped({ resource: 'house', from: 'body', key: 'houseId' })
-  public async quote(@Body() body: StaffBookingQuoteDto, @Req() request: StaffRequest): Promise<ApiOkBody<Quote>> {
+  public async quote(@Body() body: StaffBookingQuoteDto, @Req() request: StaffRequest): Promise<ApiOkBody<StaffBookingQuote>> {
     return { status: 'ok', data: await this.creator.quote(this.staff(request), body) };
   }
 
@@ -70,9 +70,12 @@ export class StaffBookingsController {
     return { status: 'ok', data: await this.creator.create(this.staff(request), body) };
   }
 
-  /** The guest paid at the property: pending becomes paid, once. Audited with who ticked it. */
+  /**
+   * The guest paid at the property: pending becomes paid, once. It records money received, so it needs money access (an
+   * admin, or an employee with refund access). Audited with who ticked it.
+   */
   @Post('reservations/:id/mark-paid')
-  @AllowRoles('admin', 'employee')
+  @RequireMoneyAccess()
   @Audited({ action: 'booking.marked_paid', targetType: 'booking', targetParam: 'id', details: markBookingPaidAuditDetails })
   @HttpCode(200)
   @TenantScoped({ resource: 'booking', from: 'param', key: 'id' })

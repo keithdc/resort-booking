@@ -261,6 +261,8 @@ export class ReservationsService {
       reservationCount: stays.length,
       occupiedNights: totals.occupiedNights,
       revenueCents: totals.revenueCents,
+      unpaidAtHotelCount: totals.unpaidAtHotelCount,
+      unpaidAtHotelCents: totals.unpaidAtHotelCents,
       averageNightlyCents: summary.averageNightlyCents,
       occupancyPercent: summary.occupancyPercent,
       upcomingStayCount: stays.filter((stay: StaffReservation): boolean => isUpcomingArrival(stay, asOfDate)).length,

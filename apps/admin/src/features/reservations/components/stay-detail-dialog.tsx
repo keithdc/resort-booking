@@ -44,7 +44,7 @@ import { formatDateTime } from '@/shared/utils/booking-labels';
 import { formatCents } from '@/shared/utils/money';
 import { markStaffReservationPaid, patchStaffReservationArrival } from '../services/staff-reservations-api';
 import { nightsBetween, todayLocalIso } from '../utils/dates';
-import { canMarkPaid, paymentMethodText } from '../utils/payment-status';
+import { bookingExtraText, canMarkPaid, MARK_PAID_NEEDS_ACCESS_MESSAGE, paymentMethodText } from '../utils/payment-status';
 import {
   canCancelStay,
   canChangeStayDates,
@@ -233,6 +233,22 @@ export function StayDetailDialog({ stay, onClose, onUpdated, onChanged }: StayDe
                 <StayBlock title="Requests and note" icon={<ChecklistOutlinedIcon />} tone="secondary">
                   <Box>
                     <Typography variant="caption" color="text.secondary" display="block">
+                      Extras
+                    </Typography>
+                    {stay.extras.length === 0 ? (
+                      <Typography color="text.secondary">None chosen</Typography>
+                    ) : (
+                      <Stack component="ul" spacing={0.5} sx={{ mt: 0.5, m: 0, p: 0, listStyle: 'none' }} aria-label="Extras on this booking">
+                        {stay.extras.map((extra): React.JSX.Element => (
+                          <Typography key={extra.id} component="li" variant="body2">
+                            {bookingExtraText(extra, (cents: number): string => formatCents(cents, extra.currencyCode))}
+                          </Typography>
+                        ))}
+                      </Stack>
+                    )}
+                  </Box>
+                  <Box>
+                    <Typography variant="caption" color="text.secondary" display="block">
                       Other requests
                     </Typography>
                     {stay.requestNames.length === 0 ? (
@@ -264,6 +280,11 @@ export function StayDetailDialog({ stay, onClose, onUpdated, onChanged }: StayDe
                 {SAME_DAY_ADMIN_ONLY_MESSAGE}
               </Alert>
             ) : null}
+            {canTickPaid && !canManageRefunds ? (
+              <Alert severity="info" sx={{ mx: { xs: 2, sm: 3 }, mb: 1 }}>
+                {MARK_PAID_NEEDS_ACCESS_MESSAGE}
+              </Alert>
+            ) : null}
             <DialogActions sx={{ px: { xs: 2, sm: 3 }, py: 2, justifyContent: 'space-between', flexWrap: 'wrap', gap: 1, borderTop: 1, borderColor: 'divider' }}>
               <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={STACKED_ACTIONS}>
                 {canCancel ? (
@@ -272,7 +293,7 @@ export function StayDetailDialog({ stay, onClose, onUpdated, onChanged }: StayDe
                   </Button>
                 ) : null}
                 {canTickPaid ? (
-                  <Button variant="contained" color="success" startIcon={<CheckCircleOutlineIcon />} disabled={pending !== null} onClick={(): void => setMarkPaidOpen(true)}>
+                  <Button variant="contained" color="success" startIcon={<CheckCircleOutlineIcon />} disabled={pending !== null || !canManageRefunds} onClick={(): void => setMarkPaidOpen(true)}>
                     Mark as paid
                   </Button>
                 ) : null}

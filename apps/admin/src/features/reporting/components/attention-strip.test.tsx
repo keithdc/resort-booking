@@ -8,7 +8,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AttentionStrip } from './attention-strip';
 
-const ZERO = { unpaidHoldCount: 0, refundsToPayCount: 0, refundsToPayCents: 0, arrivalsTodayCount: 0, arrivalsNext7DaysCount: 0 };
+const ZERO = { unpaidHoldCount: 0, refundsToPayCount: 0, refundsToPayCents: 0, arrivalsTodayCount: 0, arrivalsNext7DaysCount: 0, unpaidAtHotelCount: 0, unpaidAtHotelCents: 0, unpaidAtHotelArrivalsNext7DaysCount: 0, unpaidAtHotelPastCount: 0 };
 
 describe('AttentionStrip', () => {
   afterEach(cleanup);
@@ -35,7 +35,25 @@ describe('AttentionStrip', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '3 unpaid holds' }));
 
-    expect(onOpenTab).toHaveBeenCalledWith('bookings');
+    expect(onOpenTab).toHaveBeenCalledWith('bookings', 'awaiting_payment');
+  });
+
+  it('lists what is unpaid at the hotel and opens the bookings tab on that filter', () => {
+    const onOpenTab = vi.fn();
+    render(
+      <AttentionStrip
+        attention={{ ...ZERO, unpaidAtHotelCount: 3, unpaidAtHotelCents: 240000, unpaidAtHotelArrivalsNext7DaysCount: 2, unpaidAtHotelPastCount: 1 }}
+        currencyCode="EUR"
+        onOpenTab={onOpenTab}
+      />,
+    );
+
+    expect(screen.getByText(/2.400,00|2,400.00|2400/)).toBeTruthy();
+    expect(screen.getByText(/2 arriving within 7 days/)).toBeTruthy();
+    expect(screen.getByText(/1 already past check-in/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '3 unpaid at hotel' }));
+
+    expect(onOpenTab).toHaveBeenCalledWith('bookings', 'unpaid_at_hotel');
   });
 
   it('shows the section caption and a help icon per item', () => {

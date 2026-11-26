@@ -21,6 +21,8 @@ export type MetricKey =
   | 'keptFromCancellations'
   | 'refundsToPay'
   | 'unpaidHolds'
+  | 'unpaidAtHotel'
+  | 'toCollect'
   | 'arrivalsToday'
   | 'arrivalsNext7Days'
   | 'revenueShare'
@@ -37,12 +39,12 @@ export const METRIC_DEFINITIONS: Record<MetricKey, MetricDefinition> = {
   revenue: {
     label: 'Revenue',
     definition:
-      'The money you kept in this period: what guests paid for nights in the period, minus what you refunded. Nights are counted on the day they are slept.',
+      'The money you kept in this period: what guests paid for nights in the period, minus what you refunded. Nights are counted on the day they are slept. A pay-at-hotel booking counts once it is marked as paid; until then it is shown as “To collect”.',
   },
   grossRevenue: {
     label: 'Paid by guests',
     definition:
-      'Everything guests paid for nights in this period, before refunds. It includes cancelled bookings where you kept part of the payment.',
+      'Everything guests paid for nights in this period, before refunds. It includes cancelled bookings where you kept part of the payment. A pay-at-hotel booking counts once it is marked as paid.',
   },
   refunded: {
     label: 'Refunded',
@@ -50,7 +52,8 @@ export const METRIC_DEFINITIONS: Record<MetricKey, MetricDefinition> = {
   },
   bookings: {
     label: 'Bookings',
-    definition: 'Confirmed, paid bookings that have at least one night in this period. Cancelled and unpaid ones are not included.',
+    definition:
+      'Confirmed bookings that have at least one night in this period, including pay-at-hotel bookings that are not paid yet. Cancelled bookings and unpaid online holds are not included.',
   },
   occupancy: {
     label: 'Occupancy',
@@ -87,6 +90,16 @@ export const METRIC_DEFINITIONS: Record<MetricKey, MetricDefinition> = {
   unpaidHolds: {
     label: 'Unpaid holds',
     definition: 'Guests who started a booking and are holding dates, but have not paid yet. Bank transfers stay here until the money arrives.',
+  },
+  unpaidAtHotel: {
+    label: 'Unpaid at hotel',
+    definition:
+      'Confirmed bookings made for guests who pay at the property that nobody has marked as paid yet, whatever their dates. Counted as of today, whatever period is shown. Mark a booking as paid when the guest has paid you.',
+  },
+  toCollect: {
+    label: 'To collect',
+    definition:
+      'The part of this period’s booked value that comes from pay-at-hotel bookings not marked as paid yet. It is not in “Paid by guests” or “Revenue” until someone marks the booking as paid.',
   },
   arrivalsToday: {
     label: 'Arrivals today',
@@ -141,7 +154,7 @@ export const SECTION_CAPTIONS: Record<SectionKey, SectionCaption> = {
   },
   attention: {
     title: 'Needs your attention',
-    caption: 'Things a person has to do today; select one to go straight to it. Nothing listed means you are up to date.',
+    caption: 'Things a person has to do today, such as refunds to pay and guests who still owe money at the hotel; select one to go straight to it. Nothing listed means you are up to date.',
   },
   revenueChart: {
     title: 'Revenue and occupancy',
@@ -216,7 +229,7 @@ export const EMPTY_STATES: Record<EmptyStateKey, string> = {
   noRefunds: 'No refunds for this period. A refund appears here when a booking is cancelled and money is owed back.',
   noPayments: 'No confirmed bookings, so nothing was paid in this period. Try a longer period.',
   noDiscounts: 'No discount or promo code was used in this period. Create offers under Properties, then Discounts.',
-  nothingNeedsAttention: 'Nothing needs attention. No refunds to pay, no unpaid holds and no arrivals coming up.',
+  nothingNeedsAttention: 'Nothing needs attention. No refunds to pay, no unpaid holds, nothing unpaid at the hotel and no arrivals coming up.',
   noReport: 'The report could not be shown. Check your connection and select Refresh.',
 };
 

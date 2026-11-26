@@ -8,6 +8,7 @@ import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import EventOutlinedIcon from '@mui/icons-material/EventOutlined';
 import HourglassTopOutlinedIcon from '@mui/icons-material/HourglassTopOutlined';
 import LoginOutlinedIcon from '@mui/icons-material/LoginOutlined';
+import PaymentsOutlinedIcon from '@mui/icons-material/PaymentsOutlined';
 import ReplayOutlinedIcon from '@mui/icons-material/ReplayOutlined';
 import { Box, Link as MuiLink, Paper, Stack, Typography } from '@mui/material';
 import type { ReportAttention } from '@resort-booking/shared-types';
@@ -17,6 +18,7 @@ import { IconChip } from '@/shared/components/icon-chip';
 import type { AvatarTone } from '@/shared/utils/avatar-color';
 import { buildAttentionItems, type AttentionItem } from '../utils/attention-items';
 import { EMPTY_STATES, type ReportTabKey } from '../utils/metric-definitions';
+import type { BookingFilter } from '../utils/report-labels';
 import { MetricInfo } from './metric-info';
 import { useMoneyHidden } from './money-visibility';
 import { ReportSection } from './report-section';
@@ -27,11 +29,13 @@ const LINK_SX = { fontWeight: 600, textAlign: 'left', display: 'inline-flex', al
 interface AttentionStripProps {
   attention: ReportAttention;
   currencyCode: string;
-  onOpenTab: (tab: ReportTabKey) => void;
+  /** Opens a tab; for the Bookings tab, `filter` is the status filter to start with (null: the default one). */
+  onOpenTab: (tab: ReportTabKey, filter: BookingFilter | null) => void;
 }
 
 const ITEM_LOOK: Record<AttentionItem['key'], { tone: AvatarTone; icon: ReactElement }> = {
   unpaidHolds: { tone: 'warning', icon: <HourglassTopOutlinedIcon /> },
+  unpaidAtHotel: { tone: 'warning', icon: <PaymentsOutlinedIcon /> },
   refundsToPay: { tone: 'secondary', icon: <ReplayOutlinedIcon /> },
   arrivalsToday: { tone: 'info', icon: <LoginOutlinedIcon /> },
   arrivalsNext7Days: { tone: 'primary', icon: <EventOutlinedIcon /> },
@@ -69,7 +73,7 @@ export function AttentionStrip({ attention, currencyCode, onOpenTab }: Attention
                   sx={LINK_SX}
                   onClick={(): void => {
                     if (item.tab !== null) {
-                      onOpenTab(item.tab);
+                      onOpenTab(item.tab, item.filter);
                     }
                   }}
                 >

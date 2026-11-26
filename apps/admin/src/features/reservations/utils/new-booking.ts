@@ -4,7 +4,7 @@
  * @dependencies shared-types, dates — rules for the "New booking" form (the API makes the final call)
  */
 
-import type { HouseSummary } from '@resort-booking/shared-types';
+import type { ExtraService, HouseSummary, StaffBookingExtraChoice } from '@resort-booking/shared-types';
 import { addDaysIso, clampNights } from './dates';
 
 /** How staff can take payment for a booking they make. Only pay at hotel is open; a card payment link is the next step. */
@@ -35,6 +35,28 @@ export const NEW_BOOKING_MAX_NIGHTS = 60;
 
 /** The booker's note is at most this long (the API refuses more). */
 export const NEW_BOOKING_MAX_NOTE = 2000;
+
+/** At most this many of one extra (the API allows the same). */
+export const NEW_BOOKING_MAX_EXTRA_QUANTITY = 20;
+
+/**
+ * The extras the form has ticked, as the API wants them: only extras this property offers, each once, with a
+ * quantity from 1 to 20. A quantity of 0 (or an extra the property no longer offers) is simply left out.
+ */
+export function extraChoices(quantities: Readonly<Record<string, number>>, offered: readonly ExtraService[]): StaffBookingExtraChoice[] {
+  return offered
+    .map((extra): StaffBookingExtraChoice => ({ extraId: extra.id, quantity: Math.trunc(quantities[extra.id] ?? 0) }))
+    .filter((choice): boolean => choice.quantity >= 1)
+    .map((choice): StaffBookingExtraChoice => ({ ...choice, quantity: Math.min(choice.quantity, NEW_BOOKING_MAX_EXTRA_QUANTITY) }));
+}
+
+/** What an extra costs, in words: its price for an instant extra, "On request" for one staff confirm later. */
+export function extraPriceText(extra: Pick<ExtraService, 'kind' | 'priceCents'>, money: (cents: number) => string): string {
+  if (extra.kind === 'on_request') {
+    return extra.priceCents > 0 ? `On request · listed at ${money(extra.priceCents)}, nothing charged now` : 'On request · nothing charged now';
+  }
+  return extra.priceCents > 0 ? money(extra.priceCents) : 'Free';
+}
 
 export interface NewBookingDraft {
   houseId: string;

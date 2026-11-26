@@ -7,7 +7,8 @@
 import type { StaffReservation } from '@resort-booking/shared-types';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { staffRefund, staffReport } from '@/test/fixtures';
+import { staffRefund, staffReport, staffReservation } from '@/test/fixtures';
+import { MoneyVisibility } from './money-visibility';
 import { BookingsTab } from './bookings-tab';
 
 interface DialogProps {
@@ -128,5 +129,57 @@ describe('BookingsTab', () => {
     expect(within(screen.getByRole('table', { name: 'Bookings in this period' })).getAllByRole('row')).toHaveLength(51);
     fireEvent.click(screen.getByRole('button', { name: 'Show 10 more' }));
     expect(within(screen.getByRole('table', { name: 'Bookings in this period' })).getAllByRole('row')).toHaveLength(61);
+  });
+  describe('unpaid at the hotel', () => {
+    const unpaidReport = (): ReturnType<typeof staffReport> => {
+      const base = staffReport();
+      const late = staffReservation({ id: 'u-late', reference: 'BK-LATEUNPAID', bookerName: 'Zed Late', paymentMethod: 'pay_at_hotel', paymentStatus: 'pending', paidCents: 0, checkIn: '2027-07-30', checkOut: '2027-08-01', totalCents: 50000 });
+      const soon = staffReservation({ id: 'u-soon', reference: 'BK-SOONUNPAID', bookerName: 'Amy Soon', paymentMethod: 'pay_at_hotel', paymentStatus: 'pending', paidCents: 0, checkIn: '2027-07-17', checkOut: '2027-07-19', totalCents: 70000 });
+      const past = staffReservation({ id: 'u-past', reference: 'BK-PASTUNPAID', bookerName: 'Bo Past', paymentMethod: 'pay_at_hotel', paymentStatus: 'pending', paidCents: 0, checkIn: '2027-07-10', checkOut: '2027-07-12', totalCents: 30000 });
+      return { ...base, pipeline: [...base.pipeline, late, soon, past], unpaidAtHotelCount: 3, unpaidAtHotelCents: 150000, asOfDate: '2027-07-15' };
+    };
+
+    it('shows nothing about it when nobody owes money at the hotel', () => {
+      renderTab();
+
+      expect(screen.queryByText(/unpaid at the hotel in this period/)).toBeNull();
+      expect(screen.getByRole('button', { name: /Unpaid at hotel \(0\)/ })).toBeTruthy();
+    });
+
+    it('says how many bookings are unpaid and how much is still to collect, with a button to show them', () => {
+      const { onStatusChange } = renderTab({ report: unpaidReport() });
+
+      expect(screen.getByText(/3 bookings are unpaid at the hotel in this period/)).toBeTruthy();
+      expect(screen.getByText(/1.500,00/)).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'Show them' }));
+
+      expect(onStatusChange).toHaveBeenCalledWith('unpaid_at_hotel');
+    });
+
+    it('lists only the unpaid ones, the soonest check-in first, with how soon each guest arrives', () => {
+      renderTab({ report: unpaidReport(), status: 'unpaid_at_hotel' });
+
+      const table = screen.getByRole('table', { name: 'Bookings in this period' });
+      const rows = within(table).getAllByRole('row').slice(1);
+      expect(rows).toHaveLength(3);
+      expect(rows.map((row) => within(row).getAllByRole('button')[0]?.textContent)).toEqual(['BK-PASTUNPAID', 'BK-SOONUNPAID', 'BK-LATEUNPAID']);
+      expect(within(rows[0]!).getByText('Check-in passed')).toBeTruthy();
+      expect(within(rows[1]!).getByText('Arrives in 2 days')).toBeTruthy();
+      // A check-in more than a week away carries no hint.
+      expect(within(rows[2]!).queryByText(/Arrives|Check-in passed/)).toBeNull();
+      expect(within(rows[0]!).getByText(/Pay at hotel · Pending/)).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Show them' })).toBeNull();
+    });
+
+    it('leaves the amount out of the banner for someone who does not see money', () => {
+      render(
+        <MoneyVisibility hidden>
+          <BookingsTab report={unpaidReport()} status={null} onStatusChange={vi.fn()} onChanged={vi.fn()} />
+        </MoneyVisibility>,
+      );
+
+      expect(screen.getByText(/3 bookings are unpaid at the hotel in this period/)).toBeTruthy();
+      expect(screen.queryByText(/still to collect/)).toBeNull();
+    });
   });
 });

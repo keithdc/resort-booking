@@ -181,6 +181,8 @@ export class StaffBookingsService {
    * cancelled booking and an online booking are all refused with a plain answer, and change nothing.
    */
   public async markPaid(staff: StaffAccount, id: string): Promise<StaffReservation> {
+    // The route already needs money access; repeated here so no other caller can skip it.
+    this.requireMoneyAccess(staff);
     const row = await this.requireConfirmed(staff, id);
     if (row.payment_method !== 'pay_at_hotel') {
       throw new ConflictException({ message: 'Only a pay-at-hotel booking can be marked as paid.', code: 'NOT_PAY_AT_HOTEL' });

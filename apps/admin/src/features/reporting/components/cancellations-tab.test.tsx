@@ -55,7 +55,7 @@ describe('CancellationsTab', () => {
   });
 
   it('explains an empty period for each section', () => {
-    render(<CancellationsTab report={staffReport({ cancellationReasons: [], refunds: [], attention: { unpaidHoldCount: 0, refundsToPayCount: 0, refundsToPayCents: 0, arrivalsTodayCount: 0, arrivalsNext7DaysCount: 0 } })} />);
+    render(<CancellationsTab report={staffReport({ cancellationReasons: [], refunds: [], attention: { unpaidHoldCount: 0, refundsToPayCount: 0, refundsToPayCents: 0, arrivalsTodayCount: 0, arrivalsNext7DaysCount: 0, unpaidAtHotelCount: 0, unpaidAtHotelCents: 0, unpaidAtHotelArrivalsNext7DaysCount: 0, unpaidAtHotelPastCount: 0 } })} />);
 
     expect(screen.getAllByText(/No bookings were cancelled in this period/)).toHaveLength(2);
     expect(screen.getByText(/No refunds for this period/)).toBeTruthy();

@@ -4,18 +4,18 @@
  * @dependencies money, discount-line — renders the API's price, no price math
  */
 
-import type { Quote } from '@resort-booking/shared-types';
+import type { StaffBookingQuote } from '@resort-booking/shared-types';
 import { Alert, Stack, Typography } from '@mui/material';
 import { COMBINED_DISCOUNTS_NOTE, discountLineLabel, discountsAreCombined } from '@/shared/utils/discount-line';
 import { formatCents } from '@/shared/utils/money';
 
 interface NewBookingQuoteSummaryProps {
-  quote: Quote;
+  quote: StaffBookingQuote;
 }
 
 /**
- * The price of the stay as the guest would be quoted it: nights by rate, discounts, total. When the dates are
- * taken it says so instead.
+ * The price of the booking as the guest would be quoted it: nights by rate, discounts, the extras chosen, total. An
+ * on-request extra is listed but adds nothing. When the dates are taken it says so instead.
  */
 export function NewBookingQuoteSummary({ quote }: NewBookingQuoteSummaryProps): React.JSX.Element {
   const money = (cents: number): string => formatCents(cents, quote.currencyCode);
@@ -38,6 +38,14 @@ export function NewBookingQuoteSummary({ quote }: NewBookingQuoteSummaryProps): 
           {COMBINED_DISCOUNTS_NOTE}
         </Typography>
       ) : null}
+      {quote.extras.map((extra): React.JSX.Element => (
+        <Row
+          key={extra.extraId}
+          label={extra.kind === 'instant' ? `${extra.name} × ${String(extra.quantity)}` : `${extra.name} × ${String(extra.quantity)} · on request`}
+          value={extra.kind === 'instant' ? money(extra.lineCents) : 'Not charged now'}
+          muted={extra.kind !== 'instant'}
+        />
+      ))}
       <Row label="Total" value={money(quote.totalCents)} strong />
     </Stack>
   );

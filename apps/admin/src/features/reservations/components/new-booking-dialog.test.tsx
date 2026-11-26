@@ -4,7 +4,7 @@
  * @feature reservations
  */
 
-import type { HouseSummary, PropertySummary, Quote, StaffBookingQuoteRequest, StaffCreateBookingRequest, StaffReservation } from '@resort-booking/shared-types';
+import type { ExtraService, HouseSummary, PropertySummary, StaffBookingQuote, StaffBookingQuoteRequest, StaffCreateBookingRequest, StaffReservation } from '@resort-booking/shared-types';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -13,7 +13,8 @@ import { staffReservation } from '@/test/fixtures';
 import { NewBookingDialog } from './new-booking-dialog';
 
 const api = vi.hoisted(() => ({
-  quoteStaffBooking: vi.fn<(body: StaffBookingQuoteRequest) => Promise<Quote>>(),
+  quoteStaffBooking: vi.fn<(body: StaffBookingQuoteRequest) => Promise<StaffBookingQuote>>(),
+  fetchStaffBookingExtras: vi.fn<(propertyId: string) => Promise<ExtraService[]>>(),
   createStaffBooking: vi.fn<(body: StaffCreateBookingRequest) => Promise<StaffReservation>>(),
 }));
 const houses = vi.hoisted(() => ({ fetchStaffHouses: vi.fn<(propertyId: string) => Promise<HouseSummary[]>>() }));
@@ -33,11 +34,15 @@ function property(overrides: Partial<PropertySummary> = {}): PropertySummary {
 function house(overrides: Partial<HouseSummary> = {}): HouseSummary {
   return { id: 'h1', propertyId: 'p1', name: 'Lake Chalet', capacity: 4, currencyCode: 'EUR', ...overrides } as HouseSummary;
 }
-function quote(overrides: Partial<Quote> = {}): Quote {
+function offered(overrides: Partial<ExtraService> = {}): ExtraService {
+  return { id: 'x1', organizationId: 'o1', propertyId: 'p1', name: 'Breakfast basket', description: '', kind: 'instant', priceCents: 1800, currencyCode: 'EUR', published: true, ...overrides };
+}
+function quote(overrides: Partial<StaffBookingQuote> = {}): StaffBookingQuote {
   return {
     houseId: 'h1', checkIn: FUTURE, checkOut: '2999-07-12', guestCount: 2, nights: 2, nightlyRateCents: 48000,
     lines: [{ label: 'Standard rate', nights: 2, nightlyRateCents: 48000, subtotalCents: 96000 }],
     subtotalCents: 96000, discounts: [], discountCents: 0, totalCents: 96000, currencyCode: 'EUR', available: true, promoCode: null,
+    extras: [], extrasCents: 0,
     ...overrides,
   };
 }
@@ -59,6 +64,8 @@ describe('NewBookingDialog', () => {
   beforeEach(() => {
     api.quoteStaffBooking.mockReset();
     api.createStaffBooking.mockReset();
+    api.fetchStaffBookingExtras.mockReset();
+    api.fetchStaffBookingExtras.mockResolvedValue([]);
     houses.fetchStaffHouses.mockReset();
     houses.fetchStaffHouses.mockResolvedValue([house()]);
     api.quoteStaffBooking.mockResolvedValue(quote());
@@ -171,5 +178,106 @@ describe('NewBookingDialog', () => {
 
     expect(api.quoteStaffBooking).not.toHaveBeenCalled();
     expect(screen.getByText('Choose a property and a stay.')).toBeTruthy();
+  });
+  describe('extras', () => {
+    const BREAKFAST = offered();
+    const PILLOWS = offered({ id: 'x2', name: 'Extra pillows', kind: 'on_request', priceCents: 0 });
+
+    beforeEach(() => {
+      api.fetchStaffBookingExtras.mockResolvedValue([BREAKFAST, PILLOWS]);
+    });
+
+    it('shows no extras section when the property offers none', async () => {
+      api.fetchStaffBookingExtras.mockResolvedValue([]);
+      renderDialog();
+      await screen.findByLabelText('Price of the stay');
+
+      expect(screen.queryByText('Extras')).toBeNull();
+    });
+
+    it('lists the property\'s extras with their price or "On request", and asks the API for the list of the chosen property', async () => {
+      renderDialog();
+
+      expect(await screen.findByRole('checkbox', { name: /Breakfast basket/ })).toBeTruthy();
+      expect(api.fetchStaffBookingExtras).toHaveBeenCalledWith('p1');
+      expect(screen.getByText(/18,00/)).toBeTruthy();
+      expect(screen.getByRole('checkbox', { name: /Extra pillows/ })).toBeTruthy();
+      expect(screen.getByText(/On request · nothing charged now/)).toBeTruthy();
+    });
+
+    it('prices a ticked extra again, with its quantity, and shows it in the summary', async () => {
+      renderDialog();
+      await userEvent.click(await screen.findByRole('checkbox', { name: /Breakfast basket/ }));
+      api.quoteStaffBooking.mockResolvedValue(
+        quote({
+          extras: [{ extraId: 'x1', name: 'Breakfast basket', kind: 'instant', quantity: 2, unitPriceCents: 1800, lineCents: 3600, currencyCode: 'EUR' }],
+          extrasCents: 3600,
+          totalCents: 99600,
+        }),
+      );
+      fireEvent.change(screen.getByLabelText('How many Breakfast basket'), { target: { value: '2' } });
+
+      await waitFor(() => {
+        expect(api.quoteStaffBooking).toHaveBeenLastCalledWith({
+          houseId: 'h1', checkIn: FUTURE, checkOut: '2999-07-12', guestCount: 2, extras: [{ extraId: 'x1', quantity: 2 }],
+        });
+      });
+      const summary = await screen.findByLabelText('Price of the stay');
+      expect(await within(summary).findByText(/Breakfast basket × 2/)).toBeTruthy();
+      expect(within(summary).getAllByText(/996,00/).length).toBeGreaterThan(0);
+    });
+
+    it('lists an on-request extra without charging it', async () => {
+      renderDialog();
+      await userEvent.click(await screen.findByRole('checkbox', { name: /Extra pillows/ }));
+      api.quoteStaffBooking.mockResolvedValue(
+        quote({
+          extras: [{ extraId: 'x2', name: 'Extra pillows', kind: 'on_request', quantity: 1, unitPriceCents: 0, lineCents: 0, currencyCode: 'EUR' }],
+        }),
+      );
+      fireEvent.change(screen.getByLabelText('How many Extra pillows'), { target: { value: '1' } });
+
+      const summary = await screen.findByLabelText('Price of the stay');
+      expect(await within(summary).findByText(/Extra pillows × 1 · on request/)).toBeTruthy();
+      expect(within(summary).getByText('Not charged now')).toBeTruthy();
+    });
+
+    it('unticking an extra leaves it out of the next price', async () => {
+      renderDialog();
+      const box = await screen.findByRole('checkbox', { name: /Breakfast basket/ });
+      await userEvent.click(box);
+      await userEvent.click(box);
+
+      await waitFor(() => {
+        expect(api.quoteStaffBooking).toHaveBeenLastCalledWith({ houseId: 'h1', checkIn: FUTURE, checkOut: '2999-07-12', guestCount: 2 });
+      });
+    });
+
+    it('saves the booking with the chosen extras, whole quantities only', async () => {
+      api.createStaffBooking.mockResolvedValue(staffReservation({ id: 'new-1' }));
+      const handlers = renderDialog();
+      await userEvent.click(await screen.findByRole('checkbox', { name: /Breakfast basket/ }));
+      fireEvent.change(screen.getByLabelText('How many Breakfast basket'), { target: { value: '3' } });
+      await waitFor(() => {
+        expect(api.quoteStaffBooking).toHaveBeenLastCalledWith(expect.objectContaining({ extras: [{ extraId: 'x1', quantity: 3 }] }));
+      });
+      await fillGuest();
+      await waitFor(() => expect(bookButton().disabled).toBe(false));
+
+      await userEvent.click(bookButton());
+
+      await waitFor(() => expect(handlers.onCreated).toHaveBeenCalled());
+      expect(api.createStaffBooking).toHaveBeenCalledWith(expect.objectContaining({ paymentMethod: 'pay_at_hotel', extras: [{ extraId: 'x1', quantity: 3 }] }));
+    });
+
+    it('keeps the extras section out of the way when the list cannot be loaded: the booking still works', async () => {
+      api.fetchStaffBookingExtras.mockRejectedValue(new Error('offline'));
+      renderDialog();
+      await screen.findByLabelText('Price of the stay');
+
+      expect(screen.queryByText('Extras')).toBeNull();
+      await fillGuest();
+      await waitFor(() => expect(bookButton().disabled).toBe(false));
+    });
   });
 });

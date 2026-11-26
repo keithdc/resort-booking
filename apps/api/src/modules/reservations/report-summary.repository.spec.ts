@@ -83,7 +83,7 @@ describe('ReportSummaryRepository.discountUsage', () => {
 describe('ReportSummaryRepository.attention', () => {
   it('uses two statements and maps both', async () => {
     const { repository, query } = await build([
-      [{ unpaid_hold_count: 2, arrivals_today_count: 1, arrivals_next_7_days_count: 4 }],
+      [{ unpaid_hold_count: 2, arrivals_today_count: 1, arrivals_next_7_days_count: 4, unpaid_at_hotel_count: 5, unpaid_at_hotel_cents: 240000, unpaid_at_hotel_arrivals_next_7_days_count: 2, unpaid_at_hotel_past_count: 1 }],
       [{ refund_count: 3, refund_cents: 15000 }],
     ]);
 
@@ -95,8 +95,14 @@ describe('ReportSummaryRepository.attention', () => {
       refundsToPayCents: 15000,
       arrivalsTodayCount: 1,
       arrivalsNext7DaysCount: 4,
+      unpaidAtHotelCount: 5,
+      unpaidAtHotelCents: 240000,
+      unpaidAtHotelArrivalsNext7DaysCount: 2,
+      unpaidAtHotelPastCount: 1,
     });
     expect(query).toHaveBeenCalledTimes(2);
+    // Only confirmed bookings of this organization that nobody has marked paid.
+    expect(query.mock.calls[0]?.[0]).toContain("ib.payment_status = 'pending'");
     expect(query.mock.calls[0]?.[1]).toEqual(['2027-07-01', 'prop', 'org-1']);
     expect(query.mock.calls[1]?.[0]).toContain("status IN ('pending', 'failed')");
   });
@@ -109,6 +115,10 @@ describe('ReportSummaryRepository.attention', () => {
       refundsToPayCents: 0,
       arrivalsTodayCount: 0,
       arrivalsNext7DaysCount: 0,
+      unpaidAtHotelCount: 0,
+      unpaidAtHotelCents: 0,
+      unpaidAtHotelArrivalsNext7DaysCount: 0,
+      unpaidAtHotelPastCount: 0,
     });
   });
 });

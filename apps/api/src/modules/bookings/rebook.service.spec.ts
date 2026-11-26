@@ -7,6 +7,7 @@
 import { ConflictException, Logger } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import type {
+  BookingExtra,
   HouseAvailability,
   PaymentSummary,
   Quote,
@@ -76,6 +77,7 @@ function row(overrides: Partial<BookingRow> = {}): BookingRow {
     paid_cents: 96000,
     policy_snapshot: snapshot(),
     price_snapshot: null,
+    priced_extras_count: 0,
     rebook_of_id: null,
     replaced_by_id: null,
     payments: [{ id: 'pay-1', provider: 'mock', providerRef: 'mock_pi_abc', refundableCents: 96000 }],
@@ -138,6 +140,8 @@ describe('RebookService', () => {
   const markCancelled = jest.fn<Promise<void>, [PoolClient, string]>();
   const insertRebookedBooking = jest.fn<Promise<string>, [PoolClient, InsertRebookedBookingInput]>();
   const copyRequests = jest.fn<Promise<void>, [PoolClient, string, string]>();
+  const copyExtras = jest.fn<Promise<void>, [PoolClient, string, string]>();
+  const listExtras = jest.fn<Promise<BookingExtra[]>, [string]>();
   const moveSucceededPayments = jest.fn<Promise<void>, [PoolClient, string, string]>();
   const insertRefund = jest.fn<Promise<string | null>, [PoolClient, InsertRefundInput]>();
   const insertChange = jest.fn<Promise<void>, [PoolClient, InsertChangeInput]>();
@@ -204,6 +208,11 @@ describe('RebookService', () => {
       log.push('copyRequests');
       return Promise.resolve();
     });
+    copyExtras.mockImplementation(() => {
+      log.push('copyExtras');
+      return Promise.resolve();
+    });
+    listExtras.mockResolvedValue([]);
     moveSucceededPayments.mockImplementation(() => {
       log.push('movePayments');
       return Promise.resolve();
@@ -251,6 +260,8 @@ describe('RebookService', () => {
             markCancelled,
             insertRebookedBooking,
             copyRequests,
+            copyExtras,
+            listExtras,
             moveSucceededPayments,
             insertRefund,
             insertChange,
@@ -550,6 +561,17 @@ describe('RebookService', () => {
     });
   });
 
+  describe('rebook: a booking with priced extras', () => {
+    it('is refused for the guest before anything is quoted or changed', async () => {
+      findByReference.mockResolvedValue([row({ priced_extras_count: 1 })]);
+
+      await expect(service.quote(NEW_DATES)).rejects.toMatchObject({ status: 409, response: { code: 'EXTRAS_ON_BOOKING' } });
+      await expect(service.rebook(NEW_DATES)).rejects.toMatchObject({ status: 409, response: { code: 'EXTRAS_ON_BOOKING' } });
+      expect(getQuote).not.toHaveBeenCalled();
+      expect(markCancelled).not.toHaveBeenCalled();
+    });
+  });
+
   describe('rebook: changing now (the guest owes nothing more)', () => {
     it('does the whole swap in ONE transaction, in the right order', async () => {
       await service.rebook(NEW_DATES);
@@ -561,6 +583,7 @@ describe('RebookService', () => {
         'markCancelled',
         'insertRebookedBooking',
         'copyRequests',
+        'copyExtras',
         'movePayments',
         'moveRedemptions',
         'insertRefund',
@@ -634,6 +657,7 @@ describe('RebookService', () => {
       await service.rebook(NEW_DATES);
 
       expect(copyRequests).toHaveBeenCalledWith(expect.anything(), ID, NEW_ID);
+      expect(copyExtras).toHaveBeenCalledWith(expect.anything(), ID, NEW_ID);
       expect(moveSucceededPayments).toHaveBeenCalledWith(expect.anything(), ID, NEW_ID);
       expect(moveRedemptions).toHaveBeenCalledWith(expect.anything(), ID, NEW_ID, PRICE.discounts);
     });
@@ -820,7 +844,7 @@ describe('RebookService', () => {
       await service.applySettledChange(client, SETTLING);
 
       expect(withClientCalls).toBe(0);
-      expect(log).toEqual(['lock', 'markCancelled', 'insertRebookedBooking', 'copyRequests', 'movePayments', 'moveRedemptions', 'insertChange']);
+      expect(log).toEqual(['lock', 'markCancelled', 'insertRebookedBooking', 'copyRequests', 'copyExtras', 'movePayments', 'moveRedemptions', 'insertChange']);
       expect(log).not.toContain('BEGIN');
       expect(log).not.toContain('COMMIT');
     });
@@ -921,6 +945,18 @@ describe('RebookService', () => {
 
     it('still refuses once the stay has started', async () => {
       await expect(service.staffQuote(row({ check_in: '2027-05-30', check_out: '2027-06-03' }), STAFF_DATES)).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('refuses a booking with a priced extra, in words for staff, before quoting or changing anything', async () => {
+      const withExtras = row({ priced_extras_count: 2 });
+
+      await expect(service.staffQuote(withExtras, STAFF_DATES)).rejects.toMatchObject({
+        status: 409,
+        response: { code: 'EXTRAS_ON_BOOKING', message: expect.stringContaining('Cancel it and make a new booking') as string },
+      });
+      await expect(service.staffChange(withExtras, STAFF_CHANGE, STAFF)).rejects.toMatchObject({ status: 409, response: { code: 'EXTRAS_ON_BOOKING' } });
+      expect(getQuote).not.toHaveBeenCalled();
+      expect(markCancelled).not.toHaveBeenCalled();
     });
 
     it('applies a cheaper change, refunds the difference and keeps who did it and why', async () => {

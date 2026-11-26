@@ -5,14 +5,15 @@
  */
 
 import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
-import type { ApiOkBody, ExtraService } from '@resort-booking/shared-types';
+import type { ApiOkBody, ExtraService, StaffProfile } from '@resort-booking/shared-types';
 import { PublicRateLimit } from '../../shared/http/public-rate-limit';
 import { StaffGuard } from '../identity/staff.guard';
 import { UpsertExtraDto } from './dto/upsert-extra.dto';
 import { ExtrasService } from './extras.service';
 import { Audited } from '../../shared/audit/audited.decorator';
 import { RoleGuard } from '../../shared/roles/role.guard';
-import { RequireRole } from '../../shared/roles/roles.decorator';
+import { AllowRoles, RequireRole } from '../../shared/roles/roles.decorator';
+import { CurrentStaff } from '../../shared/tenancy/current-staff.decorator';
 import { TenantGuard } from '../../shared/tenancy/tenant.guard';
 import { TenantScoped } from '../../shared/tenancy/tenant-scope.decorator';
 
@@ -32,6 +33,21 @@ export class ExtrasController {
   @TenantScoped({ resource: 'property', from: 'param', key: 'propertyId' })
   public async list(@Param('propertyId') propertyId: string): Promise<ApiOkBody<ExtraService[]>> {
     return { status: 'ok', data: await this.extras.list(propertyId) };
+  }
+
+  /**
+   * The extras staff may add to a booking of this property: the published ones, as the guest checkout lists them. Admins
+   * and employees both (the list above, with unpublished extras too, is for admins who edit it).
+   */
+  @Get('staff/properties/:propertyId/booking-extras')
+  @AllowRoles('admin', 'employee')
+  @UseGuards(StaffGuard, TenantGuard, RoleGuard)
+  @TenantScoped({ resource: 'property', from: 'param', key: 'propertyId' })
+  public async listForBooking(
+    @Param('propertyId') propertyId: string,
+    @CurrentStaff() staff: StaffProfile,
+  ): Promise<ApiOkBody<ExtraService[]>> {
+    return { status: 'ok', data: await this.extras.listForBooking(propertyId, staff.organizationId) };
   }
 
   /**

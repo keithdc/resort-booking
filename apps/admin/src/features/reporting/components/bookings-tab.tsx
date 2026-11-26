@@ -9,6 +9,7 @@
 import ClearIcon from '@mui/icons-material/Clear';
 import SearchIcon from '@mui/icons-material/Search';
 import {
+  Alert,
   Box,
   Button,
   Chip,
@@ -33,13 +34,16 @@ import { formatCents } from '@/shared/utils/money';
 import { formatIsoDate } from '@/shared/utils/format-date';
 import { countByStatus, filterBookings, withReportRefunds } from '../utils/bookings-filter';
 import {
-  BOOKING_STATUS_OPTIONS,
+  BOOKING_FILTER_OPTIONS,
   bookingNights,
   bookingStatusKey,
   bookingStatusLabel,
   bookingPaymentLabel,
-  type BookingStatusKey,
+  isUnpaidAtHotel,
+  unpaidArrivalHint,
+  type BookingFilter,
 } from '../utils/report-labels';
+import { MetricInfo } from './metric-info';
 import { useMoneyHidden } from './money-visibility';
 import { EmptyNote, ReportSection } from './report-section';
 import { useCompactLayout } from '@/shared/hooks/use-compact-layout';
@@ -49,8 +53,8 @@ const PAGE_SIZE = 50;
 
 interface BookingsTabProps {
   report: StaffReport;
-  status: BookingStatusKey | null;
-  onStatusChange: (status: BookingStatusKey | null) => void;
+  status: BookingFilter | null;
+  onStatusChange: (status: BookingFilter | null) => void;
   /** A booking was changed or cancelled from its detail: reload the report. */
   onChanged: () => void;
 }
@@ -67,6 +71,7 @@ export function BookingsTab({ report, status, onStatusChange, onChanged }: Booki
   const counts = useMemo(() => countByStatus(report.pipeline), [report.pipeline]);
   const rows = useMemo((): StaffReservation[] => filterBookings(report.pipeline, status, search), [report.pipeline, status, search]);
   const visible = rows.slice(0, shown);
+  const unpaidCount = report.unpaidAtHotelCount;
 
   const open = (row: StaffReservation): void => {
     setSelected(withReportRefunds(row, report.refunds));
@@ -74,6 +79,24 @@ export function BookingsTab({ report, status, onStatusChange, onChanged }: Booki
 
   return (
     <ReportSection section="bookingsTable">
+      {unpaidCount > 0 ? (
+        <Alert
+          severity="warning"
+          sx={{ mb: 2 }}
+          data-print="hide"
+          action={
+            status === 'unpaid_at_hotel' ? null : (
+              <Button color="inherit" size="small" onClick={(): void => onStatusChange('unpaid_at_hotel')}>
+                Show them
+              </Button>
+            )
+          }
+        >
+          {`${String(unpaidCount)} ${unpaidCount === 1 ? 'booking is' : 'bookings are'} unpaid at the hotel in this period`}
+          {moneyHidden ? '.' : `: ${formatCents(report.unpaidAtHotelCents, report.currencyCode)} still to collect.`}
+          <MetricInfo metric="toCollect" />
+        </Alert>
+      ) : null}
       <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ mb: 2 }} alignItems={{ md: 'center' }} data-print="hide">
         <TextField
           size="small"
@@ -118,7 +141,7 @@ export function BookingsTab({ report, status, onStatusChange, onChanged }: Booki
             aria-pressed={status === null}
             onClick={(): void => onStatusChange(null)}
           />
-          {BOOKING_STATUS_OPTIONS.map((option): React.JSX.Element => (
+          {BOOKING_FILTER_OPTIONS.map((option): React.JSX.Element => (
             <Chip
               key={option.value}
               icon={statusIcon(bookingFilterStyle(option.value).icon)}
@@ -165,6 +188,7 @@ export function BookingsTab({ report, status, onStatusChange, onChanged }: Booki
                   <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" alignItems="center" sx={{ mt: 1 }}>
                     <StatusChip status={bookingFilterStyle(bookingStatusKey(row))} label={bookingStatusLabel(row)} />
                     <Chip size="small" variant="outlined" label={bookingPaymentLabel(row)} />
+                    <ArrivalHintChip row={row} today={report.asOfDate} />
                   </Stack>
                   <Button
                     fullWidth
@@ -221,7 +245,10 @@ export function BookingsTab({ report, status, onStatusChange, onChanged }: Booki
                     <TableCell align="right">{bookingNights(row)}</TableCell>
                     <TableCell align="right">{row.guestCount}</TableCell>
                     {moneyHidden ? null : <TableCell align="right">{formatCents(row.totalCents, row.currencyCode)}</TableCell>}
-                    <TableCell>{bookingPaymentLabel(row)}</TableCell>
+                    <TableCell>
+                      {bookingPaymentLabel(row)}
+                      <ArrivalHintChip row={row} today={report.asOfDate} />
+                    </TableCell>
                     <TableCell>
                       <StatusChip status={bookingFilterStyle(bookingStatusKey(row))} label={bookingStatusLabel(row)} />
                     </TableCell>
@@ -246,4 +273,13 @@ export function BookingsTab({ report, status, onStatusChange, onChanged }: Booki
       />
     </ReportSection>
   );
+}
+
+/**
+ * For a booking still unpaid at the hotel: how soon the guest arrives (or that they already did), so the money to
+ * collect first stands out. Nothing for any other booking or for an arrival more than a week away.
+ */
+function ArrivalHintChip({ row, today }: { row: StaffReservation; today: string }): React.JSX.Element | null {
+  const hint = isUnpaidAtHotel(row) ? unpaidArrivalHint(row.checkIn, today) : null;
+  return hint === null ? null : <Chip size="small" color="warning" variant="outlined" label={hint} sx={{ ml: 1 }} />;
 }

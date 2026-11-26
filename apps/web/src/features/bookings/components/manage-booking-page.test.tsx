@@ -49,6 +49,7 @@ function booking(overrides: Partial<GuestBooking> = {}): GuestBooking {
     canChangeDates: false,
     changeDatesBlockedReason: 'The dates of this booking cannot be changed. To change them, cancel and book again.',
     replacedByReference: null,
+    extras: [],
     ...overrides,
   };
 }
@@ -108,6 +109,34 @@ describe('ManageBookingPage', () => {
       expect(text).toContain('Confirmed');
       expect(text).toContain('Lake Chalet, Alpine Lake');
       expect(text).toContain('960,00 €');
+    });
+
+    it('lists the extras on the booking: a priced one with what it adds, a request as waiting for the property', async () => {
+      api.lookupBooking.mockResolvedValue(
+        booking({
+          extras: [
+            { id: 'e1', extraServiceId: 'x1', name: 'Breakfast basket', kind: 'instant', quantity: 2, unitPriceCents: 1800, lineCents: 3600, currencyCode: 'EUR', status: 'confirmed' },
+            { id: 'e2', extraServiceId: 'x2', name: 'Extra pillows', kind: 'on_request', quantity: 1, unitPriceCents: 0, lineCents: 0, currencyCode: 'EUR', status: 'pending' },
+          ],
+        }),
+      );
+      render(<ManageBookingPage />);
+
+      await findBooking();
+
+      const text = plain((await screen.findByLabelText('Your booking')).textContent);
+      expect(text).toContain('Extras');
+      expect(text).toContain('Breakfast basket × 2 (36,00 €)');
+      expect(text).toContain('Extra pillows × 1 (requested: the property will confirm, nothing charged yet)');
+    });
+
+    it('shows no extras line when the booking has none', async () => {
+      api.lookupBooking.mockResolvedValue(booking());
+      render(<ManageBookingPage />);
+
+      await findBooking();
+
+      expect(plain((await screen.findByLabelText('Your booking')).textContent)).not.toContain('Extras');
     });
 
     it('shows the API message when no booking matches and keeps the form', async () => {

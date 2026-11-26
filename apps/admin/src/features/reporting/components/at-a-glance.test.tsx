@@ -27,7 +27,7 @@ describe('AtAGlance', () => {
     render(<AtAGlance report={staffReport()} />);
 
     expect(screen.getByText(/Money you kept/)).toBeTruthy();
-    expect(screen.getByText(/Confirmed, paid bookings/)).toBeTruthy();
+    expect(screen.getByText(/Confirmed bookings with at least one night/)).toBeTruthy();
     expect(screen.getByRole('button', { name: 'What does Occupancy mean?' })).toBeTruthy();
   });
 

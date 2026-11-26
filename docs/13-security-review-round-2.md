@@ -459,5 +459,28 @@ New staff routes: `POST /staff/reservations/quote`, `POST /staff/reservations` (
 - **Money fields are server-set:** price comes from the same quote code a guest gets (rates, then automatic discounts), saved as a snapshot with the day's cancellation policy; `paid_cents` is 0 and `payment_status` is `pending` on insert, and only the conditional `UPDATE` in `markPaid` can change them.
 - **Database:** CHECKs keep a pending booking unpaid and pay-at-hotel only; a trigger refuses `paid -> pending` (even for the owner role) and a tick without `paid_at`. The no-overlap constraint still decides double bookings (409, nothing saved). Tested against a real Postgres in `migrations/staff-bookings.integration.spec.ts`.
 - **Privacy in the audit log:** `booking.created_by_staff` and `booking.marked_paid` record who, role, reference, stay id, dates, party size, amount and method; never the guest's name, email, phone or note (tested).
-- **Open question:** employees can tick a booking paid. It makes the booking's `paid_cents` equal its total, which later feeds the policy refund (and refunds themselves still need money access). If cash handling should be admin-only, change the role on the route. A dual-control rule (a second person confirms) is not built.
+- **Who ticks paid (owner decision, done):** `POST /staff/reservations/:id/mark-paid` needs **money access** (`@RequireMoneyAccess()`: an admin, or an employee with the refund-access tick; the service checks it again). It makes the booking's `paid_cents` equal its total, which later feeds the policy refund, so it is a money action. It is in `MONEY_ACCESS_ROUTES` of `tenant-isolation.spec.ts` (the real `RoleGuard` is tested for an admin, an employee with the permission and one without). The audit row says whether it was done via refund access. A dual-control rule (a second person confirms) is not built.
 - **Not covered:** per-user rate limit on creating bookings (staff are authenticated and audited; a runaway client could still fill a calendar), and an alert for pending bookings whose check-in has passed (SQL in docs/14).
+
+## 8. Addendum: extras on a booking, and the unpaid-at-hotel report (migrations 041 and 042)
+
+- **New table `reservation_extras`:** one row per extra, a copy of what was offered. Composite foreign keys tie it to the booking and the
+  property of the **same organization**; the catalog link is a plain key set to NULL when the property deletes the extra. CHECKs keep an
+  instant extra at price x quantity (status `confirmed`) and an on-request one at 0 (`pending` or `declined`) and the quantity at 1-20. A
+  trigger refuses any change of price, quantity, name, kind, currency or booking (even for the owner) and any DELETE; the owner-run
+  maintenance switch still works. The app role gets SELECT, INSERT and UPDATE of `status`/`updated_at` only (`RESTRICTED_TABLES`, two new
+  probes in `db:verify-roles`). Tested against a real Postgres in `migrations/staff-bookings.integration.spec.ts`.
+- **Cross-tenant extras:** the creator reads only `published` extras of THAT property and organization; an id from elsewhere is 404
+  `EXTRA_NOT_FOUND`, exactly like an unknown id (no hint it exists). `GET /staff/properties/:id/booking-extras` is `@TenantScoped` on the property and
+  in the role matrix (`BOTH`); the admin-only list with unpublished extras is unchanged.
+- **No client-set money:** the request carries only `{ extraId, quantity }`; name, kind, price and status come from the catalog, the DTO
+  refuses any other field and bounds the list (10 extras) and the quantity (1-20) (tested through the real validation pipe).
+- **Audit:** `booking.created_by_staff` now also records `extrasCount`, `extrasCents` and the extras' **names** (never a note or guest data).
+- **Report privacy:** the new money figures (`unpaidAtHotelCents`, `attention.unpaidAtHotelCents`, `previous.unpaidAtHotelCents`) are zeroed for
+  employees by `redactReportForEmployee`; counts stay. Even an employee with refund access still sees the report without money, as
+  before (the report is redacted by role, not by permission): open question below. `report_bookings` gets two columns (`payment_status`,
+  `paid_at`) and no personal data; the guest data export now includes the booking's payment status and its extras.
+- **Date changes:** a booking with a priced extra cannot be rebooked (409 `EXTRAS_ON_BOOKING`), so a price difference can never be computed
+  without the extras. Guest side too (`/manage` says to contact the property).
+- **Open question:** should an employee who has refund access also see money in Reports (today: no, only admins)? It would let them chase
+  unpaid-at-hotel amounts without asking an admin. Changing it is one condition in `ReservationsController.getReport`.

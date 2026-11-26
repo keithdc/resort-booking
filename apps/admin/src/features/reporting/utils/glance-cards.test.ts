@@ -45,3 +45,14 @@ describe('buildGlanceCards', () => {
     expect(cards[2]?.value).toBe('0%');
   });
 });
+
+describe('buildGlanceCards: money still to collect', () => {
+  it('adds "To collect" under revenue only when something is unpaid at the hotel', () => {
+    expect(buildGlanceCards(staffReport({ unpaidAtHotelCents: 0 }))[0]?.secondary).not.toContain('To collect');
+
+    const [revenue] = buildGlanceCards(staffReport({ unpaidAtHotelCents: 150000 }));
+
+    expect(revenue?.secondary).toMatch(/To collect 1.500,00/);
+    expect(revenue?.secondary).toContain('Paid by guests');
+  });
+});

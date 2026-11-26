@@ -12,8 +12,10 @@ import type { RawStaffReservation } from '../utils/reservation-defaults';
 import {
   cancelStaffReservation,
   changeStaffReservationDates,
+  fetchStaffBookingExtras,
   fetchStaffReservationsOnDate,
   patchStaffReservationArrival,
+  quoteStaffBooking,
 } from './staff-reservations-api';
 
 const client = vi.hoisted(() => ({
@@ -117,5 +119,29 @@ describe('staff reservation requests from an API that may be older than this app
 
     expect(screen.getByRole('dialog')).toBeTruthy();
     expect(screen.getByText('Cancelled')).toBeTruthy();
+  });
+});
+
+describe('booking extras requests', () => {
+  beforeEach(() => {
+    client.getStaffApiOk.mockReset();
+    client.mutateStaffApiOk.mockReset();
+  });
+
+  it('reads the extras a property offers from the staff route that employees may call', async () => {
+    client.getStaffApiOk.mockResolvedValue([{ id: 'x1' }]);
+
+    await expect(fetchStaffBookingExtras('p 1')).resolves.toEqual([{ id: 'x1' }]);
+
+    expect(client.getStaffApiOk).toHaveBeenCalledWith('/staff/properties/p%201/booking-extras');
+  });
+
+  it('sends the chosen extras with the quote', async () => {
+    client.mutateStaffApiOk.mockResolvedValue({ totalCents: 1 });
+    const body = { houseId: 'h1', checkIn: '2027-07-10', checkOut: '2027-07-12', guestCount: 2, extras: [{ extraId: 'x1', quantity: 2 }] };
+
+    await quoteStaffBooking(body);
+
+    expect(client.mutateStaffApiOk).toHaveBeenCalledWith('/staff/reservations/quote', 'POST', body);
   });
 });

@@ -15,7 +15,7 @@ import { Box, Paper, Tab, Tabs, Typography } from '@mui/material';
 import type { ReactElement } from 'react';
 import type { StaffReport } from '@resort-booking/shared-types';
 import { TAB_PURPOSES, type ReportTabKey } from '../utils/metric-definitions';
-import type { BookingStatusKey } from '../utils/report-labels';
+import type { BookingFilter } from '../utils/report-labels';
 import { DEFAULT_REPORT_TAB, REPORT_TABS } from '../utils/report-tabs';
 import { BookingsTab } from './bookings-tab';
 import { useMoneyHidden } from './money-visibility';
@@ -37,8 +37,8 @@ interface ReportBodyProps {
   report: StaffReport;
   tab: ReportTabKey;
   onTabChange: (tab: ReportTabKey) => void;
-  bookingStatus: BookingStatusKey | null;
-  onBookingStatusChange: (status: BookingStatusKey | null) => void;
+  bookingStatus: BookingFilter | null;
+  onBookingStatusChange: (status: BookingFilter | null) => void;
   onOpenDetail: (detail: ReportDetail) => void;
   onChanged: () => void;
 }

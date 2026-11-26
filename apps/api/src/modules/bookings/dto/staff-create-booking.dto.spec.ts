@@ -100,6 +100,55 @@ describe('StaffBookingQuoteDto', () => {
   });
 });
 
+describe('extras on a staff booking', () => {
+  const EXTRA_ID = '44444444-4444-4444-4444-444444444441';
+  const ONE = { extraId: EXTRA_ID, quantity: 2 };
+
+  it('accepts none, an empty list, and a short list of ids with quantities, on the quote and on the booking', async () => {
+    const { houseId, checkIn, checkOut, guestCount } = BODY;
+    const quoteBody = { houseId, checkIn, checkOut, guestCount };
+    const list = [ONE, { extraId: '44444444-4444-4444-4444-444444444442', quantity: 1 }];
+    expect(accepted(await run(StaffBookingQuoteDto, { ...quoteBody, extras: [] }))).toBe(true);
+    expect(accepted(await run(StaffBookingQuoteDto, { ...quoteBody, extras: list }))).toBe(true);
+    expect(accepted(await run(StaffCreateBookingDto, { ...BODY, extras: [] }))).toBe(true);
+    expect(accepted(await run(StaffCreateBookingDto, { ...BODY, extras: list }))).toBe(true);
+    expect(accepted(await run(StaffCreateBookingDto, BODY))).toBe(true);
+  });
+
+  it('keeps extras as a typed list of objects', async () => {
+    const result = await run(StaffCreateBookingDto, { ...BODY, extras: [ONE] });
+    expect(result).toMatchObject({ extras: [{ extraId: EXTRA_ID, quantity: 2 }] });
+  });
+
+  it('refuses a quantity that is not a whole number from 1 to 20, whatever its type', async () => {
+    for (const quantity of [0, -1, 21, 1.5, '2', null, undefined, {}, [], NaN]) {
+      expect(accepted(await run(StaffCreateBookingDto, { ...BODY, extras: [{ extraId: EXTRA_ID, quantity }] }))).toBe(false);
+    }
+    for (const quantity of [1, 20]) {
+      expect(accepted(await run(StaffCreateBookingDto, { ...BODY, extras: [{ extraId: EXTRA_ID, quantity }] }))).toBe(true);
+    }
+  });
+
+  it('refuses an id that is not an id, and a missing id', async () => {
+    for (const extraId of ['not-an-id', '', 5, null, undefined, {}]) {
+      expect(accepted(await run(StaffCreateBookingDto, { ...BODY, extras: [{ extraId, quantity: 1 }] }))).toBe(false);
+    }
+  });
+
+  it('refuses more than 10 extras, a list that is not a list, items that are not objects, and unknown fields on an item', async () => {
+    const many = Array.from({ length: 11 }, (_unused, index) => ({ extraId: `44444444-4444-4444-4444-4444444444${String(index).padStart(2, '0')}`, quantity: 1 }));
+    expect(accepted(await run(StaffCreateBookingDto, { ...BODY, extras: many }))).toBe(false);
+    expect(accepted(await run(StaffCreateBookingDto, { ...BODY, extras: many.slice(0, 10) }))).toBe(true);
+    for (const extras of ['x', 5, {}, ['x'], [null], [5]]) {
+      expect(accepted(await run(StaffCreateBookingDto, { ...BODY, extras }))).toBe(false);
+    }
+    // Nobody can set a price, a name or a status from the request: those come from the property's own list.
+    for (const field of [{ priceCents: 1 }, { name: 'Free' }, { status: 'confirmed' }, { lineCents: 0 }]) {
+      expect(accepted(await run(StaffCreateBookingDto, { ...BODY, extras: [{ ...ONE, ...field }] }))).toBe(false);
+    }
+  });
+});
+
 describe('the public hold form', () => {
   it('never accepts pay at hotel: a guest cannot pick it', async () => {
     const hold = { ...BODY, termsAccepted: true };

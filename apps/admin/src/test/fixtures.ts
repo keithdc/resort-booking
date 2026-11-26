@@ -50,6 +50,7 @@ export function staffReservation(overrides: Partial<StaffReservation> = {}): Sta
     rebookOfReference: null,
     refunds: [],
     changes: [],
+    extras: [],
     ...overrides,
   };
 }
@@ -151,6 +152,7 @@ export function periodSummary(overrides: Partial<PeriodSummary> = {}): PeriodSum
     netRevenueCents: 100000,
     cancelledCount: 0,
     cancellationRatePercent: 0,
+    unpaidAtHotelCents: 0,
     ...overrides,
   };
 }
@@ -176,6 +178,8 @@ export function staffReport(overrides: Partial<StaffReport> = {}): StaffReport {
     reservationCount: 3,
     occupiedNights: 4,
     revenueCents: 132000,
+    unpaidAtHotelCount: 0,
+    unpaidAtHotelCents: 0,
     averageNightlyCents: 33000,
     occupancyPercent: 6.5,
     upcomingStayCount: 2,
@@ -213,7 +217,17 @@ export function staffReport(overrides: Partial<StaffReport> = {}): StaffReport {
     cancellationReasons: [{ reason: 'guest_request', cancelledCount: 1, paidCents: 32000, refundedCents: 8000 }],
     refunds: [staffRefund({ amountCents: 8000, percent: 25, status: 'succeeded', reference: 'BK-DDDD000004' })],
     discountUsage: [{ discountId: 'd1', label: 'Long stay: 7+ nights', redemptionCount: 2, discountCents: 12000 }],
-    attention: { unpaidHoldCount: 1, refundsToPayCount: 2, refundsToPayCents: 15000, arrivalsTodayCount: 0, arrivalsNext7DaysCount: 3 },
+    attention: {
+      unpaidHoldCount: 1,
+      refundsToPayCount: 2,
+      refundsToPayCents: 15000,
+      arrivalsTodayCount: 0,
+      arrivalsNext7DaysCount: 3,
+      unpaidAtHotelCount: 0,
+      unpaidAtHotelCents: 0,
+      unpaidAtHotelArrivalsNext7DaysCount: 0,
+      unpaidAtHotelPastCount: 0,
+    },
     previous: periodSummary(),
     ...overrides,
   };

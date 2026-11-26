@@ -1,6 +1,6 @@
 /**
  * @file apps/api/src/migrations/staff-bookings.integration.spec.ts
- * @shared Opt-in: proves migration 040 (pay-at-hotel bookings, payment status) against a real Postgres (throwaway database)
+ * @shared Opt-in: proves migrations 040 (pay-at-hotel bookings, payment status), 041 (extras on a booking) and 042 (report view) against a real Postgres (throwaway database)
  *
  * Skipped unless DATABASE_ADMIN_URL is set (a superuser URL). The database is created, migrated (001 to the newest),
  * given the three roles, and dropped afterwards.
@@ -166,5 +166,128 @@ suite('staff bookings and payment status (real Postgres, throwaway database)', (
     expect(await failure(app, again, [ORG, PROPERTY, HOUSE, checkIn, checkOut])).toContain('inventory_blocks_no_overlap');
     await app.query(`UPDATE inventory_blocks SET status = 'cancelled', cancelled_at = now() WHERE id = $1`, [id]);
     expect(await failure(app, again, [ORG, PROPERTY, HOUSE, checkIn, checkOut])).toBe('');
+  });
+  describe('extras on a booking (migration 041)', () => {
+    let catalogId = '';
+
+    async function catalogExtra(name: string, kind: string, price: number): Promise<string> {
+      const result = await admin.query<{ id: string }>(
+        `INSERT INTO extra_services (organization_id, property_id, name, kind, price_cents, currency_code) VALUES ($1, $2, $3, $4, $5, 'EUR') RETURNING id`,
+        [ORG, PROPERTY, name, kind, price],
+      );
+      return result.rows[0]?.id ?? '';
+    }
+
+    const insertExtra = (pool: Pool, booking: string, fields: { kind: string; quantity: number; unit: number; line: number; status: string; org?: string; name?: string }): Promise<unknown> =>
+      pool.query(
+        `INSERT INTO reservation_extras (organization_id, property_id, inventory_block_id, extra_service_id, name, kind, quantity, unit_price_cents, line_cents, currency_code, status)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'EUR', $10)`,
+        [fields.org ?? ORG, PROPERTY, booking, catalogId, fields.name ?? 'Breakfast basket', fields.kind, fields.quantity, fields.unit, fields.line, fields.status],
+      );
+
+    beforeAll(async () => {
+      catalogId = await catalogExtra('Breakfast basket', 'instant', 1800);
+    });
+
+    it('lets the app role save an instant extra at price x quantity and a request at nothing', async () => {
+      const booking = await insert(app, { method: 'pay_at_hotel', status: 'pending', paid: 0 });
+
+      await insertExtra(app, booking, { kind: 'instant', quantity: 2, unit: 1800, line: 3600, status: 'confirmed' });
+      await insertExtra(app, booking, { kind: 'on_request', quantity: 1, unit: 0, line: 0, status: 'pending', name: 'Extra pillows' });
+
+      const rows = await admin.query<{ name: string; line_cents: number; status: string }>('SELECT name, line_cents, status FROM reservation_extras WHERE inventory_block_id = $1 ORDER BY name', [booking]);
+      expect(rows.rows).toEqual([
+        { name: 'Breakfast basket', line_cents: 3600, status: 'confirmed' },
+        { name: 'Extra pillows', line_cents: 0, status: 'pending' },
+      ]);
+    });
+
+    it('refuses a line that does not match its kind, and a quantity outside 1 to 20', async () => {
+      const booking = await insert(app, { method: 'pay_at_hotel', status: 'pending', paid: 0 });
+      const attempt = async (fields: Parameters<typeof insertExtra>[2]): Promise<string> => {
+        try {
+          await insertExtra(app, booking, fields);
+        } catch (error: unknown) {
+          return error instanceof Error ? error.message : String(error);
+        }
+        return '';
+      };
+
+      expect(await attempt({ kind: 'instant', quantity: 2, unit: 1800, line: 1800, status: 'confirmed' })).toContain('reservation_extras_line_matches_kind');
+      expect(await attempt({ kind: 'instant', quantity: 1, unit: 1800, line: 1800, status: 'pending' })).toContain('reservation_extras_line_matches_kind');
+      expect(await attempt({ kind: 'on_request', quantity: 1, unit: 500, line: 500, status: 'pending' })).toContain('reservation_extras_line_matches_kind');
+      expect(await attempt({ kind: 'instant', quantity: 0, unit: 1800, line: 0, status: 'confirmed' })).toContain('quantity');
+      expect(await attempt({ kind: 'instant', quantity: 21, unit: 1800, line: 37800, status: 'confirmed' })).toContain('quantity');
+    });
+
+    it('ties an extra to the booking\'s own organization and property', async () => {
+      const other = await admin.query<{ id: string }>(`INSERT INTO organizations (name) VALUES ('Other Org ${SUFFIX}') RETURNING id`);
+      const otherOrg = other.rows[0]?.id ?? '';
+      const booking = await insert(app, { method: 'pay_at_hotel', status: 'pending', paid: 0 });
+
+      expect(await failure(app, `INSERT INTO reservation_extras (organization_id, property_id, inventory_block_id, name, kind, quantity, unit_price_cents, line_cents, currency_code, status)
+        VALUES ($1, $2, $3, 'Cot', 'on_request', 1, 0, 0, 'EUR', 'pending')`, [otherOrg, PROPERTY, booking])).toContain('reservation_extras_');
+    });
+
+    it('lets the app role move the status only: price, quantity and name are fixed, and nothing is deleted', async () => {
+      const booking = await insert(app, { method: 'pay_at_hotel', status: 'pending', paid: 0 });
+      await insertExtra(app, booking, { kind: 'on_request', quantity: 1, unit: 0, line: 0, status: 'pending', name: 'Travel cot' });
+
+      expect((await app.query(`UPDATE reservation_extras SET status = 'declined', updated_at = now() WHERE inventory_block_id = $1`, [booking])).rowCount).toBe(1);
+      expect(await failure(app, `UPDATE reservation_extras SET unit_price_cents = 5000 WHERE inventory_block_id = $1`, [booking])).toContain('permission denied');
+      expect(await failure(app, `UPDATE reservation_extras SET quantity = 9 WHERE inventory_block_id = $1`, [booking])).toContain('permission denied');
+      expect(await failure(app, `DELETE FROM reservation_extras WHERE inventory_block_id = $1`, [booking])).toContain('permission denied');
+    });
+
+    it('stops even the owner role from changing a price or deleting a row, except in a maintenance transaction', async () => {
+      const booking = await insert(admin, { method: 'pay_at_hotel', status: 'pending', paid: 0 });
+      await insertExtra(admin, booking, { kind: 'instant', quantity: 1, unit: 1800, line: 1800, status: 'confirmed' });
+
+      expect(await failure(admin, `UPDATE reservation_extras SET unit_price_cents = 1, line_cents = 1 WHERE inventory_block_id = $1`, [booking])).toContain('never change');
+      expect(await failure(admin, `DELETE FROM reservation_extras WHERE inventory_block_id = $1`, [booking])).toContain('DELETE is not allowed');
+
+      const client = await admin.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query(`SET LOCAL resort.record_maintenance = 'on'`);
+        expect((await client.query(`DELETE FROM reservation_extras WHERE inventory_block_id = $1`, [booking])).rowCount).toBe(1);
+        await client.query('ROLLBACK');
+      } finally {
+        client.release();
+      }
+      const kept = await admin.query<{ n: string }>('SELECT count(*) AS n FROM reservation_extras WHERE inventory_block_id = $1', [booking]);
+      expect(kept.rows[0]?.n).toBe('1');
+    });
+
+    it('keeps the booking\'s copy of an extra when the property deletes it from its list', async () => {
+      const gone = await catalogExtra('Seasonal fruit', 'instant', 900);
+      const booking = await insert(app, { method: 'pay_at_hotel', status: 'pending', paid: 0 });
+      await app.query(
+        `INSERT INTO reservation_extras (organization_id, property_id, inventory_block_id, extra_service_id, name, kind, quantity, unit_price_cents, line_cents, currency_code, status)
+         VALUES ($1, $2, $3, $4, 'Seasonal fruit', 'instant', 1, 900, 900, 'EUR', 'confirmed')`,
+        [ORG, PROPERTY, booking, gone],
+      );
+
+      await app.query('DELETE FROM extra_services WHERE id = $1', [gone]);
+
+      const row = await admin.query<{ extra_service_id: string | null; name: string; line_cents: number }>('SELECT extra_service_id, name, line_cents FROM reservation_extras WHERE inventory_block_id = $1', [booking]);
+      expect(row.rows[0]).toEqual({ extra_service_id: null, name: 'Seasonal fruit', line_cents: 900 });
+    });
+  });
+
+  describe('report view (migration 042)', () => {
+    it('adds payment status and paid time to the facts-only booking view, and still no guest contact data', async () => {
+      const id = await insert(app, { method: 'pay_at_hotel', status: 'pending', paid: 0 });
+
+      const row = await admin.query<{ payment_status: string; paid_at: Date | null }>('SELECT payment_status, paid_at FROM report_bookings WHERE id = $1', [id]);
+      expect(row.rows[0]).toEqual({ payment_status: 'pending', paid_at: null });
+      const columns = await admin.query<{ column_name: string }>(`SELECT column_name FROM information_schema.columns WHERE table_name = 'report_bookings'`);
+      const names = columns.rows.map((column) => column.column_name);
+      expect(names).toEqual(expect.arrayContaining(['payment_status', 'paid_at', 'total_cents', 'paid_cents']));
+      expect(names).not.toEqual(expect.arrayContaining(['booker_email']));
+      expect(names).not.toContain('booker_name');
+      expect(names).not.toContain('booker_phone');
+      expect(names).not.toContain('guest_note');
+    });
   });
 });

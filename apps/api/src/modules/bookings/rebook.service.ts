@@ -276,6 +276,7 @@ export class RebookService {
       this.reader.todayFor(row),
       row.payment_status,
       audience,
+      row.priced_extras_count > 0,
     );
     if (!eligibility.allowed) {
       throw new ConflictException({ message: eligibility.message, code: eligibility.code });
@@ -495,6 +496,7 @@ export class RebookService {
     }
 
     await this.bookings.copyRequests(client, row.id, newBookingId);
+    await this.bookings.copyExtras(client, row.id, newBookingId);
     // A balance the guest paid outside the system (staff confirmed it) becomes a manual payment on the old
     // booking first, so it moves to the new booking together with the other payments.
     const paymentId =

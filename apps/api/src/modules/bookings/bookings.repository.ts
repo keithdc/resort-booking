@@ -5,9 +5,10 @@
  */
 
 import { Injectable } from '@nestjs/common';
-import type { ActionInitiator, BookingPaymentStatus, RefundStatus, StaffCancelReason } from '@resort-booking/shared-types';
+import type { ActionInitiator, BookingExtra, BookingPaymentStatus, RefundStatus, StaffCancelReason } from '@resort-booking/shared-types';
 import type { PoolClient } from 'pg';
 import { DatabaseService } from '../../shared/database/database.service';
+import { BOOKING_EXTRA_COLUMNS, mapBookingExtra, type BookingExtraRow } from '../extras/booking-extras';
 import { parseRefundablePayments, type RefundablePayment, type UuidRange } from './bookings.rules';
 
 /** One booking with everything the guest view and a date change need, read in a single query. */
@@ -36,6 +37,8 @@ export interface BookingRow {
   paid_cents: number | null;
   policy_snapshot: unknown;
   price_snapshot: unknown;
+  /** How many extras on the booking carry a price. Such a booking cannot have its dates changed online (see rebook.service). */
+  priced_extras_count: number;
   /** The booking this one replaced when its dates were changed, else null. */
   rebook_of_id: string | null;
   /** The booking that replaced this one when its dates were changed, else null. */
@@ -136,6 +139,7 @@ const SELECT_BOOKING = `
     ib.check_in::text AS check_in, ib.check_out::text AS check_out, ib.guest_count,
     ib.booker_name, ib.booker_email, ib.booker_phone, ib.guest_note, ib.payment_method, ib.payment_status,
     ib.total_cents, ib.currency_code, ib.paid_cents, ib.policy_snapshot, ib.price_snapshot, ib.rebook_of_id,
+    (SELECT count(*)::int FROM reservation_extras ex WHERE ex.inventory_block_id = ib.id AND ex.line_cents > 0) AS priced_extras_count,
     (
       SELECT nb.id FROM inventory_blocks nb
       WHERE nb.rebook_of_id = ib.id AND nb.kind = 'reservation'
@@ -186,6 +190,17 @@ export class BookingsRepository {
     const result = await this.database.query<RawBookingRow>(`${SELECT_BOOKING} AND ib.id = $1`, [bookingId]);
     const row = result.rows[0];
     return row === undefined ? null : mapRow(row);
+  }
+
+  /**
+   * The extras chosen on a booking, oldest first (empty when none).
+   */
+  public async listExtras(bookingId: string): Promise<BookingExtra[]> {
+    const result = await this.database.query<BookingExtraRow>(
+      `SELECT ${BOOKING_EXTRA_COLUMNS} FROM reservation_extras WHERE inventory_block_id = $1 ORDER BY created_at ASC, name ASC`,
+      [bookingId],
+    );
+    return result.rows.map(mapBookingExtra);
   }
 
   /**
@@ -366,6 +381,25 @@ export class BookingsRepository {
       `
       INSERT INTO inventory_block_requests (inventory_block_id, request_option_id)
       SELECT $2::uuid, request_option_id FROM inventory_block_requests WHERE inventory_block_id = $1
+      `,
+      [fromBookingId, toBookingId],
+    );
+  }
+
+  /**
+   * The extras ride along to the new booking, as they were (name, kind, price and quantity are copies). Only extras
+   * with nothing to pay can be here: a booking with a priced extra cannot change its dates.
+   */
+  public async copyExtras(client: PoolClient, fromBookingId: string, toBookingId: string): Promise<void> {
+    await client.query(
+      `
+      INSERT INTO reservation_extras (
+        organization_id, property_id, inventory_block_id, extra_service_id,
+        name, kind, quantity, unit_price_cents, line_cents, currency_code, status
+      )
+      SELECT organization_id, property_id, $2::uuid, extra_service_id,
+        name, kind, quantity, unit_price_cents, line_cents, currency_code, status
+      FROM reservation_extras WHERE inventory_block_id = $1
       `,
       [fromBookingId, toBookingId],
     );

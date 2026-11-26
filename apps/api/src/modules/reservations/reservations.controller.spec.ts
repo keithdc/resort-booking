@@ -31,6 +31,8 @@ function report(): StaffReport {
     reservationCount: 2,
     occupiedNights: 6,
     revenueCents: 99000,
+    unpaidAtHotelCount: 0,
+    unpaidAtHotelCents: 0,
     averageNightlyCents: 16500,
     occupancyPercent: 20,
     upcomingStayCount: 1,
@@ -53,7 +55,7 @@ function report(): StaffReport {
     cancellationReasons: [],
     refunds: [],
     discountUsage: [],
-    attention: { unpaidHoldCount: 0, refundsToPayCount: 0, refundsToPayCents: 0, arrivalsTodayCount: 0, arrivalsNext7DaysCount: 0 },
+    attention: { unpaidHoldCount: 0, refundsToPayCount: 0, refundsToPayCents: 0, arrivalsTodayCount: 0, arrivalsNext7DaysCount: 0, unpaidAtHotelCount: 0, unpaidAtHotelCents: 0, unpaidAtHotelArrivalsNext7DaysCount: 0, unpaidAtHotelPastCount: 0 },
     previous: {
       from: '2026-10-01',
       to: '2026-11-01',
@@ -66,6 +68,7 @@ function report(): StaffReport {
       netRevenueCents: 45000,
       cancelledCount: 0,
       cancellationRatePercent: 0,
+      unpaidAtHotelCents: 0,
     },
   };
 }

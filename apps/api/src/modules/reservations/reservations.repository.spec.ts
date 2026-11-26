@@ -110,8 +110,11 @@ describe('ReservationsRepository staff reads', () => {
   let repository: ReservationsRepository;
 
   /** Answers by looking at which statement was sent. */
-  function answer(bookings: Record<string, unknown>[], refunds: StaffRefundRow[], changes: StaffChangeRow[]): void {
+  function answer(bookings: Record<string, unknown>[], refunds: StaffRefundRow[], changes: StaffChangeRow[], extras: Record<string, unknown>[] = []): void {
     query.mockImplementation((sql: string) => {
+      if (sql.includes('FROM reservation_extras')) {
+        return Promise.resolve({ rows: extras });
+      }
       if (sql.includes('FROM refunds r')) {
         return Promise.resolve({ rows: refunds });
       }
@@ -130,22 +133,22 @@ describe('ReservationsRepository staff reads', () => {
     repository = moduleRef.get(ReservationsRepository);
   });
 
-  it.each([1, 5, 50])('listConfirmedOnDate with %i bookings sends exactly 3 statements', async (count) => {
+  it.each([1, 5, 50])('listConfirmedOnDate with %i bookings sends exactly 4 statements', async (count) => {
     const bookings = Array.from({ length: count }, (_, index) => bookingRow(index + 1));
     answer(bookings, bookings.map((row) => refundRow(String(row['id']))), []);
 
     const result = await repository.listConfirmedOnDate('2027-07-10', null, 'org-1');
 
     expect(result).toHaveLength(count);
-    expect(query).toHaveBeenCalledTimes(3);
+    expect(query).toHaveBeenCalledTimes(4);
   });
 
-  it('listPipelineOnDate also sends 3 statements for many bookings', async () => {
+  it('listPipelineOnDate also sends 4 statements for many bookings', async () => {
     answer(Array.from({ length: 20 }, (_, index) => bookingRow(index + 1)), [], []);
 
     await repository.listPipelineOnDate('2027-07-10', null, 'org-1');
 
-    expect(query).toHaveBeenCalledTimes(3);
+    expect(query).toHaveBeenCalledTimes(4);
   });
 
   it('asks for history with the whole id list in one array each', async () => {
@@ -155,7 +158,9 @@ describe('ReservationsRepository staff reads', () => {
 
     expect(query.mock.calls[1]?.[1]).toEqual([[id(1), id(2)]]);
     expect(query.mock.calls[2]?.[1]).toEqual([[id(1), id(2)]]);
+    expect(query.mock.calls[3]?.[1]).toEqual([[id(1), id(2)]]);
     expect(String(query.mock.calls[1]?.[0])).toContain('ANY($1::uuid[])');
+    expect(String(query.mock.calls[3]?.[0])).toContain('FROM reservation_extras');
   });
 
   it('skips both history queries when there are no bookings', async () => {
@@ -209,10 +214,24 @@ describe('ReservationsRepository staff reads', () => {
     expect(only?.cancellation).toMatchObject({ initiatedBy: 'guest', reason: 'guest_request', staffName: null, cancelledAt: NOW.toISOString() });
   });
 
-  it('getById loads that one booking with its history in 3 statements, null when missing', async () => {
+  it('hands each booking only its own extras, as the copy saved with the booking', async () => {
+    const extra = (block: string, name: string): Record<string, unknown> => ({
+      inventory_block_id: block, id: `e-${name}`, extra_service_id: null, name, kind: 'instant', quantity: 2, unit_price_cents: 1800, line_cents: 3600, currency_code: 'EUR', status: 'confirmed',
+    });
+    answer([bookingRow(1), bookingRow(2)], [], [], [extra(id(1), 'Breakfast basket')]);
+
+    const [first, second] = await repository.listConfirmedOnDate('2027-07-10', null, 'org-1');
+
+    expect(first?.extras).toEqual([
+      { id: 'e-Breakfast basket', extraServiceId: null, name: 'Breakfast basket', kind: 'instant', quantity: 2, unitPriceCents: 1800, lineCents: 3600, currencyCode: 'EUR', status: 'confirmed' },
+    ]);
+    expect(second?.extras).toEqual([]);
+  });
+
+  it('getById loads that one booking with its history in 4 statements, null when missing', async () => {
     answer([bookingRow(1)], [refundRow(id(1))], []);
     expect((await repository.getById(id(1)))?.refunds).toHaveLength(1);
-    expect(query).toHaveBeenCalledTimes(3);
+    expect(query).toHaveBeenCalledTimes(4);
 
     query.mockReset();
     answer([], [], []);

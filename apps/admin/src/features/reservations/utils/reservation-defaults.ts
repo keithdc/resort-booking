@@ -4,7 +4,7 @@
  * @dependencies shared-types
  */
 
-import type { PropertyReportRow, StaffReport, StaffReservation } from '@resort-booking/shared-types';
+import type { PeriodSummary, PropertyReportRow, ReportAttention, StaffReport, StaffReservation } from '@resort-booking/shared-types';
 
 /** The fields an API from before cancellations and refunds existed does not send. */
 type NewerFields =
@@ -18,7 +18,8 @@ type NewerFields =
   | 'replacedByReference'
   | 'rebookOfReference'
   | 'refunds'
-  | 'changes';
+  | 'changes'
+  | 'extras';
 
 /** A reservation as the API may send it: the newer fields can be missing from an older server. */
 export type RawStaffReservation = Omit<StaffReservation, NewerFields> & Partial<Pick<StaffReservation, NewerFields>>;
@@ -41,6 +42,7 @@ export function withReservationDefaults(raw: RawStaffReservation): StaffReservat
     rebookOfReference: raw.rebookOfReference ?? null,
     refunds: raw.refunds ?? [],
     changes: raw.changes ?? [],
+    extras: raw.extras ?? [],
   };
 }
 
@@ -53,14 +55,19 @@ type NewerReportFields =
   | 'cancellationReasons'
   | 'refunds'
   | 'discountUsage'
-  | 'attention'
-  | 'previous';
+  | 'unpaidAtHotelCount'
+  | 'unpaidAtHotelCents';
+
+/** The headline numbers of a period as an API from before pay at hotel sends them: no money still to collect. */
+type RawPeriodSummary = Omit<PeriodSummary, 'unpaidAtHotelCents'> & Partial<Pick<PeriodSummary, 'unpaidAtHotelCents'>>;
 
 type RawPropertyReportRow = Omit<PropertyReportRow, 'houseCount'> & Partial<Pick<PropertyReportRow, 'houseCount'>>;
 
 /** A report as the API may send it: older servers lack the newer fields and carry raw reservations. */
-export type RawStaffReport = Omit<StaffReport, 'pipeline' | 'stays' | 'properties' | NewerReportFields> &
+export type RawStaffReport = Omit<StaffReport, 'pipeline' | 'stays' | 'properties' | 'attention' | 'previous' | NewerReportFields> &
   Partial<Pick<StaffReport, NewerReportFields>> & {
+    attention?: Partial<ReportAttention>;
+    previous?: RawPeriodSummary;
     pipeline: RawStaffReservation[];
     stays: RawStaffReservation[];
     properties: RawPropertyReportRow[];
@@ -85,14 +92,21 @@ export function withReportDefaults(report: RawStaffReport): StaffReport {
     cancellationReasons: report.cancellationReasons ?? [],
     refunds: report.refunds ?? [],
     discountUsage: report.discountUsage ?? [],
-    attention: report.attention ?? {
+    unpaidAtHotelCount: report.unpaidAtHotelCount ?? 0,
+    unpaidAtHotelCents: report.unpaidAtHotelCents ?? 0,
+    attention: {
       unpaidHoldCount: 0,
       refundsToPayCount: 0,
       refundsToPayCents: 0,
       arrivalsTodayCount: 0,
       arrivalsNext7DaysCount: 0,
+      unpaidAtHotelCount: 0,
+      unpaidAtHotelCents: 0,
+      unpaidAtHotelArrivalsNext7DaysCount: 0,
+      unpaidAtHotelPastCount: 0,
+      ...report.attention,
     },
-    previous: report.previous ?? {
+    previous: {
       from: report.from,
       to: report.from,
       reservationCount: 0,
@@ -104,6 +118,8 @@ export function withReportDefaults(report: RawStaffReport): StaffReport {
       netRevenueCents: 0,
       cancelledCount: 0,
       cancellationRatePercent: 0,
+      ...report.previous,
+      unpaidAtHotelCents: report.previous?.unpaidAtHotelCents ?? 0,
     },
   };
 }

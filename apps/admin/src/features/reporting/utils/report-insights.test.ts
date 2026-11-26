@@ -9,7 +9,7 @@ import { buildInsights } from './report-insights';
 
 const PREVIOUS: PeriodSummary = {
   from: '2027-06-01', to: '2027-07-01', reservationCount: 2, occupiedNights: 8, occupancyPercent: 20,
-  averageNightlyCents: 10000, grossRevenueCents: 100000, refundedCents: 0, netRevenueCents: 100000, cancelledCount: 0, cancellationRatePercent: 0,
+  averageNightlyCents: 10000, grossRevenueCents: 100000, refundedCents: 0, netRevenueCents: 100000, cancelledCount: 0, cancellationRatePercent: 0, unpaidAtHotelCents: 0,
 };
 
 function report(overrides: Partial<Parameters<typeof buildInsights>[0]> = {}): Parameters<typeof buildInsights>[0] {

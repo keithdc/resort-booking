@@ -101,6 +101,31 @@ export interface ExtraServiceWrite {
   published: boolean;
 }
 
+/**
+ * Where an extra on a booking stands. `confirmed`: a priced extra, part of the total. `pending`: the guest asked and
+ * staff have not answered; nothing is charged. `declined`: staff said no (nothing was charged).
+ */
+export type BookingExtraStatus = 'confirmed' | 'pending' | 'declined';
+
+/**
+ * An extra chosen on a booking, as it was offered at the time: the name, kind and price are a copy, so later edits to
+ * the property's extras never change a booking.
+ */
+export interface BookingExtra {
+  id: string;
+  /** The catalog entry it came from; null once that entry was deleted. */
+  extraServiceId: string | null;
+  name: string;
+  kind: ExtraServiceKind;
+  quantity: number;
+  /** The price of one at booking time (an on-request extra keeps its listed price but charges nothing until approved). */
+  unitPriceCents: number;
+  /** What this line adds to the booking total: price x quantity for an instant extra, always 0 for a request. */
+  lineCents: number;
+  currencyCode: string;
+  status: BookingExtraStatus;
+}
+
 export interface CreatePropertyRequest {
   name: string;
   slug: string;
@@ -445,14 +470,47 @@ export interface StaffReservation {
   refunds: StaffRefund[];
   /** Every date change involving this booking, oldest first. */
   changes: StaffBookingChange[];
+  /** The extras chosen on this booking (empty when none, and in the report's booking lists). */
+  extras: BookingExtra[];
 }
 
 /** What staff type to price a booking for a guest (the dates must be free and in the future). */
+/** One extra picked for a staff booking: a catalog entry of the stay's property and how many. */
+export interface StaffBookingExtraChoice {
+  extraId: string;
+  /** 1 to 20. */
+  quantity: number;
+}
+
 export interface StaffBookingQuoteRequest {
   houseId: string;
   checkIn: string;
   checkOut: string;
   guestCount: number;
+  /** Optional: published extras of the stay's property. Left out means none. */
+  extras?: StaffBookingExtraChoice[];
+}
+
+/** One extra on a staff quote: what it adds now (nothing for an on-request extra). */
+export interface StaffQuoteExtraLine {
+  extraId: string;
+  name: string;
+  kind: ExtraServiceKind;
+  quantity: number;
+  unitPriceCents: number;
+  lineCents: number;
+  currencyCode: string;
+}
+
+/**
+ * A staff quote: the stay priced like a guest's quote, plus the chosen extras. `totalCents` is the whole booking:
+ * the stay after discounts PLUS `extrasCents` (extras are never discounted). `subtotalCents`, `discountCents` and
+ * `lines` still describe the stay only.
+ */
+export interface StaffBookingQuote extends Quote {
+  extras: StaffQuoteExtraLine[];
+  /** Sum of the instant extras' lines. On-request extras add nothing. */
+  extrasCents: number;
 }
 
 /** A booking made by staff. Only pay at hotel exists for now; a card payment link comes later. */
@@ -546,6 +604,8 @@ export interface PeriodSummary {
   netRevenueCents: number;
   cancelledCount: number;
   cancellationRatePercent: number;
+  /** Part of the period's booked revenue still to collect (pay-at-hotel bookings not marked paid). Not in gross or net. */
+  unpaidAtHotelCents: number;
 }
 
 /** Cancelled bookings with nights in the period, grouped by why they were cancelled. */
@@ -572,6 +632,14 @@ export interface ReportAttention {
   refundsToPayCents: number;
   arrivalsTodayCount: number;
   arrivalsNext7DaysCount: number;
+  /** Confirmed pay-at-hotel bookings not marked paid yet, whatever their dates (as of today). */
+  unpaidAtHotelCount: number;
+  /** What those bookings add up to. Zeroed for people who do not see money. */
+  unpaidAtHotelCents: number;
+  /** Of those, the ones arriving today or in the next 7 days: the money to collect first. */
+  unpaidAtHotelArrivalsNext7DaysCount: number;
+  /** Of those, the ones whose check-in has already passed: the guest came, nobody ticked it paid. */
+  unpaidAtHotelPastCount: number;
 }
 
 export interface StaffReport {
@@ -584,7 +652,12 @@ export interface StaffReport {
   availableNights: number;
   reservationCount: number;
   occupiedNights: number;
+  /** Value of the confirmed bookings in the period (the nights slept in it), paid or not. `grossRevenueCents` is what was collected. */
   revenueCents: number;
+  /** How many confirmed bookings in the period are pay-at-hotel and not marked paid yet. */
+  unpaidAtHotelCount: number;
+  /** The part of `revenueCents` still to collect from them. */
+  unpaidAtHotelCents: number;
   averageNightlyCents: number;
   occupancyPercent: number;
   upcomingStayCount: number;
@@ -904,6 +977,8 @@ export interface GuestBooking {
   changeDatesBlockedReason: string | null;
   /** When these dates were changed, the old booking is cancelled and points to the new booking here. */
   replacedByReference: string | null;
+  /** The extras on the booking (empty when none). Requests show as pending until the property confirms them. */
+  extras: BookingExtra[];
 }
 
 /** The reference and email the guest booked with. Both must match. */

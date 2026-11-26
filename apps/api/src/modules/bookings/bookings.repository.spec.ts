@@ -42,6 +42,25 @@ describe('BookingsRepository', () => {
     expect(params).toEqual([[RANGE.low, RANGE.high, 'ada@example.com']]);
   });
 
+  it('counts the priced extras of the booking in the same statement', async () => {
+    await repository.findByReference(RANGE, 'ada@example.com');
+
+    expect(query.mock.calls[0]?.[0]).toContain('FROM reservation_extras ex');
+    expect(query.mock.calls[0]?.[0]).toContain('ex.line_cents > 0');
+  });
+
+  it('lists the extras of one booking, oldest first, as the copy saved with it', async () => {
+    query.mockResolvedValueOnce({
+      rows: [{ id: 'e1', extra_service_id: 'x1', name: 'Breakfast', kind: 'instant', quantity: 2, unit_price_cents: 1800, line_cents: 3600, currency_code: 'EUR', status: 'confirmed' }],
+    });
+
+    const extras = await repository.listExtras('booking-1');
+
+    expect(extras).toEqual([{ id: 'e1', extraServiceId: 'x1', name: 'Breakfast', kind: 'instant', quantity: 2, unitPriceCents: 1800, lineCents: 3600, currencyCode: 'EUR', status: 'confirmed' }]);
+    expect(query.mock.calls[0]?.[0]).toContain('FROM reservation_extras WHERE inventory_block_id = $1');
+    expect(query.mock.calls[0]?.[1]).toEqual(['booking-1']);
+  });
+
   it('only ever looks at reservations that are confirmed or cancelled', async () => {
     await repository.findByReference(RANGE, 'ada@example.com');
 
@@ -284,6 +303,15 @@ describe('BookingsRepository', () => {
       await repository.copyRequests(client, 'old', 'new');
 
       expect(clientQuery).toHaveBeenCalledTimes(1);
+      expect(clientQuery.mock.calls[0]?.[1]).toEqual(['old', 'new']);
+    });
+
+    it('carries the extras over to the new booking in one statement, as copies', async () => {
+      await repository.copyExtras(client, 'old', 'new');
+
+      expect(clientQuery).toHaveBeenCalledTimes(1);
+      expect(clientQuery.mock.calls[0]?.[0]).toContain('INSERT INTO reservation_extras');
+      expect(clientQuery.mock.calls[0]?.[0]).toContain('FROM reservation_extras WHERE inventory_block_id = $1');
       expect(clientQuery.mock.calls[0]?.[1]).toEqual(['old', 'new']);
     });
 

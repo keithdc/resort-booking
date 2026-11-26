@@ -214,6 +214,10 @@ describe('audit rows of the staff money actions', () => {
           bookerEmail: 'grace@example.com',
           bookerPhone: '+33612345678',
           guestNote: 'allergic to nuts',
+          extras: [
+            { name: 'Breakfast basket', kind: 'instant', quantity: 2, unitPriceCents: 1800, lineCents: 3600, status: 'confirmed' },
+            { name: 'Extra pillows', kind: 'on_request', quantity: 1, unitPriceCents: 0, lineCents: 0, status: 'pending' },
+          ],
         },
       },
     );
@@ -236,6 +240,9 @@ describe('audit rows of the staff money actions', () => {
         currency: 'EUR',
         paymentMethod: 'pay_at_hotel',
         paymentStatus: 'pending',
+        extrasCount: 2,
+        extrasCents: 3600,
+        extraNames: ['Breakfast basket', 'Extra pillows'],
       },
     });
     const written = JSON.stringify(recordBy.mock.calls);

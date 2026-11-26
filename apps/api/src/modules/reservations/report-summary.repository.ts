@@ -47,6 +47,10 @@ interface AttentionBookingRow {
   unpaid_hold_count: number;
   arrivals_today_count: number;
   arrivals_next_7_days_count: number;
+  unpaid_at_hotel_count: number;
+  unpaid_at_hotel_cents: number;
+  unpaid_at_hotel_arrivals_next_7_days_count: number;
+  unpaid_at_hotel_past_count: number;
 }
 
 interface AttentionRefundRow {
@@ -179,7 +183,8 @@ export class ReportSummaryRepository {
 
   /**
    * What needs a person as of `asOfDate`: live unpaid holds, arrivals today and in the next 7 days,
-   * and refunds still waiting to be paid. Two statements in total.
+   * pay-at-hotel bookings nobody has marked paid (all, arriving within 7 days, already past), and refunds still
+   * waiting to be paid. Two statements in total.
    */
   public async attention(asOfDate: string, propertyId: string | null, organizationId: string): Promise<ReportAttention> {
     const bookings = await this.database.query<AttentionBookingRow>(
@@ -196,7 +201,21 @@ export class ReportSummaryRepository {
           WHERE ib.kind = 'reservation' AND ib.status = 'confirmed'
             AND ib.arrival_status = 'expected'
             AND ib.check_in > $1::date AND ib.check_in <= $1::date + 7
-        )::int AS arrivals_next_7_days_count
+        )::int AS arrivals_next_7_days_count,
+        COUNT(*) FILTER (
+          WHERE ib.kind = 'reservation' AND ib.status = 'confirmed' AND ib.payment_status = 'pending'
+        )::int AS unpaid_at_hotel_count,
+        COALESCE(SUM(COALESCE(ib.total_cents, 0)) FILTER (
+          WHERE ib.kind = 'reservation' AND ib.status = 'confirmed' AND ib.payment_status = 'pending'
+        ), 0)::int AS unpaid_at_hotel_cents,
+        COUNT(*) FILTER (
+          WHERE ib.kind = 'reservation' AND ib.status = 'confirmed' AND ib.payment_status = 'pending'
+            AND ib.check_in >= $1::date AND ib.check_in <= $1::date + 7
+        )::int AS unpaid_at_hotel_arrivals_next_7_days_count,
+        COUNT(*) FILTER (
+          WHERE ib.kind = 'reservation' AND ib.status = 'confirmed' AND ib.payment_status = 'pending'
+            AND ib.check_in < $1::date
+        )::int AS unpaid_at_hotel_past_count
       FROM inventory_blocks ib
       WHERE ($2::uuid IS NULL OR ib.property_id = $2)
         AND ib.organization_id = $3::uuid
@@ -221,6 +240,10 @@ export class ReportSummaryRepository {
       refundsToPayCents: refund?.refund_cents ?? 0,
       arrivalsTodayCount: booking?.arrivals_today_count ?? 0,
       arrivalsNext7DaysCount: booking?.arrivals_next_7_days_count ?? 0,
+      unpaidAtHotelCount: booking?.unpaid_at_hotel_count ?? 0,
+      unpaidAtHotelCents: booking?.unpaid_at_hotel_cents ?? 0,
+      unpaidAtHotelArrivalsNext7DaysCount: booking?.unpaid_at_hotel_arrivals_next_7_days_count ?? 0,
+      unpaidAtHotelPastCount: booking?.unpaid_at_hotel_past_count ?? 0,
     };
   }
 

@@ -52,6 +52,7 @@ function row(overrides: Partial<BookingRow> = {}): BookingRow {
     paid_cents: 100000,
     policy_snapshot: null,
     price_snapshot: null,
+    priced_extras_count: 0,
     rebook_of_id: null,
     replaced_by_id: null,
     payments: [],
@@ -571,14 +572,29 @@ describe('StaffBookingsService', () => {
       expect(cancelRow).not.toHaveBeenCalled();
     });
 
-    it('marks it paid once, for an employee as well, and answers with the booking', async () => {
+    it('marks it paid once, for an employee with refund access, and answers with the booking', async () => {
       findById.mockResolvedValue(pending());
       markPaid.mockResolvedValue(true);
 
-      const booking = await service.markPaid(EMPLOYEE, ID);
+      const booking = await service.markPaid(PERMITTED, ID);
 
-      expect(markPaid).toHaveBeenCalledWith(ID, EMPLOYEE.id);
+      expect(markPaid).toHaveBeenCalledWith(ID, PERMITTED.id);
       expect(booking).toEqual({ id: ID });
+    });
+
+    it('lets an admin mark it paid', async () => {
+      findById.mockResolvedValue(pending());
+      markPaid.mockResolvedValue(true);
+
+      await service.markPaid(STAFF, ID);
+
+      expect(markPaid).toHaveBeenCalledWith(ID, STAFF.id);
+    });
+
+    it('refuses an employee without refund access before reading or changing anything', async () => {
+      await expect(service.markPaid(EMPLOYEE, ID)).rejects.toMatchObject({ status: 403, response: { code: 'FORBIDDEN_ROLE' } });
+      expect(findById).not.toHaveBeenCalled();
+      expect(markPaid).not.toHaveBeenCalled();
     });
 
     it('refuses a second tick without writing', async () => {

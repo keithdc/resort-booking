@@ -99,6 +99,7 @@ export class BookingReader {
   public async present(row: BookingRow): Promise<GuestBooking> {
     const currencyCode = row.currency_code ?? 'EUR';
     const replacedBy = row.replaced_by_id === null ? null : referenceFor(row.replaced_by_id);
+    const extras = await this.bookings.listExtras(row.id);
     const base = {
       reference: referenceFor(row.id),
       reservationId: row.id,
@@ -111,6 +112,7 @@ export class BookingReader {
       totalCents: row.total_cents ?? 0,
       currencyCode,
       replacedByReference: replacedBy,
+      extras,
     };
 
     if (row.status === 'cancelled') {
@@ -134,7 +136,7 @@ export class BookingReader {
     const paidCents = this.paidCentsOf(row);
     const today = this.todayFor(row);
     const check = checkCancellation(paidCents, row.check_in, today, policy.tiers);
-    const change = checkRebookAllowed(policy.rebookable, 'confirmed', row.check_in, today, row.payment_status);
+    const change = checkRebookAllowed(policy.rebookable, 'confirmed', row.check_in, today, row.payment_status, 'guest', row.priced_extras_count > 0);
     return {
       ...base,
       status: 'confirmed',

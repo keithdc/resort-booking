@@ -18,7 +18,7 @@ import { isMoneyHidden } from '../utils/money-hidden';
 import { buildReportCsv, csvFileName } from '../utils/report-csv';
 import { EMPTY_STATES, type ReportTabKey } from '../utils/metric-definitions';
 import { describePeriod, shiftIso } from '../utils/report-range';
-import type { BookingStatusKey } from '../utils/report-labels';
+import type { BookingFilter } from '../utils/report-labels';
 import { AtAGlance } from './at-a-glance';
 import { AttentionStrip } from './attention-strip';
 import { MoneyVisibility } from './money-visibility';
@@ -39,7 +39,7 @@ export function ReportsPage(): React.JSX.Element {
   const [propertyId, setPropertyId] = useState('');
   const { properties, report, loading, error, reload } = useReportData(period.range, propertyId);
   const { tab, setTab } = useReportTab();
-  const [bookingStatus, setBookingStatus] = useState<BookingStatusKey | null>(null);
+  const [bookingStatus, setBookingStatus] = useState<BookingFilter | null>(null);
   const [detail, setDetail] = useState<ReportDetail | null>(null);
 
   const propertyName = properties.find((property): boolean => property.id === propertyId)?.name ?? 'All properties';
@@ -54,9 +54,9 @@ export function ReportsPage(): React.JSX.Element {
     downloadTextFile(csvFileName(report.from, shiftIso(report.to, -1)), csv);
   };
 
-  const openFromAttention = (target: ReportTabKey): void => {
+  const openFromAttention = (target: ReportTabKey, filter: BookingFilter | null): void => {
     if (target === 'bookings') {
-      setBookingStatus('awaiting_payment');
+      setBookingStatus(filter ?? 'awaiting_payment');
     }
     setTab(target);
   };

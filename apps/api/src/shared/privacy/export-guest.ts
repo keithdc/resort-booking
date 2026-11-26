@@ -21,6 +21,8 @@ export interface GuestExport {
   payments: Record<string, unknown>[];
   refunds: Record<string, unknown>[];
   extraRequests: Record<string, unknown>[];
+  /** Extras chosen on the bookings (name, kind, quantity, price). */
+  bookingExtras: Record<string, unknown>[];
   dateChanges: Record<string, unknown>[];
   discountRedemptions: Record<string, unknown>[];
   notes: string[];
@@ -31,13 +33,14 @@ export interface ExportCounts {
   payments: number;
   refunds: number;
   extraRequests: number;
+  bookingExtras: number;
   dateChanges: number;
   discountRedemptions: number;
 }
 
 const BOOKINGS_SQL = `
   SELECT ib.id, ib.kind, ib.status, ib.check_in::text AS check_in, ib.check_out::text AS check_out, ib.guest_count,
-         ib.payment_method, ib.booker_name, ib.booker_email, ib.booker_phone, ib.guest_note, ib.total_cents, ib.paid_cents,
+         ib.payment_method, ib.payment_status, ib.paid_at, ib.booker_name, ib.booker_email, ib.booker_phone, ib.guest_note, ib.total_cents, ib.paid_cents,
          ib.currency_code, ib.arrival_status, ib.price_snapshot, ib.policy_snapshot, ib.terms_accepted_at, ib.cancelled_at,
          ib.cancel_reason, ib.cancel_note, ib.rebook_of_id, ib.created_at, ib.anonymised_at, h.name AS stay_name, p.name AS property_name
   FROM inventory_blocks ib
@@ -48,7 +51,7 @@ const BOOKINGS_SQL = `
 `;
 
 /**
- * Collects the export for one email in six read-only queries (bookings, then the five tables keyed by booking ids).
+ * Collects the export for one email in seven read-only queries (bookings, then the six tables keyed by booking ids).
  */
 export async function collectGuestExport(db: PrivacyDb, email: string, now: Date = new Date()): Promise<GuestExport> {
   const normalised = normaliseEmail(email);
@@ -70,6 +73,10 @@ export async function collectGuestExport(db: PrivacyDb, email: string, now: Date
          FROM inventory_block_requests ibr JOIN property_request_options o ON o.id = ibr.request_option_id
          WHERE ibr.inventory_block_id = ANY($1::uuid[]) ORDER BY ibr.inventory_block_id, o.name`,
       );
+      const bookingExtras = await byIds(
+        `SELECT inventory_block_id, name, kind, quantity, unit_price_cents, line_cents, currency_code, status, created_at
+         FROM reservation_extras WHERE inventory_block_id = ANY($1::uuid[]) ORDER BY inventory_block_id, created_at, name`,
+      );
       const dateChanges = await byIds(
         `SELECT id, old_booking_id, new_booking_id, old_check_in::text AS old_check_in, old_check_out::text AS old_check_out,
                 new_check_in::text AS new_check_in, new_check_out::text AS new_check_out, old_total_cents, new_total_cents,
@@ -88,6 +95,7 @@ export async function collectGuestExport(db: PrivacyDb, email: string, now: Date
         payments,
         refunds,
         extraRequests,
+        bookingExtras,
         dateChanges,
         discountRedemptions,
         notes: [
@@ -108,6 +116,7 @@ export function countExport(data: GuestExport): ExportCounts {
     payments: data.payments.length,
     refunds: data.refunds.length,
     extraRequests: data.extraRequests.length,
+    bookingExtras: data.bookingExtras.length,
     dateChanges: data.dateChanges.length,
     discountRedemptions: data.discountRedemptions.length,
   };

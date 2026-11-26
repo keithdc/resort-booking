@@ -6,14 +6,14 @@
 
 'use client';
 
-import type { HouseSummary, PropertySummary, Quote, StaffReservation } from '@resort-booking/shared-types';
+import type { ExtraService, HouseSummary, PropertySummary, StaffBookingQuote, StaffReservation } from '@resort-booking/shared-types';
 import { isValidEmail, isValidPhone } from '@resort-booking/ui/contact';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fetchStaffHouses } from '@/features/property/services/staff-property-api';
 import { ApiRequestError } from '@/shared/services/api-client';
-import { createStaffBooking, quoteStaffBooking } from '../services/staff-reservations-api';
+import { createStaffBooking, fetchStaffBookingExtras, quoteStaffBooking } from '../services/staff-reservations-api';
 import { todayLocalIso } from '../utils/dates';
-import { NEW_BOOKING_MAX_NOTE, stayFromDraft, stayProblem } from '../utils/new-booking';
+import { extraChoices, NEW_BOOKING_MAX_EXTRA_QUANTITY, NEW_BOOKING_MAX_NOTE, stayFromDraft, stayProblem } from '../utils/new-booking';
 
 /** Wait this long after the last change before asking the API for a price. */
 const QUOTE_DELAY_MS = 350;
@@ -41,7 +41,11 @@ export interface NewBookingState {
   email: string;
   phone: string;
   note: string;
-  quote: Quote | null;
+  /** The extras the chosen property offers guests (empty while loading or when it has none). */
+  extras: ExtraService[];
+  /** How many of each offered extra are ticked, by extra id (absent or 0: not chosen). */
+  extraQuantities: Record<string, number>;
+  quote: StaffBookingQuote | null;
   quoting: boolean;
   quoteError: string | null;
   /** What is missing or out of range in the stay part of the form, else null. */
@@ -61,6 +65,8 @@ export interface NewBookingState {
   setEmail: (email: string) => void;
   setPhone: (phone: string) => void;
   setNote: (note: string) => void;
+  /** Ticks an extra (quantity 1 to 20) or unticks it (0). */
+  setExtraQuantity: (extraId: string, quantity: number) => void;
   save: () => Promise<void>;
 }
 
@@ -82,7 +88,9 @@ export function useNewBooking({ open, properties, defaultPropertyId, defaultDate
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [note, setNote] = useState('');
-  const [quote, setQuote] = useState<Quote | null>(null);
+  const [extras, setExtras] = useState<ExtraService[]>([]);
+  const [extraQuantities, setExtraQuantities] = useState<Record<string, number>>({});
+  const [quote, setQuote] = useState<StaffBookingQuote | null>(null);
   const [quoting, setQuoting] = useState(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -111,6 +119,8 @@ export function useNewBooking({ open, properties, defaultPropertyId, defaultDate
     setEmail('');
     setPhone('');
     setNote('');
+    setExtras([]);
+    setExtraQuantities({});
     setQuote(null);
     setQuoteError(null);
     setError(null);
@@ -148,10 +158,35 @@ export function useNewBooking({ open, properties, defaultPropertyId, defaultDate
     };
   }, [open, propertyId]);
 
+  // The extras the chosen property offers. A failure only hides the section: a booking does not need extras.
+  useEffect((): (() => void) => {
+    let cancelled = false;
+    setExtras([]);
+    setExtraQuantities({});
+    if (!open || propertyId === '') {
+      return (): void => undefined;
+    }
+    fetchStaffBookingExtras(propertyId)
+      .then((rows): void => {
+        if (!cancelled) {
+          setExtras(rows);
+        }
+      })
+      .catch((): void => {
+        if (!cancelled) {
+          setExtras([]);
+        }
+      });
+    return (): void => {
+      cancelled = true;
+    };
+  }, [open, propertyId]);
+
   const house = useMemo((): HouseSummary | null => houses.find((row): boolean => row.id === houseId) ?? null, [houses, houseId]);
   const draft = useMemo(() => ({ houseId, checkIn, nights, guests }), [houseId, checkIn, nights, guests]);
   const stay = useMemo(() => stayFromDraft(draft, house, today), [draft, house, today]);
   const problem = stayProblem(draft, house, today);
+  const choices = useMemo(() => extraChoices(extraQuantities, extras), [extraQuantities, extras]);
 
   // The live price.
   useEffect((): (() => void) => {
@@ -165,7 +200,7 @@ export function useNewBooking({ open, properties, defaultPropertyId, defaultDate
     quoteRun.current = run;
     setQuoting(true);
     const timer = setTimeout((): void => {
-      quoteStaffBooking(stay)
+      quoteStaffBooking(choices.length === 0 ? stay : { ...stay, extras: choices })
         .then((result): void => {
           if (quoteRun.current === run) {
             setQuote(result);
@@ -187,7 +222,7 @@ export function useNewBooking({ open, properties, defaultPropertyId, defaultDate
       // This form changed (or closed): an answer for it is no longer wanted.
       quoteRun.current += 1;
     };
-  }, [open, stay]);
+  }, [open, stay, choices]);
 
   const contactReady = name.trim().length > 0 && isValidEmail(email.trim()) && (phone === '' || isValidPhone(phone)) && note.length <= NEW_BOOKING_MAX_NOTE;
   const canSave = stay !== null && quote !== null && quote.available && !quoting && contactReady && !saving;
@@ -218,6 +253,12 @@ export function useNewBooking({ open, properties, defaultPropertyId, defaultDate
     forget();
   }, [forget]);
 
+  const setExtraQuantity = useCallback((extraId: string, quantity: number): void => {
+    const whole = Number.isFinite(quantity) ? Math.min(Math.max(Math.trunc(quantity), 0), NEW_BOOKING_MAX_EXTRA_QUANTITY) : 0;
+    setExtraQuantities((current): Record<string, number> => ({ ...current, [extraId]: whole }));
+    setError(null);
+  }, []);
+
   const save = useCallback(async (): Promise<void> => {
     if (stay === null || !canSave || savingNow.current) {
       return;
@@ -228,6 +269,7 @@ export function useNewBooking({ open, properties, defaultPropertyId, defaultDate
     try {
       const booking = await createStaffBooking({
         ...stay,
+        ...(choices.length === 0 ? {} : { extras: choices }),
         paymentMethod: 'pay_at_hotel',
         bookerName: name.trim(),
         bookerEmail: email.trim(),
@@ -239,13 +281,13 @@ export function useNewBooking({ open, properties, defaultPropertyId, defaultDate
       setError(failure instanceof ApiRequestError ? failure.message : 'Could not save the booking. Please try again.');
       if (failure instanceof ApiRequestError && failure.code === 'DATES_UNAVAILABLE') {
         // Someone took the dates since the price was shown: ask again so the form says so.
-        setQuote((current): Quote | null => (current === null ? null : { ...current, available: false }));
+        setQuote((current): StaffBookingQuote | null => (current === null ? null : { ...current, available: false }));
       }
     } finally {
       setSaving(false);
       savingNow.current = false;
     }
-  }, [canSave, email, name, note, onCreated, phone, stay]);
+  }, [canSave, choices, email, name, note, onCreated, phone, stay]);
 
   return {
     propertyId,
@@ -260,6 +302,8 @@ export function useNewBooking({ open, properties, defaultPropertyId, defaultDate
     email,
     phone,
     note,
+    extras,
+    extraQuantities,
     quote,
     quoting,
     quoteError,
@@ -279,6 +323,7 @@ export function useNewBooking({ open, properties, defaultPropertyId, defaultDate
     setEmail,
     setPhone,
     setNote,
+    setExtraQuantity,
     save,
   };
 }

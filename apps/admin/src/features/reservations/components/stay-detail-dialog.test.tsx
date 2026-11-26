@@ -86,6 +86,29 @@ describe('StayDetailDialog', () => {
       expect(dialog).toContain('Total960,00 €');
     });
 
+    it('lists the extras on the booking: a priced one with what it adds, a request as waiting and not charged', () => {
+      renderDialog(
+        staffReservation({
+          ...FUTURE,
+          extras: [
+            { id: 'e1', extraServiceId: 'x1', name: 'Breakfast basket', kind: 'instant', quantity: 2, unitPriceCents: 1800, lineCents: 3600, currencyCode: 'EUR', status: 'confirmed' },
+            { id: 'e2', extraServiceId: 'x2', name: 'Extra pillows', kind: 'on_request', quantity: 1, unitPriceCents: 0, lineCents: 0, currencyCode: 'EUR', status: 'pending' },
+          ],
+        }),
+      );
+
+      const list = within(screen.getByRole('list', { name: 'Extras on this booking' }));
+      expect(plain(list.getByText(/Breakfast basket × 2/).textContent)).toContain('36,00');
+      expect(list.getByText(/Extra pillows × 1 · On request: waiting for the property to confirm, nothing charged/)).toBeTruthy();
+    });
+
+    it('says no extras were chosen when there are none', () => {
+      renderDialog(staffReservation({ ...FUTURE }));
+
+      expect(screen.getByText('None chosen')).toBeTruthy();
+      expect(screen.queryByRole('list', { name: 'Extras on this booking' })).toBeNull();
+    });
+
     it('says when the guest accepted the cancellation terms, or that it was not recorded', () => {
       const { unmount } = render(
         <StayDetailDialog stay={staffReservation({ ...FUTURE, termsAcceptedAt: '2027-05-01T10:30:00.000Z' })} onClose={vi.fn<() => void>()} onUpdated={vi.fn<(s: StaffReservation) => void>()} onChanged={vi.fn<() => void>()} />,
@@ -346,7 +369,7 @@ describe('StayDetailDialog', () => {
       expect(onUpdated).not.toHaveBeenCalled();
     });
 
-    it('has nothing to mark for a paid, online or cancelled booking, and an employee can still mark a pending one', () => {
+    it('has nothing to mark for a paid, online or cancelled booking, and a person with refund access can mark a pending one', () => {
       role.canManageRefunds = false;
       renderDialog(staffReservation({ ...PENDING, paymentStatus: 'paid', paidCents: 96000, paidAt: '2999-07-10T10:00:00.000Z' }));
       expect(screen.queryByRole('button', { name: 'Mark as paid' })).toBeNull();
@@ -362,8 +385,24 @@ describe('StayDetailDialog', () => {
       expect(screen.queryByRole('button', { name: 'Mark as paid' })).toBeNull();
       cleanup();
 
+      role.canManageRefunds = true;
       renderDialog(staffReservation(PENDING));
-      expect(screen.getByRole('button', { name: 'Mark as paid' })).toBeTruthy();
+      const button = screen.getByRole('button', { name: 'Mark as paid' }) as HTMLButtonElement;
+      expect(button.disabled).toBe(false);
+    });
+
+    it('shows an employee without refund access a disabled button and who to ask', () => {
+      role.canManageRefunds = false;
+      renderDialog(staffReservation(PENDING));
+      const button = screen.getByRole('button', { name: 'Mark as paid' }) as HTMLButtonElement;
+      expect(button.disabled).toBe(true);
+      expect(screen.getByText(/Ask an admin, or an admin can give you refund access on the Team page/)).toBeTruthy();
+    });
+
+    it('shows no hint to someone with refund access', () => {
+      role.canManageRefunds = true;
+      renderDialog(staffReservation(PENDING));
+      expect(screen.queryByText(/Ask an admin, or an admin can give you refund access/)).toBeNull();
     });
   });
 });

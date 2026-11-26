@@ -6,6 +6,7 @@
 
 import { Module } from '@nestjs/common';
 import { DiscountsModule } from '../discounts/discounts.module';
+import { ExtrasModule } from '../extras/extras.module';
 import { PropertyModule } from '../property/property.module';
 import { RatesModule } from '../rates/rates.module';
 import { ReservationsModule } from '../reservations/reservations.module';
@@ -19,7 +20,7 @@ import { PromoRateLimiter } from './promo-rate-limiter';
 import { StaffBookingCreator } from './staff-booking-creator';
 
 @Module({
-  imports: [PropertyModule, RatesModule, DiscountsModule, ReservationsModule],
+  imports: [PropertyModule, RatesModule, DiscountsModule, ReservationsModule, ExtrasModule],
   controllers: [InventoryController],
   providers: [InventoryService, AvailabilityService, HoldSweeperService, InventoryRepository, PromoRateLimiter, HoldRateLimiter, StaffBookingCreator],
   exports: [InventoryService, AvailabilityService, StaffBookingCreator],

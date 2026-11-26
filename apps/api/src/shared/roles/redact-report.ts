@@ -19,6 +19,7 @@ export function redactReportForEmployee(report: StaffReport): RoleAwareReport {
   return {
     ...report,
     revenueCents: 0,
+    unpaidAtHotelCents: 0,
     averageNightlyCents: 0,
     grossRevenueCents: 0,
     refundedCents: 0,
@@ -35,7 +36,7 @@ export function redactReportForEmployee(report: StaffReport): RoleAwareReport {
     cancellationReasons: report.cancellationReasons.map((row) => ({ ...row, paidCents: 0, refundedCents: 0 })),
     refunds: [],
     discountUsage: report.discountUsage.map((row) => ({ ...row, discountCents: 0 })),
-    attention: { ...report.attention, refundsToPayCents: 0 },
+    attention: { ...report.attention, refundsToPayCents: 0, unpaidAtHotelCents: 0 },
     previous: previousWithoutMoney(report.previous),
     moneyHidden: true,
   };
@@ -47,7 +48,7 @@ export function keepReportForAdmin(report: StaffReport): RoleAwareReport {
 }
 
 function previousWithoutMoney(previous: PeriodSummary): PeriodSummary {
-  return { ...previous, averageNightlyCents: 0, grossRevenueCents: 0, refundedCents: 0, netRevenueCents: 0 };
+  return { ...previous, averageNightlyCents: 0, grossRevenueCents: 0, refundedCents: 0, netRevenueCents: 0, unpaidAtHotelCents: 0 };
 }
 
 function withoutMoney(row: StaffReservation): StaffReservation {

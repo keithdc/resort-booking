@@ -5,20 +5,26 @@
  */
 
 import type { StaffRefund, StaffReservation } from '@resort-booking/shared-types';
-import { bookingStatusKey, type BookingStatusKey } from './report-labels';
+import { bookingStatusKey, isUnpaidAtHotel, type BookingFilter } from './report-labels';
+
+/** True when the booking belongs under this filter. */
+function matchesFilter(row: StaffReservation, status: BookingFilter): boolean {
+  return status === 'unpaid_at_hotel' ? isUnpaidAtHotel(row) : bookingStatusKey(row) === status;
+}
 
 /**
- * Bookings and holds that match the status filter and the search text, in the order given.
- * `status` null means every status. Search looks at guest, email, reference, stay and property.
+ * Bookings and holds that match the status filter and the search text, in the order given. `status` null means every
+ * status. Search looks at guest, email, reference, stay and property. The "Unpaid at hotel" filter lists the soonest
+ * check-in first, so the guests who arrive first (or already did) are the first money to collect.
  */
 export function filterBookings(
   rows: readonly StaffReservation[],
-  status: BookingStatusKey | null,
+  status: BookingFilter | null,
   search: string,
 ): StaffReservation[] {
   const needle = search.trim().toLowerCase();
-  return rows.filter((row: StaffReservation): boolean => {
-    if (status !== null && bookingStatusKey(row) !== status) {
+  const matching = rows.filter((row: StaffReservation): boolean => {
+    if (status !== null && !matchesFilter(row, status)) {
       return false;
     }
     if (needle === '') {
@@ -28,15 +34,21 @@ export function filterBookings(
       (field: string): boolean => field.toLowerCase().includes(needle),
     );
   });
+  return status === 'unpaid_at_hotel'
+    ? [...matching].sort((a: StaffReservation, b: StaffReservation): number => a.checkIn.localeCompare(b.checkIn) || a.reference.localeCompare(b.reference))
+    : matching;
 }
 
 /**
- * How many bookings are in each status (for the filter chips).
+ * How many bookings are in each status, and how many are unpaid at the hotel (for the filter chips).
  */
-export function countByStatus(rows: readonly StaffReservation[]): Record<BookingStatusKey, number> {
-  const counts: Record<BookingStatusKey, number> = { confirmed: 0, awaiting_payment: 0, cancelled: 0, expired: 0 };
+export function countByStatus(rows: readonly StaffReservation[]): Record<BookingFilter, number> {
+  const counts: Record<BookingFilter, number> = { confirmed: 0, awaiting_payment: 0, cancelled: 0, expired: 0, unpaid_at_hotel: 0 };
   for (const row of rows) {
     counts[bookingStatusKey(row)] += 1;
+    if (isUnpaidAtHotel(row)) {
+      counts.unpaid_at_hotel += 1;
+    }
   }
   return counts;
 }

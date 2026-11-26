@@ -104,6 +104,22 @@ describe('checkRebookAllowed', () => {
     });
   });
 
+  it('refuses a booking with a priced extra, with a message for the guest or for staff, but only when the policy would allow it', () => {
+    expect(checkRebookAllowed(true, 'confirmed', '2027-07-10', TODAY, 'paid', 'guest', true)).toMatchObject({
+      allowed: false,
+      code: 'EXTRAS_ON_BOOKING',
+      message: expect.stringContaining('contact the property') as string,
+    });
+    expect(checkRebookAllowed(true, 'confirmed', '2027-07-10', TODAY, 'paid', 'staff', true)).toMatchObject({
+      allowed: false,
+      code: 'EXTRAS_ON_BOOKING',
+      message: expect.stringContaining('Cancel it and make a new booking') as string,
+    });
+    // The policy's own "no" is still what a guest is told when dates cannot be changed at all.
+    expect(checkRebookAllowed(false, 'confirmed', '2027-07-10', TODAY, 'paid', 'guest', true)).toMatchObject({ code: 'REBOOK_NOT_ALLOWED' });
+    expect(checkRebookAllowed(true, 'confirmed', '2027-07-10', TODAY, 'paid', 'guest', false)).toEqual({ allowed: true });
+  });
+
   it('allows a pay-at-hotel booking once it is marked paid', () => {
     expect(checkRebookAllowed(true, 'confirmed', '2027-07-10', TODAY, 'paid')).toEqual({ allowed: true });
   });

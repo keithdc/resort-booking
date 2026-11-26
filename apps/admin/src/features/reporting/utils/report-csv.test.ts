@@ -73,17 +73,40 @@ describe('buildReportCsv', () => {
     expect(csv).toContain('Cancellation rate (%),25');
   });
 
+  it('says how much is unpaid at the hotel in the summary, and leaves the money out when it is hidden', () => {
+    const unpaid = { ...report, unpaidAtHotelCount: 2, unpaidAtHotelCents: 150000 };
+
+    expect(buildReportCsv(unpaid, context)).toContain('Unpaid at hotel (bookings in the period),2');
+    expect(buildReportCsv(unpaid, context)).toContain('Unpaid at hotel (still to collect),1500');
+    const hidden = buildReportCsv(unpaid, { ...context, moneyHidden: true });
+    expect(hidden).toContain('Unpaid at hotel (bookings in the period),2');
+    expect(hidden).not.toContain('still to collect');
+  });
+
+  it('writes the payment status and the day it was marked paid for every booking', () => {
+    const pending = staffReservation({ id: 'u', reference: 'BK-UNPAID0001', paymentMethod: 'pay_at_hotel', paymentStatus: 'pending', paidCents: 0 });
+    const paidLater = staffReservation({ id: 'v', reference: 'BK-PAIDHOTEL01', paymentMethod: 'pay_at_hotel', paymentStatus: 'paid', paidAt: '2027-07-10T14:30:00.000Z' });
+    const hold = staffReservation({ id: 'h', reference: 'BK-HOLD0000001', kind: 'hold', status: 'active', paymentStatus: 'paid' });
+    const lines = buildReportCsv({ ...report, pipeline: [pending, paidLater, hold] }, context).trimEnd().split('\r\n');
+    const header = lines.findIndex((line) => line.startsWith('Reference,Guest'));
+
+    expect(lines[header]).toContain('Payment method,Payment status,Paid on,Status');
+    expect(lines[header + 1]).toContain('Pay at hotel,Pending,,Confirmed');
+    expect(lines[header + 2]).toContain('Pay at hotel,Paid,2027-07-10,Confirmed');
+    expect(lines[header + 3]).toContain('Awaiting payment,,');
+  });
+
   it('writes one row per booking, quoted and guarded', () => {
     const lines = buildReportCsv(report, context).trimEnd().split('\r\n');
     const header = lines.findIndex((line) => line.startsWith('Reference,Guest'));
-    expect(lines[header + 1]).toContain('BK-ABC1234567,"Ada, Countess",ada@example.com,Alpine Lake,Lake Chalet,2027-07-10,2027-07-12,2,2,960,Card / wallets,Confirmed');
+    expect(lines[header + 1]).toContain('BK-ABC1234567,"Ada, Countess",ada@example.com,Alpine Lake,Lake Chalet,2027-07-10,2027-07-12,2,2,960,Card / wallets,Paid,,Confirmed');
     expect(lines[header + 2]).toContain("'=cmd|calc");
-    expect(lines[header + 2]).toContain('Not recorded,Cancelled');
+    expect(lines[header + 2]).toContain('Not recorded,,,Cancelled');
   });
 
   it('still produces a valid file without any booking', () => {
     const csv = buildReportCsv({ ...report, pipeline: [] }, context);
-    expect(csv.trimEnd().endsWith('Payment method,Status')).toBe(true);
+    expect(csv.trimEnd().endsWith('Payment method,Payment status,Paid on,Status')).toBe(true);
   });
 });
 

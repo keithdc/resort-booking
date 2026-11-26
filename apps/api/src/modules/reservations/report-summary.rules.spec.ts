@@ -48,6 +48,7 @@ function stay(checkIn: string, checkOut: string, totalCents: number, guestCount 
     rebookOfReference: null,
     refunds: [],
     changes: [],
+    extras: [],
   };
 }
 
@@ -86,11 +87,20 @@ describe('rangedRevenueCents and confirmedTotals', () => {
       '2027-07-01',
       '2027-08-01',
     );
-    expect(totals).toEqual({ occupiedNights: 4, revenueCents: 20000 + 20000, guestCount: 6 });
+    expect(totals).toEqual({ occupiedNights: 4, revenueCents: 20000 + 20000, guestCount: 6, unpaidAtHotelCount: 0, unpaidAtHotelCents: 0 });
   });
 
   it('is all zero without bookings', () => {
-    expect(confirmedTotals([], '2027-07-01', '2027-08-01')).toEqual({ occupiedNights: 0, revenueCents: 0, guestCount: 0 });
+    expect(confirmedTotals([], '2027-07-01', '2027-08-01')).toEqual({ occupiedNights: 0, revenueCents: 0, guestCount: 0, unpaidAtHotelCount: 0, unpaidAtHotelCents: 0 });
+  });
+
+  it('counts a pay-at-hotel booking nobody has marked paid apart, for the nights inside the range only', () => {
+    const unpaid: StaffReservation = { ...stay('2027-06-29', '2027-07-03', 40000, 4), paymentMethod: 'pay_at_hotel', paymentStatus: 'pending', paidCents: 0 };
+    const paidAtHotel: StaffReservation = { ...stay('2027-07-10', '2027-07-12', 20000, 2), paymentMethod: 'pay_at_hotel', paymentStatus: 'paid' };
+    const totals = confirmedTotals([unpaid, paidAtHotel], '2027-07-01', '2027-08-01');
+    expect(totals.revenueCents).toBe(20000 + 20000);
+    expect(totals.unpaidAtHotelCount).toBe(1);
+    expect(totals.unpaidAtHotelCents).toBe(20000);
   });
 });
 
@@ -125,7 +135,7 @@ describe('buildPeriodSummary', () => {
     to: '2027-07-11',
     houseCount: 2,
     reservationCount: 3,
-    totals: { occupiedNights: 10, revenueCents: 100000, guestCount: 6 },
+    totals: { occupiedNights: 10, revenueCents: 100000, guestCount: 6, unpaidAtHotelCount: 0, unpaidAtHotelCents: 0 },
     cancellations: { cancelledCount: 1, paidCents: 30000, refundedCents: 10000 },
   };
 
@@ -134,6 +144,15 @@ describe('buildPeriodSummary', () => {
     expect(summary.grossRevenueCents).toBe(130000);
     expect(summary.refundedCents).toBe(10000);
     expect(summary.netRevenueCents).toBe(120000);
+  });
+
+  it('keeps booked-but-unpaid money out of gross and net, and reports it as still to collect', () => {
+    const summary = buildPeriodSummary({ ...base, totals: { ...base.totals, unpaidAtHotelCount: 1, unpaidAtHotelCents: 40000 } });
+    expect(summary.unpaidAtHotelCents).toBe(40000);
+    expect(summary.grossRevenueCents).toBe(100000 - 40000 + 30000);
+    expect(summary.netRevenueCents).toBe(100000 - 40000 + 30000 - 10000);
+    // The average night is still what the nights were booked at, paid or not.
+    expect(summary.averageNightlyCents).toBe(10000);
   });
 
   it('computes occupancy, average night and cancellation rate', () => {
@@ -148,7 +167,7 @@ describe('buildPeriodSummary', () => {
     const summary = buildPeriodSummary({
       ...base,
       reservationCount: 0,
-      totals: { occupiedNights: 0, revenueCents: 0, guestCount: 0 },
+      totals: { occupiedNights: 0, revenueCents: 0, guestCount: 0, unpaidAtHotelCount: 0, unpaidAtHotelCents: 0 },
       cancellations: { cancelledCount: 0, paidCents: 0, refundedCents: 0 },
     });
     expect(summary).toMatchObject({

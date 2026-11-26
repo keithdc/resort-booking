@@ -25,7 +25,7 @@ import { ReservationsService } from './reservations.service';
 const PROPERTY = 'property-1';
 const CATALOG_LAKE: HouseCatalogRow = { houseId: 'house', houseName: 'Lake Chalet', propertyId: PROPERTY, propertyName: 'Alpine Lake', currencyCode: 'EUR' };
 const CATALOG_BARN: HouseCatalogRow = { houseId: 'barn', houseName: 'Old Barn', propertyId: PROPERTY, propertyName: 'Alpine Lake', currencyCode: 'EUR' };
-const NO_ATTENTION: ReportAttention = { unpaidHoldCount: 0, refundsToPayCount: 0, refundsToPayCents: 0, arrivalsTodayCount: 0, arrivalsNext7DaysCount: 0 };
+const NO_ATTENTION: ReportAttention = { unpaidHoldCount: 0, refundsToPayCount: 0, refundsToPayCents: 0, arrivalsTodayCount: 0, arrivalsNext7DaysCount: 0, unpaidAtHotelCount: 0, unpaidAtHotelCents: 0, unpaidAtHotelArrivalsNext7DaysCount: 0, unpaidAtHotelPastCount: 0 };
 
 function property(): PropertyDetail {
   return {
@@ -220,6 +220,7 @@ describe('ReservationsService.getReport after a guest changed the dates of a boo
       rebookOfReference: null,
       refunds: [],
       changes: [],
+      extras: [],
       ...overrides,
     };
   }
@@ -305,7 +306,7 @@ describe('ReservationsService.getReport owner numbers', () => {
       bookerEmail: 'ada@example.com', bookerPhone: '+33612345678', guestNote: '', paymentMethod: 'card', paymentStatus: 'paid', paidAt: null, createdByName: null,
       status: 'confirmed', kind: 'reservation', arrivalStatus: 'expected', rebookOfId: null, totalCents: 20000,
       currencyCode: 'EUR', requestNames: [], reference: 'BK-0000000000', paidCents: 20000, termsAcceptedAt: null,
-      cancellation: null, replacedByReference: null, rebookOfReference: null, refunds: [], changes: [],
+      cancellation: null, replacedByReference: null, rebookOfReference: null, refunds: [], changes: [], extras: [],
       ...overrides,
     };
   }
@@ -429,7 +430,7 @@ describe('ReservationsService passes the caller organization to every staff read
     cancellationsByReason.mockResolvedValue([]);
     cancellationRefunds.mockResolvedValue([]);
     discountUsage.mockResolvedValue([]);
-    attention.mockResolvedValue({ unpaidHoldCount: 0, refundsToPayCount: 0, refundsToPayCents: 0, arrivalsTodayCount: 0, arrivalsNext7DaysCount: 0 });
+    attention.mockResolvedValue({ unpaidHoldCount: 0, refundsToPayCount: 0, refundsToPayCents: 0, arrivalsTodayCount: 0, arrivalsNext7DaysCount: 0, unpaidAtHotelCount: 0, unpaidAtHotelCents: 0, unpaidAtHotelArrivalsNext7DaysCount: 0, unpaidAtHotelPastCount: 0 });
     const moduleRef = await Test.createTestingModule({
       providers: [
         ReservationsService,

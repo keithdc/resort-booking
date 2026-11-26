@@ -7,6 +7,7 @@
 import { cleanup, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { staffReport } from '@/test/fixtures';
+import { MoneyVisibility } from './money-visibility';
 import { PaymentsTab } from './payments-tab';
 
 describe('PaymentsTab', () => {
@@ -21,6 +22,25 @@ describe('PaymentsTab', () => {
     expect(screen.getByText(/2 bookings/)).toBeTruthy();
     expect(screen.getByText(/1 booking ·/)).toBeTruthy();
     expect(screen.getByText(/82%/)).toBeTruthy();
+  });
+
+  it('says how much of the money is still to collect from pay-at-hotel bookings, and nothing when none is', () => {
+    const { unmount } = render(<PaymentsTab report={staffReport({ unpaidAtHotelCents: 150000 })} />);
+    expect(screen.getByText(/Of this, 1.500,00.*pay-at-hotel bookings not marked as paid yet/)).toBeTruthy();
+    unmount();
+
+    render(<PaymentsTab report={staffReport()} />);
+    expect(screen.queryByText(/pay-at-hotel bookings not marked as paid yet/)).toBeNull();
+  });
+
+  it('keeps that amount from someone who does not see money', () => {
+    render(
+      <MoneyVisibility hidden>
+        <PaymentsTab report={staffReport({ unpaidAtHotelCents: 150000 })} />
+      </MoneyVisibility>,
+    );
+
+    expect(screen.queryByText(/pay-at-hotel bookings not marked as paid yet/)).toBeNull();
   });
 
   it('lists each discount with its use count and money given, plus a total', () => {

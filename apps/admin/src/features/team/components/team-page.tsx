@@ -40,14 +40,14 @@ function confirmCopy(item: PendingConfirm): { title: string; body: string; butto
     case 'grant-refund-access':
       return {
         title: `Give ${name} refund access?`,
-        body: `${name} will be able to retry failed refunds, mark hand refunds as paid, choose any refund amount or reason (property cancelled, goodwill), waive the change fee, mark a balance as paid outside the system, and cancel or change a booking on its check-in day, like an admin. Everything ${name} does is recorded in the audit log with their name. It applies from their next action, and you can remove it at any time.`,
+        body: `${name} will be able to retry failed refunds, mark hand refunds as paid, mark pay-at-hotel bookings as paid, choose any refund amount or reason (property cancelled, goodwill), waive the change fee, mark a balance as paid outside the system, and cancel or change a booking on its check-in day, like an admin. Everything ${name} does is recorded in the audit log with their name. It applies from their next action, and you can remove it at any time.`,
         button: 'Give refund access',
         destructive: false,
       };
     case 'remove-refund-access':
       return {
         title: `Remove refund access from ${name}?`,
-        body: `${name} goes back to policy refunds only: no retrying or settling refunds, no custom amounts or fee waivers, and a cancellation on the check-in day will carry no refund. It applies from their next action.`,
+        body: `${name} goes back to policy refunds only: no retrying or settling refunds, no marking pay-at-hotel bookings as paid, no custom amounts or fee waivers, and a cancellation on the check-in day will carry no refund. It applies from their next action.`,
         button: 'Remove refund access',
         destructive: true,
       };

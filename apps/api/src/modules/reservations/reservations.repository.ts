@@ -7,6 +7,7 @@
 import { Injectable } from '@nestjs/common';
 import type {
   ArrivalStatus,
+  BookingExtra,
   BookingPaymentStatus,
   CancellationTier,
   HoldStatus,
@@ -19,6 +20,7 @@ import type {
   StaffReservation,
 } from '@resort-booking/shared-types';
 import { DatabaseService } from '../../shared/database/database.service';
+import { BOOKING_EXTRA_COLUMNS, mapBookingExtra, type BookingExtraRow } from '../extras/booking-extras';
 import { referenceFor } from '../inventory/inventory.rules';
 import type { PolicySnapshot } from './reservations.rules';
 import {
@@ -170,7 +172,7 @@ export class ReservationsRepository {
 
   /**
    * Booked, pending, cancelled, and rebooked stays occupying a single night, with refunds and change
-   * history for every one of them (two extra queries in total, however many bookings).
+   * history for every one of them (three extra queries in total, however many bookings).
    */
   public async listPipelineOnDate(
     onDate: string,
@@ -218,7 +220,7 @@ export class ReservationsRepository {
   }
 
   /**
-   * Refunds and date changes for ALL the given bookings in two statements (one each), then handed
+   * Refunds, date changes and extras for ALL the given bookings in three statements (one each), then handed
    * to the booking they belong to. Skips both queries for an empty list.
    */
   private async withHistory(rows: readonly ReservationRow[]): Promise<StaffReservation[]> {
@@ -231,11 +233,16 @@ export class ReservationsRepository {
       [ids],
     );
     const changeRows = await this.database.query<StaffChangeRow>(STAFF_CHANGES_SELECT, [ids]);
+    const extraRows = await this.database.query<BookingExtraRow & { inventory_block_id: string }>(
+      `SELECT inventory_block_id, ${BOOKING_EXTRA_COLUMNS} FROM reservation_extras WHERE inventory_block_id = ANY($1::uuid[]) ORDER BY created_at ASC, name ASC`,
+      [ids],
+    );
+    const extras = groupBy(extraRows.rows, (extra): string[] => [extra.inventory_block_id]);
     const refunds = groupBy(refundRows.rows.map(mapStaffRefund), (refund): string[] => [refund.reservationId]);
     const changes = groupBy(changeRows.rows, (change): string[] => [change.old_booking_id, change.new_booking_id]);
     return rows.map(
       (row): StaffReservation =>
-        mapReservation(row, refunds.get(row.id) ?? [], (changes.get(row.id) ?? []).map(mapStaffChange)),
+        mapReservation(row, refunds.get(row.id) ?? [], (changes.get(row.id) ?? []).map(mapStaffChange), (extras.get(row.id) ?? []).map(mapBookingExtra)),
     );
   }
 
@@ -427,6 +434,7 @@ function mapReservation(
   row: ReservationRow,
   refunds: StaffRefund[],
   changes: StaffBookingChange[],
+  extras: BookingExtra[] = [],
 ): StaffReservation {
   const nights =
     Date.parse(`${row.check_out}T00:00:00Z`) - Date.parse(`${row.check_in}T00:00:00Z`);
@@ -465,5 +473,6 @@ function mapReservation(
     rebookOfReference: row.rebook_of_id === null ? null : referenceFor(row.rebook_of_id),
     refunds,
     changes,
+    extras,
   };
 }

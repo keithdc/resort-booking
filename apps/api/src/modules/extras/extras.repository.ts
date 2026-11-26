@@ -41,6 +41,23 @@ export class ExtrasRepository {
   }
 
   /**
+   * What staff may add to a booking: the PUBLISHED extras of one property of one organization. An extra of another
+   * property or organization is simply not in the result.
+   */
+  public async listPublishedForBooking(propertyId: string, organizationId: string): Promise<ExtraService[]> {
+    const result = await this.database.query<ExtraRow>(
+      `
+      SELECT id, organization_id, property_id, name, description, kind, price_cents, currency_code, published
+      FROM extra_services
+      WHERE property_id = $1 AND organization_id = $2 AND published = true
+      ORDER BY name ASC
+      `,
+      [propertyId, organizationId],
+    );
+    return result.rows.map(mapExtra);
+  }
+
+  /**
    * Inserts an extra owned by the property's organization.
    */
   public async create(organizationId: string, propertyId: string, input: ExtraServiceWrite): Promise<ExtraService> {

@@ -6,9 +6,10 @@
 
 import type {
   ArrivalStatus,
+  ExtraService,
   PropertyBookingConfig,
-  Quote,
   RebookQuote,
+  StaffBookingQuote,
   StaffBookingQuoteRequest,
   StaffCalendar,
   StaffCancelPreview,
@@ -133,8 +134,15 @@ export function changeStaffReservationDates(
 /**
  * Prices a new booking for a guest and says whether the dates are free. Changes nothing.
  */
-export function quoteStaffBooking(body: StaffBookingQuoteRequest): Promise<Quote> {
-  return mutateStaffApiOk<Quote>('/staff/reservations/quote', 'POST', body);
+export function quoteStaffBooking(body: StaffBookingQuoteRequest): Promise<StaffBookingQuote> {
+  return mutateStaffApiOk<StaffBookingQuote>('/staff/reservations/quote', 'POST', body);
+}
+
+/**
+ * The extras a property offers guests (the published ones), for the New booking form. Admins and employees can both read it.
+ */
+export function fetchStaffBookingExtras(propertyId: string): Promise<ExtraService[]> {
+  return getStaffApiOk<ExtraService[]>(`/staff/properties/${encodeURIComponent(propertyId)}/booking-extras`);
 }
 
 /**

@@ -265,6 +265,7 @@ function stubStay(propertyId: string): StaffReservation {
     rebookOfReference: null,
     refunds: [],
     changes: [],
+    extras: [],
   };
 }
 

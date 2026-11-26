@@ -93,10 +93,11 @@ describe('restrictFinancialTables', () => {
 
     await restrictFinancialTables(sql, 'resort_app');
 
-    expect(seen).toHaveLength(6);
+    expect(seen).toHaveLength(7);
     expect(seen.join('\n')).toContain('public.audit_log');
     expect(seen.join('\n')).toContain('public.privacy_erasure_ledger');
     expect(seen.join('\n')).toContain('public.payment_webhook_events');
+    expect(seen.join('\n')).toContain('public.reservation_extras');
     expect(seen.every((text: string) => text.startsWith('DO $$') && text.includes('"resort_app"'))).toBe(true);
   });
 

@@ -34,6 +34,14 @@ export class ExtrasService {
   }
 
   /**
+   * What staff may add to a booking of this property: published extras of this organization, as guests see them.
+   */
+  public async listForBooking(propertyId: string, organizationId: string): Promise<ExtraService[]> {
+    await this.requireProperty(propertyId);
+    return this.extras.listPublishedForBooking(propertyId, organizationId);
+  }
+
+  /**
    * Adds an extra. Instant extras need a price; on-request may be 0 until staff quote later.
    */
   public async create(propertyId: string, input: ExtraServiceWrite): Promise<ExtraService> {

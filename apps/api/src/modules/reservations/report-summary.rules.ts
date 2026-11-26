@@ -17,6 +17,10 @@ export interface ConfirmedTotals {
   occupiedNights: number;
   revenueCents: number;
   guestCount: number;
+  /** Confirmed pay-at-hotel bookings in the period that nobody has marked paid yet. */
+  unpaidAtHotelCount: number;
+  /** The part of `revenueCents` those bookings account for: booked, not collected. */
+  unpaidAtHotelCents: number;
 }
 
 /** What the cancellation query returned for a period, already added up. */
@@ -53,18 +57,27 @@ export function rangedRevenueCents(stay: StaffReservation, from: string, to: str
 }
 
 /**
- * Nights, revenue and guest headcount of confirmed bookings inside [from, to).
+ * Nights, revenue and guest headcount of confirmed bookings inside [from, to). `revenueCents` is the booked value
+ * (paid or not); the pay-at-hotel bookings still waiting for payment are counted apart, so a report can say how much
+ * of it is still to collect.
  */
 export function confirmedTotals(stays: readonly StaffReservation[], from: string, to: string): ConfirmedTotals {
   let occupiedNights = 0;
   let revenueCents = 0;
   let guestCount = 0;
+  let unpaidAtHotelCount = 0;
+  let unpaidAtHotelCents = 0;
   for (const stay of stays) {
+    const ranged = rangedRevenueCents(stay, from, to);
     occupiedNights += overlapNights(stay.checkIn, stay.checkOut, from, to);
-    revenueCents += rangedRevenueCents(stay, from, to);
+    revenueCents += ranged;
     guestCount += stay.guestCount;
+    if (stay.paymentStatus === 'pending') {
+      unpaidAtHotelCount += 1;
+      unpaidAtHotelCents += ranged;
+    }
   }
-  return { occupiedNights, revenueCents, guestCount };
+  return { occupiedNights, revenueCents, guestCount, unpaidAtHotelCount, unpaidAtHotelCents };
 }
 
 /**
@@ -97,8 +110,9 @@ export function occupancyPercent(occupiedNights: number, availableNights: number
 }
 
 /**
- * The headline numbers of one period. Gross is what guests paid for bookings with nights in the period
- * (confirmed ones plus cancelled ones that kept money); net takes the refunds off.
+ * The headline numbers of one period. Gross is what guests PAID for bookings with nights in the period (confirmed
+ * ones that are paid, plus cancelled ones that kept money); a pay-at-hotel booking nobody has marked paid is not in
+ * it: it is shown apart as `unpaidAtHotelCents`, still to collect. Net takes the refunds off gross.
  */
 export function buildPeriodSummary(input: {
   from: string;
@@ -110,7 +124,7 @@ export function buildPeriodSummary(input: {
 }): PeriodSummary {
   const { totals, cancellations } = input;
   const span = nightsBetween(input.from, input.to) ?? 0;
-  const grossRevenueCents = totals.revenueCents + cancellations.paidCents;
+  const grossRevenueCents = totals.revenueCents - totals.unpaidAtHotelCents + cancellations.paidCents;
   return {
     from: input.from,
     to: input.to,
@@ -123,5 +137,6 @@ export function buildPeriodSummary(input: {
     netRevenueCents: grossRevenueCents - cancellations.refundedCents,
     cancelledCount: cancellations.cancelledCount,
     cancellationRatePercent: cancellationRatePercent(input.reservationCount, cancellations.cancelledCount),
+    unpaidAtHotelCents: totals.unpaidAtHotelCents,
   };
 }

@@ -61,10 +61,10 @@ export function stayStatusStyle(stay: StayStatusFields): StatusStyle {
   return { label: stay.status, tone: 'default', icon: 'expired' };
 }
 
-export type BookingFilterKey = 'confirmed' | 'awaiting_payment' | 'cancelled' | 'expired';
+export type BookingFilterKey = 'confirmed' | 'awaiting_payment' | 'cancelled' | 'expired' | 'unpaid_at_hotel';
 
 /**
- * Style for the four booking states the report groups bookings into.
+ * Style for the four booking states the report groups bookings into, and the "Unpaid at hotel" filter on top of them.
  */
 export function bookingFilterStyle(key: BookingFilterKey): StatusStyle {
   switch (key) {
@@ -76,6 +76,8 @@ export function bookingFilterStyle(key: BookingFilterKey): StatusStyle {
       return { label: 'Cancelled', tone: 'error', icon: 'cancelled' };
     case 'expired':
       return { label: 'Expired', tone: 'default', icon: 'expired' };
+    case 'unpaid_at_hotel':
+      return { label: 'Unpaid at hotel', tone: 'warning', icon: 'hold' };
   }
 }
 

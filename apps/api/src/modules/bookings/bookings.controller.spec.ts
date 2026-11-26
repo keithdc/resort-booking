@@ -32,6 +32,7 @@ const BOOKING: GuestBooking = {
   canChangeDates: false,
   changeDatesBlockedReason: null,
   replacedByReference: null,
+  extras: [],
 };
 const BODY = { reference: 'BK-1A2B3C4D5E', email: 'ada@example.com' };
 const REBOOK_BODY = { ...BODY, newCheckIn: '2027-08-01', newCheckOut: '2027-08-04' };

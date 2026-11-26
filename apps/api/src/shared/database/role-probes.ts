@@ -70,6 +70,8 @@ export const ROLE_PROBES: readonly RoleProbe[] = [
   { role: 'app', name: 'app can record a webhook event', sql: "INSERT INTO payment_webhook_events (provider, provider_event_id, type, payload_sha256) VALUES ('probe', 'evt_probe', 'probe', repeat('a', 64))", expect: 'allowed' },
   { role: 'app', name: 'app cannot delete webhook events', sql: 'DELETE FROM payment_webhook_events', expect: { deniedWith: NO_RIGHT } },
   { role: 'app', name: 'app cannot rewrite what a webhook event was', sql: "UPDATE payment_webhook_events SET provider_event_id = 'x'", expect: { deniedWith: NO_RIGHT } },
+  { role: 'app', name: 'app cannot change the price of an extra on a booking', sql: 'UPDATE reservation_extras SET unit_price_cents = 0', expect: { deniedWith: NO_RIGHT } },
+  { role: 'app', name: 'app cannot delete extras on a booking', sql: 'DELETE FROM reservation_extras', expect: { deniedWith: NO_RIGHT } },
   // Owner-only: the erasure ledger (docs/15) holds keyed hashes of erased people; the API never needs it.
   { role: 'app', name: 'app cannot read the erasure ledger', sql: 'SELECT count(*) FROM privacy_erasure_ledger', expect: { deniedWith: NO_RIGHT } },
   { role: 'app', name: 'app cannot write the erasure ledger', sql: "INSERT INTO privacy_erasure_ledger (subject_kind, subject_hash, operator) VALUES ('guest', repeat('a', 64), 'probe')", expect: { deniedWith: NO_RIGHT } },
