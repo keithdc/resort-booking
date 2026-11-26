@@ -1,0 +1,57 @@
+# Type-check, lint and unit tests on every pull request and push to main (docs/13 R2-26). The security jobs live in security.yml.
+# Third-party actions are pinned to a full commit SHA; the release is in the comment. To update one, look the new tag up in the
+# action's own repository (git ls-remote --tags https://github.com/actions/checkout) and change SHA and comment together.
+name: tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: type-check, lint and unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NODE_ENV: test
+      # No telemetry from the Next.js tooling in CI.
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+
+      - name: Type-check
+        run: |
+          npx tsc --noEmit -p apps/api
+          npx tsc --noEmit -p apps/admin
+          npx tsc --noEmit -p apps/web
+          npx tsc --noEmit -p packages/ui
+
+      - name: Lint
+        run: |
+          npm run lint:api
+          npm run lint:admin
+          npm run lint:web
+
+      # The integration suites need a real Postgres; they are opt-in (DATABASE_ADMIN_URL) and skipped here on purpose.
+      - name: API unit tests
+        run: npx jest --testPathIgnorePatterns integration
+        working-directory: apps/api
+
+      - name: Admin, web and shared UI tests
+        run: |
+          npm run test -w @resort-booking/admin
+          npm run test -w @resort-booking/web
+          npm run test -w @resort-booking/ui

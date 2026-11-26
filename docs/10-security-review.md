@@ -71,7 +71,7 @@ Confidence: **confirmed** (code proves it), **likely** (depends on a deployment 
 ## 3b. Status: Phase 1 API fixes
 
 Fixed in `apps/api` (not yet deployed anywhere). Frontend, dependency and header items (S-03, S-09, S-10, S-11, S-12) are
-handled separately; S-04, S-14 and S-05/S-22/S-23 have their own status sections below; S-24, S-25 and S-27 are Phase 2 or later and are NOT done.
+handled separately; S-04, S-14 and S-05/S-22/S-23 have their own status sections below; S-24 is fixed (see its section below, `docs/15`); S-25 and S-27 are Phase 2 or later and are NOT done (S-27 has since been built, see docs/13 R2-28).
 
 | ID | Status | What changed | Tests |
 | --- | --- | --- | --- |
@@ -249,7 +249,9 @@ Fix: set headers in `next.config.ts` (CSP allowing only self, the map style host
 `helmet()` on Nest, HSTS at the proxy.
 
 ### S-11 Admin token handling (Medium, confirmed)
-**Status: partial (quick part done).** The token is now read and written in one module (`shared/services/staff-session.ts`); storage failures never throw; the token is sent only in the `x-staff-token` header (tested: never in a URL); a 401 from the API clears it and sends the user to `/login?reason=expired`; logout clears it; staff are signed out after 30 minutes without activity in any tab (`useIdleLogout`, `shared/utils/idle.ts`) with a notice on the login page. The CSP above now limits the damage of an XSS bug. Still open (Phase 2): keep the token only in an httpOnly, `Secure`, `SameSite=Strict` cookie behind Next route handlers (BFF) so the browser never holds it; verify the token before setting the cookie; check `Origin` on `/api/session`; make middleware verify the session, not just the cookie's existence.
+**Status: done (BFF).** The staff session token no longer exists in browser JavaScript. It lives only in an httpOnly, `SameSite=Lax`, `Secure` (everywhere except `next dev`) cookie `staff_token`, which expires with the server session. The browser calls this site's own `/api/proxy/staff/...` (`apps/admin/src/app/api/proxy/[...path]/route.ts`): the route handler reads the cookie, adds `x-staff-token` and calls the API from the server. It is not an open proxy: only `/staff/*`, plain path segments (no `%`, `..`, empty segments), only the methods GET/POST/PATCH/PUT/DELETE, only same-origin browser requests (`Sec-Fetch-Site`, else `Origin` against the forwarded host; anything else is 403 before the cookie is read), request headers built from an allow-list (content type, accept, user agent, the forwarded address, a well-formed request id: never the cookie, Authorization, Origin or hop-by-hop headers), response headers relayed from an allow-list (type, download name, request id, Retry-After; never Set-Cookie; always `no-store`), a 1 MiB request limit, a 10 MiB answer limit, a 30 second timeout (502 unreachable, 504 slow), no redirects followed. A 401 from the API (except "wrong password" and "wrong code", which are typed mistakes) clears the cookie and is relayed, so the UI's "session ended" handling works unchanged; no cookie means 401 without calling the API. Sign-in, two-factor sign-in, register and accept-invite go through the same route: the token in the API's answer is moved into the cookie and REMOVED from the body (the page gets `{ signedIn: true, staff, expiresAt }`); the short-lived two-factor challenge token (not a session, 5 minutes, works only on the second login step) is still returned to the page and kept in memory only. Sign-out revokes on the API and clears the cookie even if the API is down. `POST /api/session` (which accepted a token from the browser) is gone; `DELETE /api/session` only clears the cookie. Server components still call the API directly with the cookie token. All `localStorage` token code (`staff-session.ts`) is deleted; the only session-related storage left is the last-activity timestamp for the 30 minute idle logout (`activity-clock.ts`, not a secret), and the page pings the API every 10 minutes while the person is active so the API's own idle limit (docs/13 R2-08) does not fire on a working person. The browser's CSP `connect-src` no longer lists the API origin. The API's `CORS_ORIGINS` no longer needs the admin origin. `NEXT_PUBLIC_API_URL` is replaced by the server-only `API_URL` (the old name is still read as a fallback). Tests: `proxy/[...path]/route.test.ts`, `shared/server/bff-http.test.ts`, `shared/server/no-browser-token.test.ts` (a grep-style guard: browser storage, `document.cookie`, the token header, the cookie name and the API URL appear only in the files meant to touch them), `api-client.test.ts`, `session/route.test.ts`. Left as it was: middleware checks that the cookie exists, not that it is valid (the proxy and the API reject a dead session at once, and the next call clears the cookie); `SameSite=Strict` was not used because a link from e-mail would arrive without the cookie. Deployment note: put the admin behind a proxy that records the person's address in `X-Forwarded-For`, and set the API's `TRUST_PROXY` to the hop count with the admin server counted as one hop; otherwise every staff sign-in looks like it comes from the admin server's address.
+
+History (before the BFF): the token was kept in `staff-session.ts` (localStorage) and in the cookie.
 
 The same token is stored in `localStorage` (`api-client.ts:22-31`) and in an httpOnly cookie (`api/session/route.ts`).
 The cookie's protection is moot because any XSS can read `localStorage`. `POST /api/session` is unauthenticated, does
@@ -268,6 +270,7 @@ staff member there after a real login. Fix: parse with `new URL(next, origin)` a
 whitelist known paths.
 
 ### S-13 Session lifecycle (Medium, confirmed)
+**Status: done** (password change revokes other sessions; idle and absolute limits, last-used time and the device list: docs/13 R2-08 status).
 Changing the password keeps every other session alive (`identity.service.ts:115-128`); expiry is a fixed seven days with
 no sliding window; expired rows are never deleted; the email (the login) can be changed without the current password
 (`updateProfile`), and a duplicate email raises an unhandled unique violation (500).
@@ -344,6 +347,21 @@ phones and notes live in plain columns of `inventory_blocks` (and are copied int
 amounts), expired holds keep personal data indefinitely, and there is no documented backup, restore or retention plan.
 IBAN/BIC and the owner's contact data sit in `organizations` unencrypted. Fix: anonymise-by-booking-reference tool
 with a 90-day purge of expired holds, encrypted managed Postgres with tested restores, a data map in `docs`.
+
+**Status: fixed in code and docs (retention periods and backup targets are owner decisions, `docs/15` section 7).**
+`docs/15-data-retention-and-backups.md` has the data map (every personal-data column, purpose, suggested legal basis,
+PROPOSED retention, lawful exceptions, what is not personal data), the privacy-notice inputs, the backup and disaster
+recovery plan and the restore runbook. Code: `npm run privacy:retention` (dry run by default, `--apply` acts; owner role;
+weekly; anonymises guest data 3 years after check-out and abandoned checkouts after 30 days, deletes closed invitations,
+expired sessions and old webhook rows, anonymises then prunes the audit log), `privacy:erase-guest` (Art. 17, keeps the
+financial record, writes a receipt, a ledger row and an audit entry holding only a keyed email hash), `privacy:export-guest`
+(Art. 15/20, JSON file with mode 0600, never printed), `privacy:erase-staff`, and `privacy:reapply-erasures` (after a
+restore). Migrations 037 (`inventory_blocks.anonymised_at` and indexes) and 038 (`privacy_erasure_ledger`, append-only,
+invisible to `resort_app`). Scripts `scripts/backup-db.sh` (dump, age/gpg encryption, 0600, grandfather-father-son pruning)
+and `scripts/restore-drill.sh` (restore into a throwaway database, sanity checks, drop). Not done: encryption at rest and
+PITR are provider settings, the IBAN in `organizations` is still stored in clear in the database (it is shown to staff by
+design; protected by the roles and by disk and backup encryption), and the owner must pick the periods and the backup target.
+Files: `apps/api/src/shared/privacy/`, `migrations/037_*.sql`, `038_*.sql`, `scripts/`.
 
 ### S-25 Seed data in migrations (Medium, confirmed)
 `002_seed.sql`, `006`, `011`, `012`, `013`, `016`, `017` insert a sample organisation with well-known UUIDs, sample

@@ -12,6 +12,12 @@ You are working on a **direct-booking** monorepo (Airbnb replacement), not a CRM
 6. `docs/06-ui-theme.md` — 8px buttons, theme
 7. `docs/07-cancellation-policy.md` — refund ladder, rebookable + fee
 8. `docs/08-prototype-plan.md` — guest then admin; logic in API only
+9. `docs/10-security-review.md` and `docs/13-security-review-round-2.md` — findings, status, decisions
+10. `docs/11-database-access.md` — database roles, append-only records, maintenance switch, backups
+11. `docs/12-email.md` — invitation email
+12. `docs/14-payments-operations.md` — refund and payment runbook
+13. `docs/15-data-retention-and-backups.md` — personal-data map, retention job, erasure and export, backups, restore drill
+14. `docs/16-manual-test-guide.md` — step-by-step manual checks for the hardening work
 
 ## Non-negotiables
 

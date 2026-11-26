@@ -34,11 +34,14 @@ The audit log and the money tables can only grow and move forward. Two layers, s
 | `booking_changes` | `SELECT`, `INSERT` | no `UPDATE`, `DELETE`, `TRUNCATE` |
 | `payments` | `SELECT`, `INSERT`, `UPDATE (status, failure_reason, inventory_block_id, updated_at)` | no `DELETE`, `TRUNCATE`; amount, currency, provider, provider reference, organization, property, purpose and payload never change; `inventory_block_id` moves only on a succeeded payment (a date change); status `requires_payment -> succeeded \| failed \| cancelled`, `failed \| cancelled -> succeeded` (a late success, docs/14), a succeeded payment never changes |
 | `refunds` | `SELECT`, `INSERT`, `UPDATE` of `status, provider, provider_ref, failure_reason, resolution_note, resolved_by_staff_id, resolved_at, updated_at, processing_started_at, attempts, key_generation` | no `DELETE`, `TRUNCATE`; amount, percent, currency, links, kind, reason and who created it never change; status `pending -> succeeded \| failed`, `failed -> pending \| succeeded`, a succeeded refund never changes; the provider can only change to `manual` |
+| `privacy_erasure_ledger` (migration 038) | **no access** (owner-only, `OWNER_ONLY_TABLES` in `roles.ts`) | no `UPDATE`, `DELETE`, `TRUNCATE` for any role (the maintenance switch lifts it) |
 | `payment_webhook_events` | `SELECT`, `INSERT`, `UPDATE (status, attempts, error, updated_at, processed_at)` | none (the unique key and the column grant are the guard) |
 
 The privileges live in `RESTRICTED_TABLES` (`shared/database/roles.ts`) and are applied by `db:setup-roles` and again **after every migration run** (`restrictFinancialTables` in `applyPendingMigrations`), because a table the owner creates would otherwise carry the blanket default grant. The triggers need no role name and are in `032_financial_record_guards.sql`.
 
 **Escape hatch** (a retention or erasure job, run as the owner, never by the API): inside one transaction run `SET LOCAL resort.record_maintenance = 'on';` before the statement. The setting is transaction-local, so it cannot stay on. It does nothing for `resort_app`, which lacks the privileges. Any use should be written down (who, when, why, how many rows) outside the database; the audit log cannot record the deletion of its own rows.
+
+**The one sanctioned user of the switch is the privacy tooling** (`docs/15-data-retention-and-backups.md`): `npm run privacy:retention`, `privacy:erase-guest`, `privacy:erase-staff` and `privacy:reapply-erasures`, in `apps/api/src/shared/privacy/`. They connect with `MIGRATION_DATABASE_URL` (the owner), refuse any role that cannot delete from `audit_log` (so `resort_app` is refused up front), and set the switch inside the transaction of each batch, only for steps that touch an append-only table. They change personal data and delete old audit rows; they never change an amount, a currency or a status, and they print counts and write `privacy.*` audit entries. Do not copy the switch into other code.
 
 `db:verify-roles` proves the privilege side (it connects as `resort_app` and must be refused an `UPDATE` of `audit_log`, an amount change, a `DELETE` of payments or refunds, and must still be allowed to append and settle); `database-roles.integration.spec.ts` proves the triggers and the replay of the migrations on a throwaway database.
 
@@ -129,7 +132,7 @@ Dump with the **owner** role (it can read everything and owns the objects), neve
 `pg_dump "$MIGRATION_DATABASE_URL" --format=custom --file=resort-$(date +%F).dump`. Restore into an empty database, then run
 `db:setup-roles` once (roles are cluster-wide and are not in a single-database dump). A dump contains guest personal data and the
 IBAN: store it encrypted, restrict who can read it, and apply the retention rules in `docs/05-eu-compliance-and-payments.md`.
-Test a restore regularly.
+Test a restore regularly: `scripts/backup-db.sh` and `scripts/restore-drill.sh` do the dump (encrypted, 0600, pruned) and the monthly drill; schedule, retention, RPO/RTO and the restore runbook are in `docs/15-data-retention-and-backups.md`. After restoring an older backup run `npm run privacy:reapply-erasures -- --apply`.
 
 ## Rotating a password
 
@@ -137,6 +140,24 @@ Test a restore regularly.
 2. `ALTER ROLE resort_app PASSWORD '...'` as the admin (or put the new value in `DB_APP_PASSWORD` and run `db:setup-roles`).
 3. Update `DATABASE_URL` where the API runs and restart it. Same for `resort_owner` / `MIGRATION_DATABASE_URL` and
    `resort_readonly`.
+
+## How migrations are applied (docs/13 R2-22)
+
+`applyPendingMigrations` (`shared/database/migration-files.ts`, used by `npm run migrate` and by start-up migrations):
+
+- **One runner at a time.** A session advisory lock is held from the first file to the last; a second runner waits (up to 60 s,
+  then a clear error) and then finds nothing pending.
+- **History cannot be edited quietly.** `schema_migrations.checksum` holds the SHA-256 of each file (line endings normalised),
+  written in the same transaction as the file. Before anything runs, every applied file is compared with its checksum. A
+  mismatch stops `npm run migrate` and every non-development start, naming the file: put the change in a NEW migration (for a
+  reviewed, harmless edit such as a comment: `UPDATE schema_migrations SET checksum = '<new sha>' WHERE id = '<file>'`). A
+  development start only logs it. Rows applied before checksums existed get the checksum of the file as it is at the first run.
+- **One transaction per file.** A failing file is rolled back completely and named in the error; later files are not run and
+  the lock is released.
+- **Constraints on existing data** (035 and 036): added `NOT VALID` and validated only when no existing row breaks them,
+  otherwise a WARNING says which and how many, and the constraint stays enforced for new rows (`ALTER TABLE ... VALIDATE
+  CONSTRAINT` after correcting the rows). Helper functions are created and dropped inside the migration, never `pg_temp` (the
+  roles have no `TEMP` right).
 
 ## How a new table gets its privileges
 
@@ -156,9 +177,12 @@ shared pool (`DatabaseService.query`) does not run requests in a transaction tod
 
 - Unit tests (no database): role statements (`roles.spec.ts`, including the append-only privileges), settings and TLS rules (`database-settings.spec.ts`), the role
   safety check (`role-safety.spec.ts`, `database-safety.service.spec.ts`), the environment rules
-  (`database-environment.spec.ts`), the migration connection rules (`migration-runner.spec.ts`, `migration-files.spec.ts`), the
+  (`database-environment.spec.ts`), the migration connection rules (`migration-runner.spec.ts`, `migration-files.spec.ts`, `migration-apply.spec.ts`, `migrations/tenant-constraints.spec.ts`), the
   probes (`role-probes.spec.ts`).
 - Integration test against a real Postgres, skipped unless `DATABASE_ADMIN_URL` is set:
   `DATABASE_ADMIN_URL=postgres://resort:resort@localhost:5433/postgres npm run test:db -w @resort-booking/api`. It creates a
   throwaway database and test roles, proves every probe, the default privileges, the idempotent re-run and the production
   role check, then drops them.
+- A second integration test, `migration-tooling.integration.spec.ts` (same `DATABASE_ADMIN_URL`, `npx jest migration-tooling.integration`
+  in `apps/api`): two runners at once, an edited migration, a failing file rolled back, the replay of 035 and 036, and the
+  composite keys and checks as the API role.

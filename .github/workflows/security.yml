@@ -16,8 +16,8 @@ jobs:
     name: npm audit (production, high and critical)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
@@ -28,11 +28,12 @@ jobs:
     name: gitleaks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0 # scan the history, not only the latest commit
-      # Official action, pinned to a release tag. Organisations need a GITLEAKS_LICENSE secret; personal repositories do not.
-      - uses: gitleaks/gitleaks-action@v2
+      # Official action, pinned to a full commit SHA (the release is in the comment). Organisations need a GITLEAKS_LICENSE secret;
+      # personal repositories do not.
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
@@ -42,7 +43,7 @@ jobs:
     name: public env names and banned escape hatches
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       # NEXT_PUBLIC_* values are shipped to every browser: no SECRET, TOKEN, PASSWORD or KEY in the name.
       # NEXT_PUBLIC_MAPTILER_KEY is allowed: a MapTiler browser key is public by design and must be restricted
       # to our domains in the MapTiler dashboard. Also bans eslint-disable and `as unknown as` (docs/02).
