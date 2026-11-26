@@ -18,6 +18,7 @@ import { AuthLayout } from '@/shared/components/auth-layout';
 import { registerWorkspace } from '../services/registration-api';
 import { useRegistrationStatus } from '../services/use-registration-status';
 import { submitErrorMessage } from './session-errors';
+import { PasswordInput } from '@/shared/components/password-input';
 
 /**
  * Create a workspace and its first admin. Only offered while the server allows registration; otherwise a calm
@@ -98,9 +99,9 @@ export function RegisterPage(): React.JSX.Element {
         <TextField label="Your name" required value={fullName} onChange={(event): void => setFullName(event.target.value)} autoComplete="name" slotProps={{ htmlInput: { maxLength: 120 } }} />
         <EmailField label="Email" required value={email} onChange={setEmail} autoComplete="username" />
         <NewPasswordField label="Password" value={password} onChange={setPassword} email={email} />
-        <TextField
+        <PasswordInput
+          toggleLabel="Show confirm password"
           label="Confirm password"
-          type="password"
           required
           value={confirm}
           onChange={(event): void => setConfirm(event.target.value)}

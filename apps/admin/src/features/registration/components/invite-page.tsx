@@ -20,6 +20,7 @@ import { RoleChip } from '@/shared/components/role-chip';
 import { ApiRequestError } from '@/shared/services/api-client';
 import { acceptInvite, fetchInvitePreview } from '../services/registration-api';
 import { submitErrorMessage } from './session-errors';
+import { PasswordInput } from '@/shared/components/password-input';
 
 interface InvitePageProps {
   token: string;
@@ -157,9 +158,9 @@ export function InvitePage({ token }: InvitePageProps): React.JSX.Element {
           />
         )}
         <NewPasswordField label="Password" value={password} onChange={setPassword} email={invite.email} />
-        <TextField
+        <PasswordInput
+          toggleLabel="Show confirm password"
           label="Confirm password"
-          type="password"
           required
           value={confirm}
           onChange={(event): void => setConfirm(event.target.value)}

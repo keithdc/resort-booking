@@ -9,6 +9,7 @@
 import { Alert, Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Stack, TextField } from '@mui/material';
 import { useState } from 'react';
 import { ApiRequestError } from '@/shared/services/api-client';
+import { PasswordInput } from '@/shared/components/password-input';
 
 interface TwoFactorConfirmDialogProps {
   open: boolean;
@@ -76,9 +77,8 @@ export function TwoFactorConfirmDialog({
           <Stack spacing={2}>
             <DialogContentText>{description}</DialogContentText>
             {error !== null ? <Alert severity="error">{error}</Alert> : null}
-            <TextField
+            <PasswordInput
               label="Current password"
-              type="password"
               value={password}
               onChange={(event): void => setPassword(event.target.value)}
               autoComplete="current-password"

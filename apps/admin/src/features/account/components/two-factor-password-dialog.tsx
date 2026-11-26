@@ -9,6 +9,7 @@
 import { Alert, Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Stack, TextField } from '@mui/material';
 import { useState } from 'react';
 import { ApiRequestError } from '@/shared/services/api-client';
+import { PasswordInput } from '@/shared/components/password-input';
 
 interface TwoFactorPasswordDialogProps {
   open: boolean;
@@ -61,9 +62,8 @@ export function TwoFactorPasswordDialog({ open, onConfirm, onClose }: TwoFactorP
               Enter your password to set up two-step verification. When you finish, your other signed-in devices are signed out.
             </DialogContentText>
             {error !== null ? <Alert severity="error">{error}</Alert> : null}
-            <TextField
+            <PasswordInput
               label="Current password"
-              type="password"
               value={password}
               onChange={(event): void => setPassword(event.target.value)}
               autoComplete="current-password"

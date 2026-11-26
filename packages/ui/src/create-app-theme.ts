@@ -69,6 +69,15 @@ export function createAppTheme(surface: AppSurface): Theme {
           root: {
             borderRadius: 8,
           },
+          // Browsers paint saved logins blue and only behind the text, which cuts off at the eye button. Keep the field's own colours.
+          input: ({ theme }) => ({
+            '&:-webkit-autofill, &:-webkit-autofill:hover, &:-webkit-autofill:focus': {
+              WebkitBoxShadow: `0 0 0 100px ${theme.palette.background.paper} inset`,
+              WebkitTextFillColor: theme.palette.text.primary,
+              caretColor: theme.palette.text.primary,
+              borderRadius: 'inherit',
+            },
+          }),
         },
       },
       MuiCard: {

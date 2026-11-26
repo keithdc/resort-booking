@@ -19,6 +19,7 @@ import { AuthBackdrop } from '@/shared/components/auth-backdrop';
 import { clearLastActive, writeLastActive } from '@/shared/services/activity-clock';
 import { ApiRequestError, clearStaffSession } from '@/shared/services/api-client';
 import { safeRedirectTarget } from '@/shared/utils/safe-redirect';
+import { PasswordInput } from '@/shared/components/password-input';
 
 /** Why the user landed on the login page (from `?reason=`): shown as a calm notice. */
 const LOGIN_NOTICES: Record<string, string> = {
@@ -164,9 +165,8 @@ export function StaffLoginPage(): React.JSX.Element {
         {challenge === null ? (
           <Stack component="form" spacing={2} onSubmit={(event): void => void onSubmit(event)}>
             <EmailField label="Email" required value={email} onChange={setEmail} autoComplete="username" shrinkLabel />
-            <TextField
+            <PasswordInput
               label="Password"
-              type="password"
               value={password}
               onChange={(event): void => {
                 setPassword(event.target.value);
