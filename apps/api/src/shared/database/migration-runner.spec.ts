@@ -1,6 +1,6 @@
 /**
  * @file apps/api/src/shared/database/migration-runner.spec.ts
- * @shared Stale-build safeguard in the migration runner
+ * @shared Stale-build safeguard and the migration connection rules in the migration runner
  */
 
 import { readdirSync } from 'node:fs';
@@ -11,44 +11,121 @@ import { MigrationRunner } from './migration-runner';
 
 const shipped = readdirSync(join(__dirname, '../../migrations')).filter((n: string): boolean => n.endsWith('.sql'));
 
-async function build(applied: string[]): Promise<MigrationRunner> {
+interface Recorder {
+  runner: MigrationRunner;
+  queries: string[];
+  clientQueries: string[];
+}
+
+async function build(applied: string[], ledgerExists = true): Promise<Recorder> {
+  const queries: string[] = [];
+  const clientQueries: string[] = [];
   const moduleRef = await Test.createTestingModule({
     providers: [
       MigrationRunner,
       {
         provide: DatabaseService,
         useValue: {
-          query: async (text: string, params: string[] = []): Promise<{ rows: { id: string }[]; rowCount: number }> => {
-            if (text.includes('WHERE id')) {
-              const hit = applied.includes(params[0] ?? '');
-              return { rows: hit ? [{ id: params[0] ?? '' }] : [], rowCount: hit ? 1 : 0 };
+          query: async (text: string): Promise<{ rows: unknown[]; rowCount: number }> => {
+            queries.push(text.replace(/\s+/g, ' ').trim());
+            if (text.includes('to_regclass')) {
+              return { rows: [{ present: ledgerExists }], rowCount: 1 };
             }
             if (text.includes('SELECT id FROM schema_migrations')) {
               return { rows: applied.map((id: string): { id: string } => ({ id })), rowCount: applied.length };
             }
             return { rows: [], rowCount: 0 };
           },
+          withClient: async <T>(fn: (client: { query: (text: string) => Promise<unknown> }) => Promise<T>): Promise<T> =>
+            fn({
+              query: async (text: string): Promise<unknown> => {
+                clientQueries.push(text.slice(0, 40).replace(/\s+/g, ' ').trim());
+                return { rows: [], rowCount: 0 };
+              },
+            }),
         },
       },
     ],
   }).compile();
-  return moduleRef.get(MigrationRunner);
+  return { runner: moduleRef.get(MigrationRunner), queries, clientQueries };
 }
 
-describe('MigrationRunner stale-build safeguard', () => {
-  it('reports migrations the database has that this build does not ship', async () => {
-    const runner = await build([...shipped, '999_from_a_newer_build.sql']);
-    await expect(runner.status()).resolves.toEqual({ pending: [], unknown: ['999_from_a_newer_build.sql'] });
+describe('MigrationRunner', () => {
+  const saved = { ...process.env };
+  afterEach(() => {
+    process.env = { ...saved };
   });
 
-  it('refuses to start when the database is ahead of the code', async () => {
-    const runner = await build([...shipped, '999_from_a_newer_build.sql']);
-    await expect(runner.onModuleInit()).rejects.toThrow('999_from_a_newer_build.sql');
+  describe('stale-build safeguard', () => {
+    it('reports migrations the database has that this build does not ship', async () => {
+      const { runner } = await build([...shipped, '999_from_a_newer_build.sql']);
+      await expect(runner.status()).resolves.toEqual({ pending: [], unknown: ['999_from_a_newer_build.sql'] });
+    });
+
+    it('refuses to start when the database is ahead of the code', async () => {
+      const { runner } = await build([...shipped, '999_from_a_newer_build.sql']);
+      await expect(runner.onModuleInit()).rejects.toThrow('999_from_a_newer_build.sql');
+    });
+
+    it('starts normally when the database matches this build', async () => {
+      const { runner } = await build(shipped);
+      await expect(runner.onModuleInit()).resolves.toBeUndefined();
+      runner.onModuleDestroy();
+    });
   });
 
-  it('starts normally when the database matches this build', async () => {
-    const runner = await build(shipped);
-    await expect(runner.onModuleInit()).resolves.toBeUndefined();
-    runner.onModuleDestroy();
+  describe('which connection changes the schema', () => {
+    it('applies nothing, and never runs DDL, when nothing is pending (the least-privilege role can start)', async () => {
+      const { runner, queries, clientQueries } = await build(shipped);
+
+      await runner.runPending();
+
+      expect(clientQueries).toEqual([]);
+      expect(queries.some((text: string): boolean => text.includes('CREATE TABLE'))).toBe(false);
+    });
+
+    it('in development with one URL, applies pending files on that connection and locks the ledger down', async () => {
+      process.env.NODE_ENV = 'development';
+      delete process.env.MIGRATION_DATABASE_URL;
+      const { runner, queries, clientQueries } = await build(shipped.slice(0, 2));
+
+      await runner.runPending();
+
+      expect(queries.some((text: string): boolean => text.startsWith('CREATE TABLE IF NOT EXISTS schema_migrations'))).toBe(true);
+      expect(queries.some((text: string): boolean => text.includes('REVOKE INSERT, UPDATE, DELETE, TRUNCATE') && text.includes('"resort_app"'))).toBe(true);
+      expect(clientQueries.filter((text: string): boolean => text === 'BEGIN')).toHaveLength(shipped.length - 2);
+      expect(clientQueries.filter((text: string): boolean => text === 'COMMIT')).toHaveLength(shipped.length - 2);
+    });
+
+    it('treats a database without a ledger as everything pending', async () => {
+      process.env.NODE_ENV = 'development';
+      delete process.env.MIGRATION_DATABASE_URL;
+      const { runner, clientQueries } = await build([], false);
+
+      await runner.runPending();
+
+      expect(clientQueries.filter((text: string): boolean => text === 'COMMIT')).toHaveLength(shipped.length);
+    });
+
+    it('does not apply migrations at start when RUN_MIGRATIONS_ON_START=false, but still checks for a stale build', async () => {
+      process.env.RUN_MIGRATIONS_ON_START = 'false';
+      const { runner, clientQueries } = await build(shipped.slice(0, 2));
+
+      await expect(runner.onModuleInit()).resolves.toBeUndefined();
+
+      expect(clientQueries).toEqual([]);
+      runner.onModuleDestroy();
+    });
+
+    it('never applies migrations at start in production unless asked to', async () => {
+      process.env.NODE_ENV = 'production';
+      delete process.env.RUN_MIGRATIONS_ON_START;
+      const { runner, clientQueries } = await build(shipped.slice(0, 2));
+
+      await runner.onModuleInit();
+
+      expect(clientQueries).toEqual([]);
+      runner.onModuleDestroy();
+    });
   });
 });

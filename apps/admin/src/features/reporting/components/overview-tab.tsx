@@ -4,12 +4,13 @@
  * @dependencies combined-chart, report-insights
  */
 
-import { Box } from '@mui/material';
+import { Alert, Box } from '@mui/material';
 import type { StaffReport } from '@resort-booking/shared-types';
 import { buildChartSeries, type ChartBucket } from '../utils/report-chart';
 import { buildInsights } from '../utils/report-insights';
 import { stayOccupiesDay } from '../utils/stay-window';
 import { CombinedChart } from './combined-chart';
+import { useMoneyHidden } from './money-visibility';
 import { EmptyNote, ReportSection } from './report-section';
 import type { ReportDetail } from './report-detail-dialog';
 
@@ -22,9 +23,10 @@ interface OverviewTabProps {
  * The big picture: one chart of revenue and occupancy, and a few plain sentences about the period.
  */
 export function OverviewTab({ report, onOpenDetail }: OverviewTabProps): React.JSX.Element {
+  const moneyHidden = useMoneyHidden();
   const buckets = buildChartSeries(report.daily, report.houseCount);
   const hasData = report.reservationCount > 0;
-  const insights = hasData ? buildInsights(report) : [];
+  const insights = hasData && !moneyHidden ? buildInsights(report) : [];
 
   const open = (bucket: ChartBucket): void => {
     onOpenDetail({
@@ -33,6 +35,15 @@ export function OverviewTab({ report, onOpenDetail }: OverviewTabProps): React.J
       stays: report.stays.filter((stay): boolean => bucket.dates.some((date: string): boolean => stayOccupiesDay(stay, date))),
     });
   };
+
+  if (moneyHidden) {
+    // The chart and the insight sentences are about revenue, which is withheld; the cards above carry bookings and occupancy.
+    return (
+      <Alert severity="info">
+        The revenue chart and the revenue insights are for admins. Bookings, nights and occupancy are shown above and on the other tabs.
+      </Alert>
+    );
+  }
 
   return (
     <>

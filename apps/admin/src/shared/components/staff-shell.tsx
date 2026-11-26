@@ -14,7 +14,9 @@ import { useState, type ReactNode } from 'react';
 import { logoutStaff } from '@/features/identity/services/staff-identity-api';
 import { useSidebarCollapsed } from '@/shared/hooks/use-sidebar-collapsed';
 import { useSidebarData } from '@/shared/hooks/use-sidebar-data';
+import { useIdleLogout } from '@/shared/hooks/use-idle-logout';
 import { clearStaffSession } from '@/shared/services/api-client';
+import { isBarePath } from '@/shared/utils/public-paths';
 import { SIDEBAR_RAIL_WIDTH, SIDEBAR_WIDTH, StaffSidebar } from './staff-sidebar';
 
 interface StaffShellProps {
@@ -30,14 +32,10 @@ export function StaffShell({ children }: StaffShellProps): React.JSX.Element {
   const router = useRouter();
   const { collapsed, toggle } = useSidebarCollapsed();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const isLogin = pathname === '/login';
-  const { profile, refundsWaiting } = useSidebarData(!isLogin);
+  const isBare = isBarePath(pathname);
+  const { profile, refundsWaiting } = useSidebarData(!isBare);
 
-  if (isLogin) {
-    return <>{children}</>;
-  }
-
-  const onLogout = (): void => {
+  const signOut = (loginPath: string): void => {
     void (async (): Promise<void> => {
       try {
         await logoutStaff();
@@ -45,10 +43,17 @@ export function StaffShell({ children }: StaffShellProps): React.JSX.Element {
         // Cookie/local session still cleared below.
       }
       await clearStaffSession();
-      router.replace('/login');
+      router.replace(loginPath);
       router.refresh();
     })();
   };
+  const onLogout = (): void => signOut('/login');
+  // S-11: no activity for 30 minutes (in any tab) ends the session.
+  useIdleLogout({ enabled: !isBare, onIdle: (): void => signOut('/login?reason=idle') });
+
+  if (isBare) {
+    return <>{children}</>;
+  }
 
   const railWidth = collapsed ? SIDEBAR_RAIL_WIDTH : SIDEBAR_WIDTH;
 
@@ -118,6 +123,7 @@ export function StaffShell({ children }: StaffShellProps): React.JSX.Element {
         sx={{
           flexGrow: 1,
           minWidth: 0,
+          overflowX: 'auto',
           px: { xs: 2, sm: 3, md: 6 },
           py: { xs: 3, md: 5 },
           mt: { xs: 7, md: 0 },

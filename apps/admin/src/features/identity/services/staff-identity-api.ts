@@ -8,12 +8,50 @@ import type {
   ChangeStaffPasswordRequest,
   StaffLoginResult,
   StaffProfile,
+  TwoFactorChallenge,
+  TwoFactorConfirmRequest,
+  TwoFactorRecoveryCodes,
+  TwoFactorSetup,
+  TwoFactorStatus,
   UpdateStaffProfileRequest,
 } from '@resort-booking/shared-types';
-import { getStaffApiOk, mutateStaffApiOk, postStaffLogin } from '@/shared/services/api-client';
+import { getStaffApiOk, mutateStaffApiOk, postStaffLogin, postStaffPublic } from '@/shared/services/api-client';
 
-export function loginStaff(email: string, password: string): Promise<StaffLoginResult> {
-  return postStaffLogin<StaffLoginResult>(email, password);
+/** What sign-in answers: a session, or (only for an account with two-factor) a challenge for step two. */
+export type StaffLoginOutcome = StaffLoginResult | TwoFactorChallenge;
+
+/** True when sign-in needs the second step. */
+export function needsTwoFactor(outcome: StaffLoginOutcome): outcome is TwoFactorChallenge {
+  return 'twoFactorRequired' in outcome;
+}
+
+export function loginStaff(email: string, password: string): Promise<StaffLoginOutcome> {
+  return postStaffLogin<StaffLoginOutcome>(email, password);
+}
+
+/** Step two of sign-in: the challenge token plus an authenticator code or a recovery code. */
+export function loginStaffTwoFactor(challengeToken: string, code: string): Promise<StaffLoginResult> {
+  return postStaffPublic<StaffLoginResult>('/staff/login/two-factor', { challengeToken, code }, 'Could not sign in');
+}
+
+export function fetchTwoFactorStatus(): Promise<TwoFactorStatus> {
+  return getStaffApiOk<TwoFactorStatus>('/staff/me/two-factor');
+}
+
+export function startTwoFactorSetup(): Promise<TwoFactorSetup> {
+  return mutateStaffApiOk<TwoFactorSetup>('/staff/me/two-factor/setup', 'POST', {});
+}
+
+export function enableTwoFactor(code: string): Promise<TwoFactorRecoveryCodes> {
+  return mutateStaffApiOk<TwoFactorRecoveryCodes>('/staff/me/two-factor/enable', 'POST', { code });
+}
+
+export function disableTwoFactor(body: TwoFactorConfirmRequest): Promise<{ disabled: true }> {
+  return mutateStaffApiOk<{ disabled: true }>('/staff/me/two-factor/disable', 'POST', body);
+}
+
+export function regenerateRecoveryCodes(body: TwoFactorConfirmRequest): Promise<TwoFactorRecoveryCodes> {
+  return mutateStaffApiOk<TwoFactorRecoveryCodes>('/staff/me/two-factor/recovery-codes/regenerate', 'POST', body);
 }
 
 export function fetchStaffMe(): Promise<StaffProfile> {

@@ -1,0 +1,28 @@
+# Weekly dependency updates, grouped so a week is one pull request per ecosystem (docs/10-security-review.md, Phase 3).
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      production-patches:
+        dependency-type: production
+        update-types: [patch, minor]
+      development-tooling:
+        dependency-type: development
+        update-types: [patch, minor]
+    # Major upgrades (Next 16, Nest 12, Vitest 4...) are decided by a person, one at a time.
+    ignore:
+      - dependency-name: '*'
+        update-types: [version-update:semver-major]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      actions:
+        patterns: ['*']

@@ -84,9 +84,10 @@ export class PropertyRepository {
   public constructor(private readonly database: DatabaseService) {}
 
   /**
-   * Lists properties. Guest callers must pass publishedOnly true.
+   * Lists properties. Guest callers must pass publishedOnly true and no organization (the public catalog);
+   * staff callers always pass their organization, so they only ever see their own properties.
    */
-  public async listProperties(publishedOnly: boolean): Promise<PropertySummary[]> {
+  public async listProperties(publishedOnly: boolean, organizationId: string | null = null): Promise<PropertySummary[]> {
     const result = await this.database.query<PropertyRow>(
       `
       SELECT p.*,
@@ -98,9 +99,10 @@ export class PropertyRepository {
         ) AS cover_photo_url
       FROM properties p
       WHERE ($1::boolean = false OR p.published = true)
+        AND ($2::uuid IS NULL OR p.organization_id = $2::uuid)
       ORDER BY p.name ASC
       `,
-      [publishedOnly],
+      [publishedOnly, organizationId],
     );
     return result.rows.map(mapPropertySummary);
   }

@@ -65,7 +65,7 @@ describe('BookingsController', () => {
   const availabilityFor = jest.fn<Promise<HouseAvailability>, [typeof BODY]>();
   const quote = jest.fn<Promise<RebookQuote>, [typeof REBOOK_BODY]>();
   const rebook = jest.fn<Promise<RebookResult>, [typeof REBOOK_BODY]>();
-  const check = jest.fn<Promise<void>, [string | undefined]>();
+  const check = jest.fn<Promise<void>, [string | undefined, string?]>();
   let controller: BookingsController;
 
   beforeEach(async () => {
@@ -90,14 +90,14 @@ describe('BookingsController', () => {
   it('wraps the booking in the ok envelope for a lookup, after counting the attempt for that IP', async () => {
     await expect(controller.lookup(BODY, REQUEST)).resolves.toEqual({ status: 'ok', data: BOOKING });
 
-    expect(check).toHaveBeenCalledWith('1.2.3.4');
+    expect(check).toHaveBeenCalledWith('1.2.3.4', BODY.reference);
     expect(lookup).toHaveBeenCalledWith(BODY);
   });
 
   it('wraps the cancelled booking in the ok envelope for a cancel, after counting the attempt', async () => {
     await expect(controller.cancel(BODY, REQUEST)).resolves.toEqual({ status: 'ok', data: BOOKING });
 
-    expect(check).toHaveBeenCalledWith('1.2.3.4');
+    expect(check).toHaveBeenCalledWith('1.2.3.4', BODY.reference);
     expect(cancel).toHaveBeenCalledWith(BODY);
   });
 
@@ -115,7 +115,7 @@ describe('BookingsController', () => {
     it('returns the taken nights for the picker, after counting the attempt', async () => {
       await expect(controller.rebookAvailability(BODY, REQUEST)).resolves.toEqual({ status: 'ok', data: AVAILABILITY });
 
-      expect(check).toHaveBeenCalledWith('1.2.3.4');
+      expect(check).toHaveBeenCalledWith('1.2.3.4', BODY.reference);
       expect(availabilityFor).toHaveBeenCalledWith(BODY);
     });
 

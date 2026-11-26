@@ -27,16 +27,3 @@ export function organizationProblem(checks: {
   }
   return null;
 }
-
-/**
- * The password rule shown under the field: at least 8 characters with a letter and a number.
- */
-export function passwordProblem(password: string): string | null {
-  if (password === '') {
-    return null;
-  }
-  if (password.length < 8 || !/[A-Za-z]/.test(password) || !/\d/.test(password)) {
-    return 'At least 8 characters, with a letter and a number.';
-  }
-  return null;
-}

@@ -380,6 +380,47 @@ Those can be added later. Channel managers (re-sync to Airbnb) are a **conscious
 - **Change dates** is a rebook: the old booking is cancelled and a new one (new reference) is created. Staff can waive the fee and, when money is due, record that it was settled outside the app.
 - **Refunds** (`/refunds`, nav “Refunds”): queue filtered by Needs attention / Pending / Failed / Done / All, by property, and by search. **Retry** applies to failed refunds and pending provider refunds. A hand refund (`provider: manual`) is sent outside the app, then **Mark as refunded** with a note. The home page shows a heads-up when refunds need attention.
 
+## Staff passwords
+
+Rule (API and admin, one shared definition): 10 to 200 characters, a capital letter, a small letter and a number; not only spaces; not
+containing the first part of the sign-in email; not a very common password. It is checked whenever a password is set, never at
+sign-in, so existing accounts keep working. The admin form shows a live checklist (icon and words for each rule) and a show/hide
+toggle, and keeps "Change password" off until every rule is met. The API answers `400 PASSWORD_TOO_WEAK` with a `problems` list.
+Details and the development-login exception: `docs/10-security-review.md` (Password policy).
+
+## Staff accounts and roles
+
+Who: the person who **registers** becomes the **admin** of a new workspace (organization). An admin adds the **employees**. A workspace can
+have several admins and always keeps at least one active one.
+
+| | Admin | Employee |
+| --- | --- | --- |
+| Calendar, booking list, check-in | yes | yes |
+| Cancel a booking, change its dates | yes | yes |
+| Refund list | yes | read only |
+| Reports | all figures | activity only: nights, occupancy, bookings, arrivals; every money figure is withheld (`moneyHidden: true`) |
+| Pay out, retry or mark a refund as paid | yes | no |
+| Properties, stays, photos, extras, rates, discounts, cancellation rules | yes | no |
+| Bank and legal details | yes | no |
+| Team, invitations, audit log, system health | yes | no |
+
+An employee who calls an admin route gets `403 FORBIDDEN_ROLE`. The API decides; the admin screens will only hide what a role cannot use.
+
+**Registration** (`GET /staff/register/status`, `POST /staff/register`): open in development; **closed in production** unless
+`ALLOW_REGISTRATION=true`. Registering creates the organization and its admin together and signs them in. The password follows the staff
+password rule. Rate limited per IP and per email.
+
+**Adding someone** (no email system yet, so a link): an admin creates an invitation (`POST /staff/team/invites`); the answer holds a
+one-time token, shown once, that the admin hands over (the client builds the link). It works once, expires after 72 hours
+(`INVITE_TTL_HOURS`), and a new invitation for the same email replaces the old one. The person opens it (`GET /staff/invites/:token/preview`
+shows only the workspace name, the email and the role), chooses a password that meets the rule and is signed in
+(`POST /staff/invites/accept`). Lost password or lost phone: **reset access** signs the person out everywhere and issues a new one-time link
+that sets a new password for the same account. Switching a person off ends their sessions and stops them signing in; it never deletes
+their history.
+
+**Audit log** (`GET /staff/audit`, admin only): who did what and when, newest first, filterable by action prefix and date. It records
+ids and names of fields only, never passwords, tokens, bank values or readable IPs. Details: `docs/10-security-review.md` (S-14).
+
 ## Owner report (`/reports`)
 
 Written for the owner (the client), not for engineers: plain words, one number per question, every term explained. The page only chooses the period and property and arranges what `GET /staff/reports` returns; all figures are computed in NestJS (`report-summary.rules.ts`, `report-summary.repository.ts`, `reservations.service.ts`).

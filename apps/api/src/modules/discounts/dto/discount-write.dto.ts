@@ -4,9 +4,23 @@
  * @dependencies class-validator
  */
 
-import { IsArray, IsBoolean, IsInt, IsObject, IsOptional, IsString, Matches, Max, MaxLength, Min, ValidateIf } from 'class-validator';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsBoolean,
+  IsInt,
+  IsObject,
+  IsOptional,
+  IsString,
+  Matches,
+  Max,
+  MaxLength,
+  Min,
+  ValidateIf,
+} from 'class-validator';
 import { KeepRawValue } from '../../../shared/validation/keep-raw-value';
 import { UUID_LIKE } from '../../../shared/validation/uuid-like';
+import { LIMITS } from '../../../shared/validation/limits';
 
 /**
  * Shape-checks the request. `effect` and `conditions` are objects here and are parsed into typed
@@ -21,6 +35,7 @@ export class DiscountWriteDto {
   public effect!: Record<string, unknown>;
 
   @IsArray()
+  @ArrayMaxSize(LIMITS.conditions)
   public conditions!: unknown[];
 
   @IsBoolean()
@@ -28,6 +43,7 @@ export class DiscountWriteDto {
 
   @ValidateIf((dto: DiscountWriteDto): boolean => dto.houseIds !== null)
   @IsArray()
+  @ArrayMaxSize(LIMITS.houseIds)
   @Matches(UUID_LIKE, { each: true })
   public houseIds!: string[] | null;
 
@@ -47,6 +63,7 @@ export class DiscountWriteDto {
   @ValidateIf((dto: DiscountWriteDto): boolean => dto.maxRedemptions !== null)
   @IsInt()
   @Min(1)
+  @Max(LIMITS.maxRedemptions)
   public maxRedemptions!: number | null;
 
   /** Advertise on the guest site. Optional so older clients keep working (defaults to false). */

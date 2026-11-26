@@ -1,12 +1,17 @@
+# Local development services. Both ports are published on 127.0.0.1 ONLY: nothing else on the network can reach them.
+# Optional settings (export them or put them in a root `.env` file that Docker Compose reads):
+#   POSTGRES_PASSWORD  password of the admin role `resort` (default `resort`, fine for a laptop)
+#   REDIS_PASSWORD     when set, Redis requires it; then use REDIS_URL=redis://:<password>@localhost:6380 in apps/api/.env
+# Production does not use this file: see docs/11-database-access.md.
 services:
   postgres:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: resort
-      POSTGRES_PASSWORD: resort
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-resort}
       POSTGRES_DB: resort_booking
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - resort_pg_data:/var/lib/postgresql/data
     healthcheck:
@@ -17,10 +22,18 @@ services:
 
   redis:
     image: redis:7-alpine
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    command:
+      - sh
+      - -c
+      - 'if [ -n "$$REDIS_PASSWORD" ]; then exec redis-server --requirepass "$$REDIS_PASSWORD"; else exec redis-server; fi'
     ports:
-      - "6380:6379"
+      - "127.0.0.1:6380:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test:
+        - CMD-SHELL
+        - 'if [ -n "$$REDIS_PASSWORD" ]; then redis-cli -a "$$REDIS_PASSWORD" --no-auth-warning ping; else redis-cli ping; fi | grep -q PONG'
       interval: 5s
       timeout: 5s
       retries: 10

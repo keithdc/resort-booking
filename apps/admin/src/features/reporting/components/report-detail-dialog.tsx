@@ -23,6 +23,7 @@ import {
 } from '@mui/material';
 import { formatCents } from '@/shared/utils/money';
 import { bookingStatusLabel, paymentMethodLabel } from '../utils/report-labels';
+import { useMoneyHidden } from './money-visibility';
 
 export interface ReportDetail {
   title: string;
@@ -39,6 +40,7 @@ interface ReportDetailDialogProps {
  * The bookings behind a bar or a row of the report.
  */
 export function ReportDetailDialog({ detail, onClose }: ReportDetailDialogProps): React.JSX.Element {
+  const moneyHidden = useMoneyHidden();
   return (
     <Dialog open={detail !== null} onClose={onClose} fullWidth maxWidth="md">
       {detail !== null ? (
@@ -63,7 +65,7 @@ export function ReportDetailDialog({ detail, onClose }: ReportDetailDialogProps)
                     <TableCell>Guests</TableCell>
                     <TableCell>Status</TableCell>
                     <TableCell>Pay</TableCell>
-                    <TableCell>Total</TableCell>
+                    {moneyHidden ? null : <TableCell>Total</TableCell>}
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -81,7 +83,7 @@ export function ReportDetailDialog({ detail, onClose }: ReportDetailDialogProps)
                       <TableCell>{stay.guestCount}</TableCell>
                       <TableCell>{bookingStatusLabel(stay)}</TableCell>
                       <TableCell>{paymentMethodLabel(stay.paymentMethod)}</TableCell>
-                      <TableCell>{formatCents(stay.totalCents, stay.currencyCode)}</TableCell>
+                      {moneyHidden ? null : <TableCell>{formatCents(stay.totalCents, stay.currencyCode)}</TableCell>}
                     </TableRow>
                   ))}
                 </TableBody>

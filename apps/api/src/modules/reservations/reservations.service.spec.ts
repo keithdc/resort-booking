@@ -177,13 +177,13 @@ describe('ReservationsService.getPolicySnapshot', () => {
 });
 
 describe('ReservationsService.getReport after a guest changed the dates of a booking', () => {
-  const listConfirmedOverlapping = jest.fn<Promise<StaffReservation[]>, [string, string, string | null]>();
-  const listPipelineOverlapping = jest.fn<Promise<StaffReservation[]>, [string, string, string | null]>();
-  const houseCatalog = jest.fn<Promise<HouseCatalogRow[]>, [string | null]>();
-  const cancellationsByReason = jest.fn<Promise<CancellationReasonRow[]>, [string, string, string | null]>();
-  const cancellationRefunds = jest.fn<Promise<StaffRefund[]>, [string, string, string | null]>();
-  const discountUsage = jest.fn<Promise<DiscountUsageRow[]>, [string, string, string | null]>();
-  const attention = jest.fn<Promise<ReportAttention>, [string, string | null]>();
+  const listConfirmedOverlapping = jest.fn<Promise<StaffReservation[]>, [string, string, string | null, string]>();
+  const listPipelineOverlapping = jest.fn<Promise<StaffReservation[]>, [string, string, string | null, string]>();
+  const houseCatalog = jest.fn<Promise<HouseCatalogRow[]>, [string | null, string]>();
+  const cancellationsByReason = jest.fn<Promise<CancellationReasonRow[]>, [string, string, string | null, string]>();
+  const cancellationRefunds = jest.fn<Promise<StaffRefund[]>, [string, string, string | null, string]>();
+  const discountUsage = jest.fn<Promise<DiscountUsageRow[]>, [string, string, string | null, string]>();
+  const attention = jest.fn<Promise<ReportAttention>, [string, string | null, string]>();
   let service: ReservationsService;
 
   function stay(overrides: Partial<StaffReservation>): StaffReservation {
@@ -249,7 +249,7 @@ describe('ReservationsService.getReport after a guest changed the dates of a boo
   });
 
   it('counts revenue from the confirmed NEW booking, never from the cancelled old one', async () => {
-    const report = await service.getReport({ from: '2027-07-01', to: '2027-08-01', propertyId: PROPERTY });
+    const report = await service.getReport({ from: '2027-07-01', to: '2027-08-01', propertyId: PROPERTY }, 'org-1');
 
     expect(report.revenueCents).toBe(60000);
     expect(report.reservationCount).toBe(1);
@@ -257,14 +257,14 @@ describe('ReservationsService.getReport after a guest changed the dates of a boo
   });
 
   it('shows the replaced booking as cancelled and the new one as a rebook', async () => {
-    const report = await service.getReport({ from: '2027-07-01', to: '2027-08-01', propertyId: PROPERTY });
+    const report = await service.getReport({ from: '2027-07-01', to: '2027-08-01', propertyId: PROPERTY }, 'org-1');
 
     expect(report.cancelledCount).toBe(1);
     expect(report.rebookCount).toBe(1);
   });
 
   it('keeps the old booking out of occupied nights, so a changed booking is not counted twice', async () => {
-    const report = await service.getReport({ from: '2027-07-01', to: '2027-08-01', propertyId: PROPERTY });
+    const report = await service.getReport({ from: '2027-07-01', to: '2027-08-01', propertyId: PROPERTY }, 'org-1');
 
     const oldNight = report.daily.find((day) => day.date === '2027-07-11');
     const newNight = report.daily.find((day) => day.date === '2027-07-20');
@@ -276,7 +276,7 @@ describe('ReservationsService.getReport after a guest changed the dates of a boo
   it('shows the calendar lanes: the new booking as a rebook, the old one as cancelled', async () => {
     listPipelineOverlapping.mockResolvedValue([OLD, NEW]);
 
-    const calendar = await service.getCalendar({ from: '2027-07-10', to: '2027-07-22', propertyId: PROPERTY });
+    const calendar = await service.getCalendar({ from: '2027-07-10', to: '2027-07-22', propertyId: PROPERTY }, 'org-1');
 
     const oldDay = calendar.days.find((day) => day.date === '2027-07-11');
     const newDay = calendar.days.find((day) => day.date === '2027-07-20');
@@ -286,13 +286,13 @@ describe('ReservationsService.getReport after a guest changed the dates of a boo
 });
 
 describe('ReservationsService.getReport owner numbers', () => {
-  const listConfirmedOverlapping = jest.fn<Promise<StaffReservation[]>, [string, string, string | null]>();
-  const listPipelineOverlapping = jest.fn<Promise<StaffReservation[]>, [string, string, string | null]>();
-  const houseCatalog = jest.fn<Promise<HouseCatalogRow[]>, [string | null]>();
-  const cancellationsByReason = jest.fn<Promise<CancellationReasonRow[]>, [string, string, string | null]>();
-  const cancellationRefunds = jest.fn<Promise<StaffRefund[]>, [string, string, string | null]>();
-  const discountUsage = jest.fn<Promise<DiscountUsageRow[]>, [string, string, string | null]>();
-  const attention = jest.fn<Promise<ReportAttention>, [string, string | null]>();
+  const listConfirmedOverlapping = jest.fn<Promise<StaffReservation[]>, [string, string, string | null, string]>();
+  const listPipelineOverlapping = jest.fn<Promise<StaffReservation[]>, [string, string, string | null, string]>();
+  const houseCatalog = jest.fn<Promise<HouseCatalogRow[]>, [string | null, string]>();
+  const cancellationsByReason = jest.fn<Promise<CancellationReasonRow[]>, [string, string, string | null, string]>();
+  const cancellationRefunds = jest.fn<Promise<StaffRefund[]>, [string, string, string | null, string]>();
+  const discountUsage = jest.fn<Promise<DiscountUsageRow[]>, [string, string, string | null, string]>();
+  const attention = jest.fn<Promise<ReportAttention>, [string, string | null, string]>();
   let service: ReservationsService;
 
   function booking(overrides: Partial<StaffReservation>): StaffReservation {
@@ -334,9 +334,9 @@ describe('ReservationsService.getReport owner numbers', () => {
       from === '2027-07-01' ? [booking({ totalCents: 40000, checkIn: '2027-07-02', checkOut: '2027-07-04' })] : [booking({ id: 'old', totalCents: 10000, checkIn: '2027-06-21', checkOut: '2027-06-23' })],
     );
 
-    const report = await service.getReport(RANGE);
+    const report = await service.getReport(RANGE, 'org-1');
 
-    expect(listConfirmedOverlapping).toHaveBeenCalledWith('2027-06-21', '2027-07-01', PROPERTY);
+    expect(listConfirmedOverlapping).toHaveBeenCalledWith('2027-06-21', '2027-07-01', PROPERTY, 'org-1');
     expect(report.previous).toMatchObject({ from: '2027-06-21', to: '2027-07-01', reservationCount: 1, grossRevenueCents: 10000, netRevenueCents: 10000 });
     expect(report.revenueCents).toBe(40000);
     expect(report.netRevenueCents).toBe(40000);
@@ -355,7 +355,7 @@ describe('ReservationsService.getReport owner numbers', () => {
         : [],
     );
 
-    const report = await service.getReport(RANGE);
+    const report = await service.getReport(RANGE, 'org-1');
 
     expect(report.grossRevenueCents).toBe(40000 + 42000);
     expect(report.refundedCents).toBe(18000);
@@ -369,7 +369,7 @@ describe('ReservationsService.getReport owner numbers', () => {
       from === '2027-07-01' ? [booking({})] : [],
     );
 
-    const report = await service.getReport(RANGE);
+    const report = await service.getReport(RANGE, 'org-1');
 
     expect(report.houseCount).toBe(2);
     expect(report.availableNights).toBe(20);
@@ -385,21 +385,87 @@ describe('ReservationsService.getReport owner numbers', () => {
     discountUsage.mockResolvedValue([{ discountId: 'd', label: 'Long stay', redemptionCount: 2, discountCents: 5000 }]);
     attention.mockResolvedValue({ ...NO_ATTENTION, refundsToPayCount: 2, refundsToPayCents: 9000 });
 
-    const report = await service.getReport(RANGE);
+    const report = await service.getReport(RANGE, 'org-1');
 
     expect(report.discountUsage).toEqual([{ discountId: 'd', label: 'Long stay', redemptionCount: 2, discountCents: 5000 }]);
     expect(report.attention.refundsToPayCount).toBe(2);
-    expect(attention).toHaveBeenCalledWith(report.asOfDate, PROPERTY);
+    expect(attention).toHaveBeenCalledWith(report.asOfDate, PROPERTY, 'org-1');
   });
 
   it('is all zero for a period without anything', async () => {
-    const report = await service.getReport(RANGE);
+    const report = await service.getReport(RANGE, 'org-1');
 
     expect(report).toMatchObject({ reservationCount: 0, netRevenueCents: 0, cancellationRatePercent: 0, occupancyPercent: 0 });
     expect(report.previous.netRevenueCents).toBe(0);
   });
 
   it('rejects a range that ends before it starts', async () => {
-    await expect(service.getReport({ from: '2027-07-11', to: '2027-07-01' })).rejects.toMatchObject({ response: { code: 'INVALID_DATES' } });
+    await expect(service.getReport({ from: '2027-07-11', to: '2027-07-01' }, 'org-1')).rejects.toMatchObject({ response: { code: 'INVALID_DATES' } });
+  });
+});
+
+describe('ReservationsService passes the caller organization to every staff read', () => {
+  const listPipelineOverlapping = jest.fn<Promise<StaffReservation[]>, [string, string, string | null, string]>();
+  const listPipelineOnDate = jest.fn<Promise<StaffReservation[]>, [string, string | null, string]>();
+  const listConfirmedOverlapping = jest.fn<Promise<StaffReservation[]>, [string, string, string | null, string]>();
+  const listBookingConfig = jest.fn<Promise<PropertyBookingConfig[]>, [string]>();
+  const houseCatalog = jest.fn<Promise<HouseCatalogRow[]>, [string | null, string]>();
+  const cancellationsByReason = jest.fn<Promise<CancellationReasonRow[]>, [string, string, string | null, string]>();
+  const cancellationRefunds = jest.fn<Promise<StaffRefund[]>, [string, string, string | null, string]>();
+  const discountUsage = jest.fn<Promise<DiscountUsageRow[]>, [string, string, string | null, string]>();
+  const attention = jest.fn<Promise<ReportAttention>, [string, string | null, string]>();
+  let service: ReservationsService;
+
+  beforeEach(async () => {
+    jest.resetAllMocks();
+    listPipelineOverlapping.mockResolvedValue([]);
+    listPipelineOnDate.mockResolvedValue([]);
+    listConfirmedOverlapping.mockResolvedValue([]);
+    listBookingConfig.mockResolvedValue([]);
+    houseCatalog.mockResolvedValue([]);
+    cancellationsByReason.mockResolvedValue([]);
+    cancellationRefunds.mockResolvedValue([]);
+    discountUsage.mockResolvedValue([]);
+    attention.mockResolvedValue({ unpaidHoldCount: 0, refundsToPayCount: 0, refundsToPayCents: 0, arrivalsTodayCount: 0, arrivalsNext7DaysCount: 0 });
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        ReservationsService,
+        {
+          provide: ReservationsRepository,
+          useValue: { listPipelineOverlapping, listPipelineOnDate, listConfirmedOverlapping, listBookingConfig },
+        },
+        { provide: ReportSummaryRepository, useValue: { houseCatalog, cancellationsByReason, cancellationRefunds, discountUsage, attention } },
+        { provide: PropertyService, useValue: { getPublishedProperty: jest.fn() } },
+      ],
+    }).compile();
+    service = moduleRef.get(ReservationsService);
+  });
+
+  it('calendar, day list and configuration list use the caller organization', async () => {
+    await service.getCalendar({ from: '2027-07-10', to: '2027-07-12' }, 'org-B');
+    await service.listOnDate({ onDate: '2027-07-10' }, 'org-B');
+    await service.listConfig('org-B');
+
+    expect(listPipelineOverlapping).toHaveBeenCalledWith('2027-07-10', '2027-07-12', null, 'org-B');
+    expect(listPipelineOnDate).toHaveBeenCalledWith('2027-07-10', null, 'org-B');
+    expect(listBookingConfig).toHaveBeenCalledWith('org-B');
+  });
+
+  it('every statement of the report (both periods) uses the caller organization', async () => {
+    await service.getReport({ from: '2027-07-01', to: '2027-08-01' }, 'org-B');
+
+    for (const call of [
+      ...listConfirmedOverlapping.mock.calls,
+      ...listPipelineOverlapping.mock.calls,
+      ...cancellationsByReason.mock.calls,
+      ...cancellationRefunds.mock.calls,
+      ...discountUsage.mock.calls,
+    ]) {
+      expect(call[3]).toBe('org-B');
+    }
+    expect(houseCatalog.mock.calls[0]?.[1]).toBe('org-B');
+    expect(attention.mock.calls[0]?.[2]).toBe('org-B');
+    expect(listConfirmedOverlapping).toHaveBeenCalledTimes(2);
+    expect(cancellationsByReason).toHaveBeenCalledTimes(2);
   });
 });

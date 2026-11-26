@@ -7,6 +7,7 @@
 import { Body, Controller, HttpCode, Post, Req } from '@nestjs/common';
 import type { ApiOkBody, GuestBooking, HouseAvailability, RebookQuote, RebookResult } from '@resort-booking/shared-types';
 import type { Request } from 'express';
+import { clientIp } from '../../shared/http/client-ip';
 import { BookingRateLimiter } from './booking-rate-limiter';
 import { BookingLookupDto } from './dto/booking-lookup.dto';
 import { RebookDto } from './dto/rebook.dto';
@@ -31,7 +32,7 @@ export class BookingsController {
   @Post('lookup')
   @HttpCode(200)
   public async lookup(@Body() body: BookingLookupDto, @Req() request: Request): Promise<ApiOkBody<GuestBooking>> {
-    await this.limiter.check(request.ip);
+    await this.limiter.check(clientIp(request), body.reference);
     return { status: 'ok', data: await this.bookings.lookup(body) };
   }
 
@@ -41,7 +42,7 @@ export class BookingsController {
   @Post('cancel')
   @HttpCode(200)
   public async cancel(@Body() body: BookingLookupDto, @Req() request: Request): Promise<ApiOkBody<GuestBooking>> {
-    await this.limiter.check(request.ip);
+    await this.limiter.check(clientIp(request), body.reference);
     return { status: 'ok', data: await this.bookings.cancel(body) };
   }
 
@@ -51,7 +52,7 @@ export class BookingsController {
   @Post('rebook/availability')
   @HttpCode(200)
   public async rebookAvailability(@Body() body: BookingLookupDto, @Req() request: Request): Promise<ApiOkBody<HouseAvailability>> {
-    await this.limiter.check(request.ip);
+    await this.limiter.check(clientIp(request), body.reference);
     return { status: 'ok', data: await this.rebooks.availabilityFor(body) };
   }
 
@@ -61,7 +62,7 @@ export class BookingsController {
   @Post('rebook/quote')
   @HttpCode(200)
   public async rebookQuote(@Body() body: RebookDto, @Req() request: Request): Promise<ApiOkBody<RebookQuote>> {
-    await this.limiter.check(request.ip);
+    await this.limiter.check(clientIp(request), body.reference);
     return { status: 'ok', data: await this.rebooks.quote(body) };
   }
 
@@ -71,7 +72,7 @@ export class BookingsController {
   @Post('rebook')
   @HttpCode(200)
   public async rebook(@Body() body: RebookDto, @Req() request: Request): Promise<ApiOkBody<RebookResult>> {
-    await this.limiter.check(request.ip);
+    await this.limiter.check(clientIp(request), body.reference);
     return { status: 'ok', data: await this.rebooks.rebook(body) };
   }
 }

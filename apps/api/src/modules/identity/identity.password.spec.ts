@@ -4,22 +4,9 @@
  * @dependencies identity.password
  */
 
-import { createSessionToken, hashPassword, hashSessionToken, passwordIssue, verifyPassword } from './identity.password';
+import { createSessionToken, dummyPasswordHash, hashPassword, hashSessionToken, verifyPassword } from './identity.password';
 
 describe('identity.password', (): void => {
-  it('rejects short passwords', (): void => {
-    expect(passwordIssue('Ab1')).toBe('Password must be at least 8 characters');
-  });
-
-  it('rejects passwords without a letter or a number', (): void => {
-    expect(passwordIssue('abcdefgh')).toBe('Password must include a letter and a number');
-    expect(passwordIssue('12345678')).toBe('Password must include a letter and a number');
-  });
-
-  it('accepts an eight-character mixed password', (): void => {
-    expect(passwordIssue('Atlantic1')).toBeNull();
-  });
-
   it('hashes and verifies a password', async (): Promise<void> => {
     const stored = await hashPassword('AtlanticOwner1!');
     await expect(verifyPassword('AtlanticOwner1!', stored)).resolves.toBe(true);
@@ -38,5 +25,18 @@ describe('identity.password', (): void => {
     expect(hashSessionToken(token)).not.toBe(token);
     expect(hashSessionToken(token)).toBe(hashSessionToken(token));
     expect(hashSessionToken(`${token}x`)).not.toBe(hashSessionToken(token));
+  });
+});
+
+describe('dummyPasswordHash', (): void => {
+  it('is a real hash in the same format, shared by every caller', async (): Promise<void> => {
+    const first = await dummyPasswordHash();
+
+    expect(first).toMatch(/^[0-9a-f]{32}:[0-9a-f]{128}$/);
+    expect(await dummyPasswordHash()).toBe(first);
+  });
+
+  it('never matches a password someone types, but still costs a full verification', async (): Promise<void> => {
+    await expect(verifyPassword('Password123!', await dummyPasswordHash())).resolves.toBe(false);
   });
 });

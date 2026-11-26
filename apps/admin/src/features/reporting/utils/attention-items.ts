@@ -30,7 +30,7 @@ function plural(count: number, one: string, many: string): string {
  * The things that need a person today. Only items with something to do are returned, so an empty
  * list means "all clear".
  */
-export function buildAttentionItems(attention: ReportAttention, currencyCode: string): AttentionItem[] {
+export function buildAttentionItems(attention: ReportAttention, currencyCode: string, moneyHidden = false): AttentionItem[] {
   const items: AttentionItem[] = [
     {
       key: 'unpaidHolds',
@@ -46,7 +46,7 @@ export function buildAttentionItems(attention: ReportAttention, currencyCode: st
       metric: 'refundsToPay',
       count: attention.refundsToPayCount,
       text: plural(attention.refundsToPayCount, 'refund to pay', 'refunds to pay'),
-      detail: `${formatCents(attention.refundsToPayCents, currencyCode)} to send back`,
+      detail: moneyHidden ? null : `${formatCents(attention.refundsToPayCents, currencyCode)} to send back`,
       href: '/refunds',
       tab: null,
     },

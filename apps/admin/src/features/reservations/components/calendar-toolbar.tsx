@@ -9,20 +9,12 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import TodayOutlinedIcon from '@mui/icons-material/TodayOutlined';
 import { Button, FormControl, IconButton, InputLabel, MenuItem, Paper, Select, Stack, Typography } from '@mui/material';
 import type { PropertySummary } from '@resort-booking/shared-types';
+import { VISUALLY_HIDDEN } from '@/shared/utils/visually-hidden';
 import { monthNames, yearOptions } from '../utils/calendar-cells';
 
 const ALL_PROPERTIES = 'all';
 
 /** Hidden on screen, still read out: the month in words follows the pickers. */
-const VISUALLY_HIDDEN = {
-  position: 'absolute',
-  width: 1,
-  height: 1,
-  overflow: 'hidden',
-  clip: 'rect(0 0 0 0)',
-  whiteSpace: 'nowrap',
-} as const;
-
 interface CalendarToolbarProps {
   /** The month in words, announced to screen readers when it changes. */
   label: string;

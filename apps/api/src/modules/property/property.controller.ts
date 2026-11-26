@@ -13,7 +13,9 @@ import type {
   HouseSummary,
   PropertyDetail,
   PropertySummary,
+  StaffProfile,
 } from '@resort-booking/shared-types';
+import { CurrentStaff } from '../../shared/tenancy/current-staff.decorator';
 import { StaffGuard } from '../identity/staff.guard';
 import { GeocodeQueryDto } from './dto/geocode.query.dto';
 import { GeocodeReverseQueryDto } from './dto/geocode-reverse.query.dto';
@@ -21,6 +23,11 @@ import { UpsertHouseDto } from './dto/upsert-house.dto';
 import { UpsertPropertyDto } from './dto/upsert-property.dto';
 import { UpsertRequestOptionDto } from './dto/upsert-request-option.dto';
 import { PropertyService } from './property.service';
+import { Audited } from '../../shared/audit/audited.decorator';
+import { RoleGuard } from '../../shared/roles/role.guard';
+import { AllowRoles, RequireRole } from '../../shared/roles/roles.decorator';
+import { TenantGuard } from '../../shared/tenancy/tenant.guard';
+import { TenantExempt, TenantScoped } from '../../shared/tenancy/tenant-scope.decorator';
 
 @Controller()
 export class PropertyController {
@@ -32,31 +39,45 @@ export class PropertyController {
   }
 
   @Get('staff/geocode/reverse')
-  @UseGuards(StaffGuard)
+  @RequireRole('admin')
+  @UseGuards(StaffGuard, RoleGuard)
+  @TenantExempt('no tenant data: only forwards an address search')
   public async reverseGeocode(@Query() query: GeocodeReverseQueryDto): Promise<ApiOkBody<GeocodeHit | null>> {
     return { status: 'ok', data: await this.properties.reverseAddress(query.lat, query.lon) };
   }
 
   @Get('staff/geocode')
-  @UseGuards(StaffGuard)
+  @RequireRole('admin')
+  @UseGuards(StaffGuard, RoleGuard)
+  @TenantExempt('no tenant data: only forwards an address search')
   public async geocode(@Query() query: GeocodeQueryDto): Promise<ApiOkBody<GeocodeHit[]>> {
     return { status: 'ok', data: await this.properties.searchAddress(query.q) };
   }
 
   @Get('staff/properties')
-  @UseGuards(StaffGuard)
-  public async listStaffProperties(): Promise<ApiOkBody<PropertySummary[]>> {
-    return { status: 'ok', data: await this.properties.listStaffProperties() };
+  @AllowRoles('admin', 'employee')
+  @UseGuards(StaffGuard, RoleGuard)
+  @TenantExempt('the list is filtered by the caller organization in SQL')
+  public async listStaffProperties(@CurrentStaff() staff: StaffProfile): Promise<ApiOkBody<PropertySummary[]>> {
+    return { status: 'ok', data: await this.properties.listStaffProperties(staff.organizationId) };
   }
 
   @Post('staff/properties')
-  @UseGuards(StaffGuard)
-  public async createStaffProperty(@Body() body: UpsertPropertyDto): Promise<ApiOkBody<PropertyDetail>> {
-    return { status: 'ok', data: await this.properties.createStaffProperty(body) };
+  @RequireRole('admin')
+  @Audited({ action: 'property.created', targetType: 'property', targetFromResult: 'id' })
+  @UseGuards(StaffGuard, RoleGuard)
+  @TenantExempt('the property is created in the caller organization')
+  public async createStaffProperty(
+    @CurrentStaff() staff: StaffProfile,
+    @Body() body: UpsertPropertyDto,
+  ): Promise<ApiOkBody<PropertyDetail>> {
+    return { status: 'ok', data: await this.properties.createStaffProperty(staff.organizationId, body) };
   }
 
   @Get('staff/properties/:propertyId')
-  @UseGuards(StaffGuard)
+  @RequireRole('admin')
+  @UseGuards(StaffGuard, TenantGuard, RoleGuard)
+  @TenantScoped({ resource: 'property', from: 'param', key: 'propertyId' })
   public async getStaffProperty(
     @Param('propertyId') propertyId: string,
   ): Promise<ApiOkBody<PropertyDetail>> {
@@ -64,7 +85,9 @@ export class PropertyController {
   }
 
   @Get('staff/properties/:propertyId/houses')
-  @UseGuards(StaffGuard)
+  @RequireRole('admin')
+  @UseGuards(StaffGuard, TenantGuard, RoleGuard)
+  @TenantScoped({ resource: 'property', from: 'param', key: 'propertyId' })
   public async listStaffHouses(
     @Param('propertyId') propertyId: string,
   ): Promise<ApiOkBody<HouseSummary[]>> {
@@ -72,7 +95,10 @@ export class PropertyController {
   }
 
   @Post('staff/properties/:propertyId/houses')
-  @UseGuards(StaffGuard)
+  @RequireRole('admin')
+  @Audited({ action: 'house.created', targetType: 'house', targetFromResult: 'id' })
+  @UseGuards(StaffGuard, TenantGuard, RoleGuard)
+  @TenantScoped({ resource: 'property', from: 'param', key: 'propertyId' })
   public async createStaffHouse(
     @Param('propertyId') propertyId: string,
     @Body() body: UpsertHouseDto,
@@ -81,13 +107,18 @@ export class PropertyController {
   }
 
   @Get('staff/houses/:houseId')
-  @UseGuards(StaffGuard)
+  @RequireRole('admin')
+  @UseGuards(StaffGuard, TenantGuard, RoleGuard)
+  @TenantScoped({ resource: 'house', from: 'param', key: 'houseId' })
   public async getStaffHouse(@Param('houseId') houseId: string): Promise<ApiOkBody<HouseDetail>> {
     return { status: 'ok', data: await this.properties.getStaffHouse(houseId) };
   }
 
   @Patch('staff/houses/:houseId')
-  @UseGuards(StaffGuard)
+  @RequireRole('admin')
+  @Audited({ action: 'house.updated', targetType: 'house', targetParam: 'houseId' })
+  @UseGuards(StaffGuard, TenantGuard, RoleGuard)
+  @TenantScoped({ resource: 'house', from: 'param', key: 'houseId' })
   public async updateStaffHouse(
     @Param('houseId') houseId: string,
     @Body() body: UpsertHouseDto,
@@ -96,7 +127,9 @@ export class PropertyController {
   }
 
   @Get('staff/properties/:propertyId/request-options')
-  @UseGuards(StaffGuard)
+  @RequireRole('admin')
+  @UseGuards(StaffGuard, TenantGuard, RoleGuard)
+  @TenantScoped({ resource: 'property', from: 'param', key: 'propertyId' })
   public async listStaffRequestOptions(
     @Param('propertyId') propertyId: string,
   ): Promise<ApiOkBody<HouseRequestOption[]>> {
@@ -104,7 +137,10 @@ export class PropertyController {
   }
 
   @Post('staff/properties/:propertyId/request-options')
-  @UseGuards(StaffGuard)
+  @RequireRole('admin')
+  @Audited({ action: 'property.request_option_created', targetType: 'request_option', targetFromResult: 'id' })
+  @UseGuards(StaffGuard, TenantGuard, RoleGuard)
+  @TenantScoped({ resource: 'property', from: 'param', key: 'propertyId' })
   public async createRequestOption(
     @Param('propertyId') propertyId: string,
     @Body() body: UpsertRequestOptionDto,
@@ -113,7 +149,10 @@ export class PropertyController {
   }
 
   @Patch('staff/request-options/:optionId')
-  @UseGuards(StaffGuard)
+  @RequireRole('admin')
+  @Audited({ action: 'property.request_option_updated', targetType: 'request_option', targetParam: 'optionId' })
+  @UseGuards(StaffGuard, TenantGuard, RoleGuard)
+  @TenantScoped({ resource: 'requestOption', from: 'param', key: 'optionId' })
   public async updateRequestOption(
     @Param('optionId') optionId: string,
     @Body() body: UpsertRequestOptionDto,
@@ -122,7 +161,10 @@ export class PropertyController {
   }
 
   @Delete('staff/request-options/:optionId')
-  @UseGuards(StaffGuard)
+  @RequireRole('admin')
+  @Audited({ action: 'property.request_option_deleted', targetType: 'request_option', targetParam: 'optionId' })
+  @UseGuards(StaffGuard, TenantGuard, RoleGuard)
+  @TenantScoped({ resource: 'requestOption', from: 'param', key: 'optionId' })
   public async deleteRequestOption(
     @Param('optionId') optionId: string,
   ): Promise<ApiOkBody<{ deleted: true }>> {
@@ -131,7 +173,10 @@ export class PropertyController {
   }
 
   @Patch('staff/properties/:propertyId')
-  @UseGuards(StaffGuard)
+  @RequireRole('admin')
+  @Audited({ action: 'property.updated', targetType: 'property', targetParam: 'propertyId' })
+  @UseGuards(StaffGuard, TenantGuard, RoleGuard)
+  @TenantScoped({ resource: 'property', from: 'param', key: 'propertyId' })
   public async updateStaffProperty(
     @Param('propertyId') propertyId: string,
     @Body() body: UpsertPropertyDto,

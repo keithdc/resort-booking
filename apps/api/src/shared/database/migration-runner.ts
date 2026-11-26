@@ -5,11 +5,18 @@
  */
 
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { existsSync } from 'node:fs';
-import { readdir, readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { Pool } from 'pg';
+import { buildPoolConfig, readDatabaseSettings, resolveMigrationTarget } from './database-settings';
 import { DatabaseService } from './database.service';
+import {
+  applyPendingMigrations,
+  listMigrationFiles,
+  pendingMigrations,
+  poolExecutor,
+  type SqlExecutor,
+} from './migration-files';
 import { compareMigrations, describeStaleBuild, type MigrationStatus } from './migration-status';
+import { DEFAULT_APP_ROLE } from './roles';
 
 const STALE_CHECK_INTERVAL_MS = 60_000;
 
@@ -26,7 +33,11 @@ export class MigrationRunner implements OnModuleInit, OnModuleDestroy {
    * and keeps watching: another process may migrate the database while this one keeps running old code.
    */
   public async onModuleInit(): Promise<void> {
-    await this.runPending();
+    if (readDatabaseSettings(process.env).runMigrationsOnStart) {
+      await this.runPending();
+    } else {
+      this.logger.log('RUN_MIGRATIONS_ON_START is off: migrations are applied by `npm run migrate` with the owner role.');
+    }
     const status = await this.status();
     if (status.unknown.length > 0) {
       throw new Error(describeStaleBuild(status.unknown));
@@ -48,8 +59,7 @@ export class MigrationRunner implements OnModuleInit, OnModuleDestroy {
    * Compares the migration files in this build with what the database has applied.
    */
   public async status(): Promise<MigrationStatus> {
-    const files = (await readdir(resolveMigrationsDir()))
-      .filter((name: string): boolean => name.endsWith('.sql'));
+    const files = await listMigrationFiles();
     const applied = await this.database.query<{ id: string }>('SELECT id FROM schema_migrations');
     return compareMigrations(
       files,
@@ -73,54 +83,45 @@ export class MigrationRunner implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Applies any SQL files that are not yet in schema_migrations.
+   * Applies any SQL files that are not yet in schema_migrations. Finding out what is pending only reads, so the
+   * least-privilege runtime role can do it; only when something IS pending does this switch to the connection that may
+   * change the schema: MIGRATION_DATABASE_URL (the owner role), or in development DATABASE_URL itself.
    */
   public async runPending(): Promise<void> {
-    await this.database.query(`
-      CREATE TABLE IF NOT EXISTS schema_migrations (
-        id text PRIMARY KEY,
-        applied_at timestamptz NOT NULL DEFAULT now()
-      )
-    `);
+    const pending = await pendingMigrations(this.database);
+    if (pending.length === 0) {
+      return;
+    }
 
-    const dir = resolveMigrationsDir();
-    const files = (await readdir(dir)).filter((name: string): boolean => name.endsWith('.sql')).sort();
-
-    for (const file of files) {
-      const existing = await this.database.query<{ id: string }>(
-        'SELECT id FROM schema_migrations WHERE id = $1',
-        [file],
+    const settings = readDatabaseSettings(process.env);
+    const target = resolveMigrationTarget(settings);
+    if (!target.separate) {
+      this.logger.warn(
+        'MIGRATION_DATABASE_URL is not set: migrations run on DATABASE_URL. Fine for development; production needs the owner role (docs/11-database-access.md).',
       );
-      if ((existing.rowCount ?? 0) > 0) {
-        continue;
-      }
-
-      const sql = await readFile(join(dir, file), 'utf8');
-      this.logger.log(`Applying migration ${file}`);
-      await this.database.withClient(async (client): Promise<void> => {
-        await client.query('BEGIN');
-        try {
-          await client.query(sql);
-          await client.query('INSERT INTO schema_migrations (id) VALUES ($1)', [file]);
-          await client.query('COMMIT');
-        } catch (error: unknown) {
-          await client.query('ROLLBACK');
-          throw error;
-        }
+    }
+    const pool = target.separate ? new Pool(buildPoolConfig(target.url, settings, 1)) : null;
+    const executor: SqlExecutor = pool === null ? this.database : poolExecutor(pool);
+    try {
+      await applyPendingMigrations(executor, {
+        appRole: process.env.DB_APP_ROLE?.trim() || DEFAULT_APP_ROLE,
+        onApplied: (file: string): void => this.logger.log(`Applied migration ${file}`),
       });
+    } catch (error: unknown) {
+      if (isPermissionDenied(error)) {
+        throw new Error(
+          'The database role does not have the right to change the schema, and migrations are pending. Set MIGRATION_DATABASE_URL to the owner role, or apply them with `npm run migrate`.',
+        );
+      }
+      throw error;
+    } finally {
+      if (pool !== null) {
+        await pool.end();
+      }
     }
   }
 }
 
-function resolveMigrationsDir(): string {
-  const candidates = [
-    join(__dirname, '../../migrations'),
-    join(process.cwd(), 'src/migrations'),
-    join(process.cwd(), 'dist/migrations'),
-  ];
-  const found = candidates.find((dir: string): boolean => existsSync(dir));
-  if (found === undefined) {
-    throw new Error('Could not find SQL migrations directory');
-  }
-  return found;
+function isPermissionDenied(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === '42501';
 }

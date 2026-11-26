@@ -38,31 +38,31 @@ describe('ReportSummaryRepository.cancellationsByReason', () => {
       ],
     ]);
 
-    const rows = await repository.cancellationsByReason('2027-07-01', '2027-08-01', 'prop');
+    const rows = await repository.cancellationsByReason('2027-07-01', '2027-08-01', 'prop', 'org-1');
 
     expect(rows).toEqual([
       { reason: 'guest_request', cancelledCount: 2, paidCents: 20000, refundedCents: 5000 },
       { reason: 'property_cancelled', cancelledCount: 1, paidCents: 9000, refundedCents: 9000 },
     ]);
     expect(query).toHaveBeenCalledTimes(1);
-    expect(query.mock.calls[0]?.[1]).toEqual(['2027-07-01', '2027-08-01', 'prop']);
+    expect(query.mock.calls[0]?.[1]).toEqual(['2027-07-01', '2027-08-01', 'prop', 'org-1']);
   });
 
   it('counts only cancelled bookings and leaves out date changes', async () => {
     const { repository, query } = await build([[]]);
 
-    await repository.cancellationsByReason('2027-07-01', '2027-08-01', null);
+    await repository.cancellationsByReason('2027-07-01', '2027-08-01', null, 'org-1');
 
     const sql = query.mock.calls[0]?.[0] ?? '';
     expect(sql).toContain("ib.status = 'cancelled'");
     expect(sql).toContain("<> 'dates_changed'");
     expect(sql).toContain('rebook_of_id = ib.id');
-    expect(query.mock.calls[0]?.[1]).toEqual(['2027-07-01', '2027-08-01', null]);
+    expect(query.mock.calls[0]?.[1]).toEqual(['2027-07-01', '2027-08-01', null, 'org-1']);
   });
 
   it('is empty when nothing was cancelled', async () => {
     const { repository } = await build([[]]);
-    await expect(repository.cancellationsByReason('2027-07-01', '2027-08-01', null)).resolves.toEqual([]);
+    await expect(repository.cancellationsByReason('2027-07-01', '2027-08-01', null, 'org-1')).resolves.toEqual([]);
   });
 });
 
@@ -72,7 +72,7 @@ describe('ReportSummaryRepository.discountUsage', () => {
       [{ discount_id: 'd1', label: 'Long stay', redemption_count: 3, discount_cents: 12000 }],
     ]);
 
-    const rows = await repository.discountUsage('2027-07-01', '2027-08-01', null);
+    const rows = await repository.discountUsage('2027-07-01', '2027-08-01', null, 'org-1');
 
     expect(rows).toEqual([{ discountId: 'd1', label: 'Long stay', redemptionCount: 3, discountCents: 12000 }]);
     expect(query).toHaveBeenCalledTimes(1);
@@ -87,7 +87,7 @@ describe('ReportSummaryRepository.attention', () => {
       [{ refund_count: 3, refund_cents: 15000 }],
     ]);
 
-    const attention = await repository.attention('2027-07-01', 'prop');
+    const attention = await repository.attention('2027-07-01', 'prop', 'org-1');
 
     expect(attention).toEqual({
       unpaidHoldCount: 2,
@@ -97,13 +97,13 @@ describe('ReportSummaryRepository.attention', () => {
       arrivalsNext7DaysCount: 4,
     });
     expect(query).toHaveBeenCalledTimes(2);
-    expect(query.mock.calls[0]?.[1]).toEqual(['2027-07-01', 'prop']);
+    expect(query.mock.calls[0]?.[1]).toEqual(['2027-07-01', 'prop', 'org-1']);
     expect(query.mock.calls[1]?.[0]).toContain("status IN ('pending', 'failed')");
   });
 
   it('falls back to zeros when a statement returns no row', async () => {
     const { repository } = await build([[], []]);
-    await expect(repository.attention('2027-07-01', null)).resolves.toEqual({
+    await expect(repository.attention('2027-07-01', null, 'org-1')).resolves.toEqual({
       unpaidHoldCount: 0,
       refundsToPayCount: 0,
       refundsToPayCents: 0,
@@ -141,7 +141,7 @@ describe('ReportSummaryRepository.cancellationRefunds', () => {
       ],
     ]);
 
-    const refunds = await repository.cancellationRefunds('2027-07-01', '2027-08-01', null);
+    const refunds = await repository.cancellationRefunds('2027-07-01', '2027-08-01', null, 'org-1');
 
     expect(refunds).toHaveLength(1);
     expect(refunds[0]).toMatchObject({ id: 'f1', amountCents: 8000, percent: 25, status: 'succeeded', stayName: 'Lake Chalet' });
@@ -156,10 +156,39 @@ describe('ReportSummaryRepository.houseCatalog', () => {
       [{ house_id: 'h1', house_name: 'Lake Chalet', property_id: 'p1', property_name: 'Alpine Lake', currency_code: 'EUR' }],
     ]);
 
-    await expect(repository.houseCatalog('p1')).resolves.toEqual([
+    await expect(repository.houseCatalog('p1', 'org-1')).resolves.toEqual([
       { houseId: 'h1', houseName: 'Lake Chalet', propertyId: 'p1', propertyName: 'Alpine Lake', currencyCode: 'EUR' },
     ]);
     expect(query).toHaveBeenCalledTimes(1);
-    expect(query.mock.calls[0]?.[1]).toEqual(['p1']);
+    expect(query.mock.calls[0]?.[1]).toEqual(['p1', 'org-1']);
+  });
+});
+
+describe('ReportSummaryRepository scopes every statement to one organization', () => {
+  it.each([
+    ['cancellationsByReason', (r: ReportSummaryRepository) => r.cancellationsByReason('2027-07-01', '2027-08-01', null, 'org-1'), 'ib.organization_id = $4'],
+    ['cancellationRefunds', (r: ReportSummaryRepository) => r.cancellationRefunds('2027-07-01', '2027-08-01', null, 'org-1'), 'r.organization_id = $4'],
+    ['discountUsage', (r: ReportSummaryRepository) => r.discountUsage('2027-07-01', '2027-08-01', null, 'org-1'), 'ib.organization_id = $4'],
+    ['houseCatalog', (r: ReportSummaryRepository) => r.houseCatalog(null, 'org-1'), 'p.organization_id = $2'],
+  ])('%s filters by organization_id and passes the organization last', async (_name, call, fragment) => {
+    const { repository, query } = await build([[]]);
+
+    await call(repository);
+
+    const sql = query.mock.calls[0]?.[0] ?? '';
+    expect(sql).toContain(fragment);
+    const params = query.mock.calls[0]?.[1] ?? [];
+    expect(params[params.length - 1]).toBe('org-1');
+  });
+
+  it('attention filters both of its statements by organization_id', async () => {
+    const { repository, query } = await build([[], []]);
+
+    await repository.attention('2027-07-01', null, 'org-1');
+
+    expect(query.mock.calls[0]?.[0]).toContain('ib.organization_id = $3');
+    expect(query.mock.calls[0]?.[1]).toEqual(['2027-07-01', null, 'org-1']);
+    expect(query.mock.calls[1]?.[0]).toContain('r.organization_id = $2');
+    expect(query.mock.calls[1]?.[1]).toEqual([null, 'org-1']);
   });
 });

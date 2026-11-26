@@ -8,6 +8,7 @@ import 'reflect-metadata';
 import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { Test } from '@nestjs/testing';
 import type { StaffProfile } from '@resort-booking/shared-types';
+import { TenantGuard } from '../../shared/tenancy/tenant.guard';
 import { StaffGuard, type StaffRequest } from '../identity/staff.guard';
 import { StaffBookingsController } from './staff-bookings.controller';
 import { StaffBookingsService } from './staff-bookings.service';
@@ -37,6 +38,8 @@ describe('StaffBookingsController', () => {
     })
       // Only the wiring is under test here; the real guard is checked through its metadata below.
       .overrideGuard(StaffGuard)
+      .useValue({ canActivate: (): boolean => true })
+      .overrideGuard(TenantGuard)
       .useValue({ canActivate: (): boolean => true })
       .compile();
     controller = moduleRef.get(StaffBookingsController);

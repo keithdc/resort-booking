@@ -15,6 +15,7 @@ import { refundStyle } from '@/shared/utils/status-style';
 import { summarizeCancellations, type ReasonBar } from '../utils/cancellation-summary';
 import type { MetricKey } from '../utils/metric-definitions';
 import { MetricInfo } from './metric-info';
+import { useMoneyHidden } from './money-visibility';
 import { EmptyNote, ReportSection } from './report-section';
 
 interface CancellationsTabProps {
@@ -25,15 +26,17 @@ interface CancellationsTabProps {
  * Who cancelled, why, and what it cost: totals, the reasons, and the refunds themselves.
  */
 export function CancellationsTab({ report }: CancellationsTabProps): React.JSX.Element {
+  const moneyHidden = useMoneyHidden();
   const summary = summarizeCancellations(report);
   const money = (cents: number): string => formatCents(cents, report.currencyCode);
-  const tiles: { metric: MetricKey; label: string; value: string }[] = [
+  const allTiles: { metric: MetricKey; label: string; value: string }[] = [
     { metric: 'cancelledBookings', label: 'Cancelled bookings', value: String(summary.cancelledCount) },
     { metric: 'cancellationRate', label: 'Cancellation rate', value: `${summary.ratePercent}%` },
     { metric: 'refunded', label: 'Refunded', value: money(summary.refundedCents) },
     { metric: 'keptFromCancellations', label: 'Kept from cancellations', value: money(summary.keptCents) },
     { metric: 'refundsToPay', label: 'Refunds to pay', value: String(report.attention.refundsToPayCount) },
   ];
+  const tiles = moneyHidden ? allTiles.filter((tile): boolean => tile.metric !== 'refunded' && tile.metric !== 'keptFromCancellations') : allTiles;
 
   return (
     <>
@@ -87,47 +90,49 @@ export function CancellationsTab({ report }: CancellationsTabProps): React.JSX.E
         )}
       </ReportSection>
 
-      <ReportSection section="refundsList">
-        {report.refunds.length === 0 ? (
-          <EmptyNote state="noRefunds" />
-        ) : (
-          <TableContainer>
-            <Table size="small" aria-label="Refunds for cancelled bookings">
-              <TableHead>
-                <TableRow>
-                  <TableCell>Booking</TableCell>
-                  <TableCell>Guest</TableCell>
-                  <TableCell>Reason</TableCell>
-                  <TableCell align="right">Refunded</TableCell>
-                  <TableCell>Status</TableCell>
-                  <TableCell>Date</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {report.refunds.map((refund: StaffRefund): React.JSX.Element => (
-                  <TableRow key={refund.id} hover>
-                    <TableCell sx={{ fontFamily: 'monospace' }}>{refund.reference}</TableCell>
-                    <TableCell>
-                      {refund.bookerName}
-                      <Typography variant="caption" color="text.secondary" display="block">
-                        {refund.stayName}, {refund.propertyName}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>{reasonLabel(refund.reason)}</TableCell>
-                    <TableCell align="right">
-                      {formatCents(refund.amountCents, refund.currencyCode)} ({refund.percent}%)
-                    </TableCell>
-                    <TableCell>
-                      <StatusChip status={refundStyle(refund.status)} />
-                    </TableCell>
-                    <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatIsoDate(refund.createdAt.slice(0, 10))}</TableCell>
+      {moneyHidden ? null : (
+        <ReportSection section="refundsList">
+          {report.refunds.length === 0 ? (
+            <EmptyNote state="noRefunds" />
+          ) : (
+            <TableContainer>
+              <Table size="small" aria-label="Refunds for cancelled bookings">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Booking</TableCell>
+                    <TableCell>Guest</TableCell>
+                    <TableCell>Reason</TableCell>
+                    <TableCell align="right">Refunded</TableCell>
+                    <TableCell>Status</TableCell>
+                    <TableCell>Date</TableCell>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        )}
-      </ReportSection>
+                </TableHead>
+                <TableBody>
+                  {report.refunds.map((refund: StaffRefund): React.JSX.Element => (
+                    <TableRow key={refund.id} hover>
+                      <TableCell sx={{ fontFamily: 'monospace' }}>{refund.reference}</TableCell>
+                      <TableCell>
+                        {refund.bookerName}
+                        <Typography variant="caption" color="text.secondary" display="block">
+                          {refund.stayName}, {refund.propertyName}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>{reasonLabel(refund.reason)}</TableCell>
+                      <TableCell align="right">
+                        {formatCents(refund.amountCents, refund.currencyCode)} ({refund.percent}%)
+                      </TableCell>
+                      <TableCell>
+                        <StatusChip status={refundStyle(refund.status)} />
+                      </TableCell>
+                      <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatIsoDate(refund.createdAt.slice(0, 10))}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </ReportSection>
+      )}
     </>
   );
 }

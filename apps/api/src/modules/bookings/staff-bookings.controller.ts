@@ -20,12 +20,17 @@ import { MarkRefundPaidDto, StaffCancelDto, StaffChangeDatesDto, StaffChangeQuot
 import { StaffRefundsQueryDto } from './dto/staff-refunds-query.dto';
 import { StaffBookingsService } from './staff-bookings.service';
 import { StaffRefundsService } from './staff-refunds.service';
+import { Audited } from '../../shared/audit/audited.decorator';
+import { RoleGuard } from '../../shared/roles/role.guard';
+import { AllowRoles, RequireRole } from '../../shared/roles/roles.decorator';
+import { TenantGuard } from '../../shared/tenancy/tenant.guard';
+import { TenantScoped } from '../../shared/tenancy/tenant-scope.decorator';
 
 /**
  * Staff actions on guests' bookings and refunds. Every route needs a staff token.
  */
 @Controller('staff')
-@UseGuards(StaffGuard)
+@UseGuards(StaffGuard, TenantGuard, RoleGuard)
 export class StaffBookingsController {
   public constructor(
     private readonly bookings: StaffBookingsService,
@@ -34,6 +39,8 @@ export class StaffBookingsController {
 
   /** What cancelling would refund under the booking's saved policy. Changes nothing. */
   @Get('reservations/:id/cancel-preview')
+  @AllowRoles('admin', 'employee')
+  @TenantScoped({ resource: 'booking', from: 'param', key: 'id' })
   public async cancelPreview(
     @Param('id', ParseUuidLikePipe) id: string,
     @Req() request: StaffRequest,
@@ -43,7 +50,10 @@ export class StaffBookingsController {
 
   /** Cancels a booking for the guest and refunds per the chosen reason. */
   @Post('reservations/:id/cancel')
+  @AllowRoles('admin', 'employee')
+  @Audited({ action: 'booking.cancelled_by_staff', targetType: 'booking', targetParam: 'id' })
   @HttpCode(200)
+  @TenantScoped({ resource: 'booking', from: 'param', key: 'id' })
   public async cancel(
     @Param('id', ParseUuidLikePipe) id: string,
     @Body() body: StaffCancelDto,
@@ -54,7 +64,9 @@ export class StaffBookingsController {
 
   /** What moving the booking to new dates would cost or refund. Changes nothing. */
   @Post('reservations/:id/change-dates/quote')
+  @AllowRoles('admin', 'employee')
   @HttpCode(200)
+  @TenantScoped({ resource: 'booking', from: 'param', key: 'id' })
   public async changeQuote(
     @Param('id', ParseUuidLikePipe) id: string,
     @Body() body: StaffChangeQuoteDto,
@@ -65,7 +77,10 @@ export class StaffBookingsController {
 
   /** Moves the booking to new dates. */
   @Post('reservations/:id/change-dates')
+  @AllowRoles('admin', 'employee')
+  @Audited({ action: 'booking.dates_changed_by_staff', targetType: 'booking', targetParam: 'id' })
   @HttpCode(200)
+  @TenantScoped({ resource: 'booking', from: 'param', key: 'id' })
   public async changeDates(
     @Param('id', ParseUuidLikePipe) id: string,
     @Body() body: StaffChangeDatesDto,
@@ -76,6 +91,8 @@ export class StaffBookingsController {
 
   /** Refunds, newest first. By default the ones that still need a person (pending and failed). */
   @Get('refunds')
+  @AllowRoles('admin', 'employee')
+  @TenantScoped({ resource: 'property', from: 'query', key: 'propertyId', optional: true })
   public async listRefunds(@Query() query: StaffRefundsQueryDto, @Req() request: StaffRequest): Promise<ApiOkBody<StaffRefund[]>> {
     const data = await this.refunds.list(this.staff(request), query.status ?? 'needs_attention', query.propertyId ?? null);
     return { status: 'ok', data };
@@ -83,14 +100,20 @@ export class StaffBookingsController {
 
   /** Asks the payment provider to send a failed refund again. */
   @Post('refunds/:id/retry')
+  @RequireRole('admin')
+  @Audited({ action: 'refund.retried', targetType: 'refund', targetParam: 'id' })
   @HttpCode(200)
+  @TenantScoped({ resource: 'refund', from: 'param', key: 'id' })
   public async retry(@Param('id', ParseUuidLikePipe) id: string, @Req() request: StaffRequest): Promise<ApiOkBody<StaffRefund>> {
     return { status: 'ok', data: await this.refunds.retry(this.staff(request), id) };
   }
 
   /** Staff sent the money themselves. */
   @Post('refunds/:id/mark-paid')
+  @RequireRole('admin')
+  @Audited({ action: 'refund.marked_paid', targetType: 'refund', targetParam: 'id' })
   @HttpCode(200)
+  @TenantScoped({ resource: 'refund', from: 'param', key: 'id' })
   public async markPaid(
     @Param('id', ParseUuidLikePipe) id: string,
     @Body() body: MarkRefundPaidDto,

@@ -18,6 +18,7 @@ import type { AvatarTone } from '@/shared/utils/avatar-color';
 import { buildAttentionItems, type AttentionItem } from '../utils/attention-items';
 import { EMPTY_STATES, type ReportTabKey } from '../utils/metric-definitions';
 import { MetricInfo } from './metric-info';
+import { useMoneyHidden } from './money-visibility';
 import { ReportSection } from './report-section';
 
 interface AttentionStripProps {
@@ -38,7 +39,7 @@ const ITEM_LOOK: Record<AttentionItem['key'], { tone: AvatarTone; icon: ReactEle
  * do the strip says so.
  */
 export function AttentionStrip({ attention, currencyCode, onOpenTab }: AttentionStripProps): React.JSX.Element {
-  const items = buildAttentionItems(attention, currencyCode);
+  const items = buildAttentionItems(attention, currencyCode, useMoneyHidden());
   return (
     <ReportSection section="attention" level={2}>
       {items.length === 0 ? (

@@ -5,7 +5,16 @@
  */
 
 import { Type } from 'class-transformer';
-import { IsInt, IsOptional, IsString, Matches, Max, Min } from 'class-validator';
+import {
+  IsInt,
+  IsOptional,
+  IsString,
+  Matches,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
+import { LIMITS } from '../../../shared/validation/limits';
 
 export class SearchQueryDto {
   @Matches(/^\d{4}-\d{2}-\d{2}$/)
@@ -22,5 +31,6 @@ export class SearchQueryDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(LIMITS.slug)
   public propertySlug?: string;
 }

@@ -1,7 +1,7 @@
 /**
  * @file apps/admin/src/shared/components/staff-sidebar.tsx
  * @shared The staff sidebar: brand, grouped navigation, collapse, signed-in user
- * @dependencies MUI, nav-config, sidebar-link, user-avatar
+ * @dependencies MUI, nav-config, role-chip, sidebar-link, user-avatar
  */
 
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
@@ -9,10 +9,11 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import LogoutOutlinedIcon from '@mui/icons-material/LogoutOutlined';
 import { Box, Button, IconButton, List, Stack, Tooltip, Typography } from '@mui/material';
 import { alpha } from '@mui/material/styles';
-import type { StaffProfile } from '@resort-booking/shared-types';
+import type { StaffAccount } from '@resort-booking/shared-types';
 import Link from 'next/link';
 import { isNavActive } from './nav-match';
-import { NAV_GROUPS, type NavItem } from './nav-config';
+import { navGroupsFor, type NavItem } from './nav-config';
+import { RoleChip } from './role-chip';
 import { SidebarLink } from './sidebar-link';
 import { UserAvatar } from './user-avatar';
 
@@ -24,7 +25,7 @@ interface StaffSidebarProps {
   collapsed: boolean;
   /** Present on desktop only; the mobile drawer is always full width. */
   onToggleCollapsed?: () => void;
-  profile: StaffProfile | null;
+  profile: StaffAccount | null;
   refundsWaiting: number;
   onLogout: () => void;
   onNavigate?: () => void;
@@ -114,7 +115,7 @@ export function StaffSidebar({
       </Box>
 
       <Box sx={{ flexGrow: 1, overflowY: 'auto' }}>
-        {NAV_GROUPS.map((group): React.JSX.Element => (
+        {navGroupsFor(profile?.role ?? null).map((group): React.JSX.Element => (
           <Box key={group.label} component="section" aria-label={group.label} sx={{ mb: 2 }}>
             {collapsed ? (
               <Box sx={{ mx: 1.5, mb: 1, borderTop: 1, borderColor: (theme): string => alpha(theme.palette.primary.contrastText, 0.18) }} />
@@ -172,6 +173,11 @@ export function StaffSidebar({
               <Typography variant="caption" sx={{ display: 'block', opacity: 0.8 }} noWrap>
                 {profile?.email ?? ''}
               </Typography>
+              {profile === null ? null : (
+                <Box sx={{ mt: 0.5 }}>
+                  <RoleChip role={profile.role} onDark />
+                </Box>
+              )}
             </Box>
           )}
         </Stack>

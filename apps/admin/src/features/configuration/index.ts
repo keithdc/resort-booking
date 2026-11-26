@@ -5,3 +5,4 @@
  */
 
 export { ConfigurationPage } from './components/configuration-page';
+export { NewPasswordField } from './components/new-password-field';

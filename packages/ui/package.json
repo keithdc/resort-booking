@@ -7,7 +7,9 @@
   "exports": {
     ".": "./src/index.ts",
     "./contact": "./src/contact/index.ts",
-    "./map": "./src/map/index.ts"
+    "./map": "./src/map/index.ts",
+    "./security": "./src/security/index.ts",
+    "./password": "./src/password/index.ts"
   },
   "peerDependencies": {
     "@emotion/react": "^11.14.0",

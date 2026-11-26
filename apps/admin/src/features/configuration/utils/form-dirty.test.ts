@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { isFormDirty, organizationProblem, passwordProblem } from './form-dirty';
+import { isFormDirty, organizationProblem } from './form-dirty';
 
 describe('isFormDirty', () => {
   const start = { name: 'Humphreys', iban: 'FR76' };
@@ -25,18 +25,5 @@ describe('organizationProblem', () => {
     expect(organizationProblem({ emailsValid: false, phoneValid: false })).toContain('email');
     expect(organizationProblem({ emailsValid: true, phoneValid: false })).toContain('phone');
     expect(organizationProblem({ emailsValid: true, phoneValid: true })).toBeNull();
-  });
-});
-
-describe('passwordProblem', () => {
-  it('says nothing while empty and accepts a strong password', () => {
-    expect(passwordProblem('')).toBeNull();
-    expect(passwordProblem('Sunny2027')).toBeNull();
-  });
-
-  it('asks for 8 characters with a letter and a number', () => {
-    expect(passwordProblem('short1')).not.toBeNull();
-    expect(passwordProblem('longbutnonumber')).not.toBeNull();
-    expect(passwordProblem('12345678')).not.toBeNull();
   });
 });

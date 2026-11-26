@@ -7,6 +7,8 @@
 import {
   BadRequestException,
   ConflictException,
+  HttpException,
+  HttpStatus,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -37,6 +39,10 @@ import {
   isCheckInBeforeToday,
   isoDateInTimeZone,
   isPriceSnapshot,
+  MAX_BOOKING_ADVANCE_DAYS,
+  MAX_STAY_NIGHTS,
+  maskEmail,
+  maskPhone,
   nightsBetween,
   referenceFor,
   type PriceSnapshot,
@@ -63,6 +69,18 @@ export interface QuoteOptions {
   periods?: PeriodsByHouse;
   /** Active discounts already loaded for the properties being priced. */
   discounts?: readonly Discount[];
+}
+
+/** Who is creating a hold, for the abuse guardrails. */
+export interface HoldCaller {
+  /** One-way hash of the caller's IP (never the IP itself). */
+  ipHash?: string | null;
+}
+
+/** How many unpaid holds one caller may keep open at once. */
+export interface HoldCaps {
+  perEmail: number;
+  perIp: number;
 }
 
 @Injectable()
@@ -95,6 +113,12 @@ export class InventoryService {
     if (nights === null) {
       throw new BadRequestException({ message: 'Check-out must be after check-in', code: 'INVALID_DATES' });
     }
+    if (nights > MAX_STAY_NIGHTS) {
+      throw new BadRequestException({
+        message: `A stay can be at most ${String(MAX_STAY_NIGHTS)} nights. Please contact us for a longer stay.`,
+        code: 'STAY_TOO_LONG',
+      });
+    }
 
     if (query.guestCount > house.capacity) {
       throw new BadRequestException({
@@ -110,6 +134,12 @@ export class InventoryService {
         throw new BadRequestException({
           message: 'Check-in cannot be in the past',
           code: 'PAST_CHECK_IN',
+        });
+      }
+      if (daysFromToday(today, query.checkIn) > MAX_BOOKING_ADVANCE_DAYS) {
+        throw new BadRequestException({
+          message: 'That date is too far ahead to book yet',
+          code: 'CHECK_IN_TOO_FAR',
         });
       }
     }
@@ -192,9 +222,26 @@ export class InventoryService {
   }
 
   /**
+   * Refuses (429 TOO_MANY_HOLDS) when this email, or this IP, already keeps `caps` unpaid holds open. Unpaid
+   * holds block the calendar, so a caller cannot park every date; a guest pays or lets one expire first.
+   */
+  public async assertHoldCapacity(email: string, ipHash: string | null, caps: HoldCaps): Promise<void> {
+    const counts = await this.inventory.countActiveHolds(email, ipHash);
+    if (counts.byEmail >= caps.perEmail || (ipHash !== null && counts.byIp >= caps.perIp)) {
+      throw new HttpException(
+        {
+          message: 'You already have unpaid holds open. Pay for one or let it expire before holding more dates.',
+          code: 'TOO_MANY_HOLDS',
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+  }
+
+  /**
    * Creates a per-house hold. Redis TTL is secondary to the Postgres row.
    */
-  public async createHold(dto: CreateHoldDto, rejectPastCheckIn: boolean): Promise<Hold> {
+  public async createHold(dto: CreateHoldDto, rejectPastCheckIn: boolean, caller: HoldCaller = {}): Promise<Hold> {
     // The request check already refuses this; the rule is repeated here so no other caller can skip it.
     if (!dto.termsAccepted) {
       throw new BadRequestException({
@@ -256,6 +303,7 @@ export class InventoryService {
             policySnapshot: JSON.stringify(policy),
             // The server clock, not the browser's, records when the terms were accepted.
             termsAcceptedAt: new Date(),
+            creatorIpHash: caller.ipHash ?? null,
           });
           const optionIds = dto.requestOptionIds ?? [];
           const allowed = await this.houses.listRequestOptions(house.propertyId, true);
@@ -422,8 +470,9 @@ export class InventoryService {
       warningAt,
       holdTtlSeconds: ttlSeconds,
       bookerName: row.booker_name,
-      bookerEmail: row.booker_email,
-      bookerPhone: row.booker_phone,
+      // Masked: the hold link works for anyone who has it, so it never carries the full contact details.
+      bookerEmail: maskEmail(row.booker_email),
+      bookerPhone: maskPhone(row.booker_phone),
       guestNote: row.guest_note,
       quote,
     };
@@ -491,4 +540,11 @@ function isPgUniqueViolation(error: unknown): boolean {
   }
   const candidate = error as PgErrorLike;
   return candidate.code === '23P01' || candidate.code === '23505';
+}
+
+/**
+ * Whole days from `today` to `date` (both YYYY-MM-DD, calendar arithmetic in UTC so no daylight-saving drift).
+ */
+function daysFromToday(today: string, date: string): number {
+  return Math.round((Date.parse(`${date}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86_400_000);
 }

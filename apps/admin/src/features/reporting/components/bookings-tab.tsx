@@ -40,6 +40,7 @@ import {
   paymentMethodLabel,
   type BookingStatusKey,
 } from '../utils/report-labels';
+import { useMoneyHidden } from './money-visibility';
 import { EmptyNote, ReportSection } from './report-section';
 
 const PAGE_SIZE = 50;
@@ -56,6 +57,7 @@ interface BookingsTabProps {
  * The bookings behind the numbers: search, a status filter, and a click on a row opens the booking.
  */
 export function BookingsTab({ report, status, onStatusChange, onChanged }: BookingsTabProps): React.JSX.Element {
+  const moneyHidden = useMoneyHidden();
   const [search, setSearch] = useState('');
   const [shown, setShown] = useState(PAGE_SIZE);
   const [selected, setSelected] = useState<StaffReservation | null>(null);
@@ -146,7 +148,7 @@ export function BookingsTab({ report, status, onStatusChange, onChanged }: Booki
                   <TableCell>Dates</TableCell>
                   <TableCell align="right">Nights</TableCell>
                   <TableCell align="right">Guests</TableCell>
-                  <TableCell align="right">Amount</TableCell>
+                  {moneyHidden ? null : <TableCell align="right">Amount</TableCell>}
                   <TableCell>Payment</TableCell>
                   <TableCell>Status</TableCell>
                 </TableRow>
@@ -176,7 +178,7 @@ export function BookingsTab({ report, status, onStatusChange, onChanged }: Booki
                     </TableCell>
                     <TableCell align="right">{bookingNights(row)}</TableCell>
                     <TableCell align="right">{row.guestCount}</TableCell>
-                    <TableCell align="right">{formatCents(row.totalCents, row.currencyCode)}</TableCell>
+                    {moneyHidden ? null : <TableCell align="right">{formatCents(row.totalCents, row.currencyCode)}</TableCell>}
                     <TableCell>{paymentMethodLabel(row.paymentMethod)}</TableCell>
                     <TableCell>
                       <StatusChip status={bookingFilterStyle(bookingStatusKey(row))} label={bookingStatusLabel(row)} />

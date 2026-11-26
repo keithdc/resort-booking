@@ -16,7 +16,7 @@ import { RatesRepository } from '../rates/rates.repository';
 import { RatesService } from '../rates/rates.service';
 import { ReservationsService } from '../reservations/reservations.service';
 import type { PolicySnapshot } from '../reservations/reservations.rules';
-import { InventoryRepository, type HoldRow, type StayRow } from './inventory.repository';
+import { InventoryRepository, type ActiveHoldCounts, type HoldRow, type StayRow } from './inventory.repository';
 import { InventoryService } from './inventory.service';
 
 const HOUSE_A = '33333333-3333-3333-3333-333333333331';
@@ -118,8 +118,9 @@ describe('InventoryService pricing', () => {
   const listRequestOptions = jest.fn<Promise<never[]>, [string, boolean]>();
   const expireOverdueHolds = jest.fn<Promise<void>, [string]>();
   const hasOverlap = jest.fn<Promise<boolean>, [string, string, string, string | null]>();
-  const insertHold = jest.fn<Promise<HoldRow>, [PoolClient, { totalCents: number; currencyCode: string; priceSnapshot: string; policySnapshot: string; termsAcceptedAt: Date }]>();
+  const insertHold = jest.fn<Promise<HoldRow>, [PoolClient, { creatorIpHash?: string | null; totalCents: number; currencyCode: string; priceSnapshot: string; policySnapshot: string; termsAcceptedAt: Date }]>();
   const insertBlockRequests = jest.fn<Promise<void>, [PoolClient, string, string[]]>();
+  const countActiveHolds = jest.fn<Promise<ActiveHoldCounts>, [string, string | null]>();
   const listForHouses = jest.fn<Promise<RatePeriod[]>, [readonly string[], string, string]>();
   const listDiscounts = jest.fn<Promise<Discount[]>, [readonly string[], boolean]>();
   const getHoldById = jest.fn<Promise<HoldRow | null>, [string]>();
@@ -146,6 +147,7 @@ describe('InventoryService pricing', () => {
     listDiscounts.mockResolvedValue([]);
     getPolicySnapshot.mockResolvedValue(POLICY);
     insertBlockRequests.mockResolvedValue(undefined);
+    countActiveHolds.mockResolvedValue({ byEmail: 0, byIp: 0 });
     setHoldTtl.mockResolvedValue(undefined);
     releaseHold.mockResolvedValue(undefined);
     deleteHoldTtl.mockResolvedValue(undefined);
@@ -157,7 +159,7 @@ describe('InventoryService pricing', () => {
         DiscountsService,
         { provide: ReservationsService, useValue: { getPolicySnapshot } },
         { provide: PropertyRepository, useValue: { getHouseById, listHousesByPropertySlug, listRequestOptions } },
-        { provide: InventoryRepository, useValue: { expireOverdueHolds, hasOverlap, insertHold, insertBlockRequests, getHoldById, confirmPaidHold, getConfirmedStay, releaseHold } },
+        { provide: InventoryRepository, useValue: { expireOverdueHolds, countActiveHolds, hasOverlap, insertHold, insertBlockRequests, getHoldById, confirmPaidHold, getConfirmedStay, releaseHold } },
         { provide: DiscountsRepository, useValue: { listForProperties: listDiscounts } },
         { provide: RatesRepository, useValue: { listForHouses } },
         {
@@ -190,6 +192,24 @@ describe('InventoryService pricing', () => {
       expect(quote.totalCents).toBe(96000);
       expect(quote.nights).toBe(4);
       expect(quote.nightlyRateCents).toBe(18000);
+    });
+
+    it('refuses a stay over the longest allowed, before pricing every night', async () => {
+      await expect(service.getQuote({ ...query, checkIn: '2027-06-01', checkOut: '2028-06-01' }, true)).rejects.toMatchObject({
+        response: { code: 'STAY_TOO_LONG' },
+      });
+      expect(listForHouses).not.toHaveBeenCalled();
+    });
+
+    it('allows exactly the longest stay', async () => {
+      await expect(service.getQuote({ ...query, checkIn: '2027-06-01', checkOut: '2027-09-29' }, true)).resolves.toMatchObject({ nights: 120 });
+    });
+
+    it('refuses a guest check-in too far ahead, but not staff looking at old or far bookings', async () => {
+      await expect(service.getQuote({ ...query, checkIn: '2030-01-01', checkOut: '2030-01-03' }, true)).rejects.toMatchObject({
+        response: { code: 'CHECK_IN_TOO_FAR' },
+      });
+      await expect(service.getQuote({ ...query, checkIn: '2030-01-01', checkOut: '2030-01-03' }, false)).resolves.toMatchObject({ nights: 2 });
     });
 
     it('uses the standard rate when the house has no periods', async () => {
@@ -589,6 +609,99 @@ describe('InventoryService pricing', () => {
         ),
       ).rejects.toMatchObject({ response: { code: 'DATES_UNAVAILABLE' } });
       expect(insertHold).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('hold guardrails', () => {
+    const CAPS = { perEmail: 3, perIp: 5 };
+
+    it('allows a caller below both caps', async () => {
+      countActiveHolds.mockResolvedValue({ byEmail: 2, byIp: 4 });
+
+      await expect(service.assertHoldCapacity('ada@example.com', 'hash', CAPS)).resolves.toBeUndefined();
+      expect(countActiveHolds).toHaveBeenCalledWith('ada@example.com', 'hash');
+    });
+
+    it('refuses with 429 TOO_MANY_HOLDS when the email keeps too many unpaid holds', async () => {
+      countActiveHolds.mockResolvedValue({ byEmail: 3, byIp: 0 });
+
+      await expect(service.assertHoldCapacity('ada@example.com', 'hash', CAPS)).rejects.toMatchObject({
+        status: 429,
+        response: { code: 'TOO_MANY_HOLDS' },
+      });
+    });
+
+    it('refuses when the IP keeps too many unpaid holds, whatever the email', async () => {
+      countActiveHolds.mockResolvedValue({ byEmail: 0, byIp: 5 });
+
+      await expect(service.assertHoldCapacity('new@example.com', 'hash', CAPS)).rejects.toMatchObject({ status: 429 });
+    });
+
+    it('ignores the IP count when the IP is unknown', async () => {
+      countActiveHolds.mockResolvedValue({ byEmail: 0, byIp: 99 });
+
+      await expect(service.assertHoldCapacity('new@example.com', null, CAPS)).resolves.toBeUndefined();
+    });
+
+    const DTO = {
+      houseId: HOUSE_A,
+      checkIn: '2027-07-10',
+      checkOut: '2027-07-12',
+      guestCount: 2,
+      paymentMethod: 'card' as const,
+      bookerName: 'Ada',
+      bookerEmail: 'ada@example.com',
+      bookerPhone: '+33612345678',
+      guestNote: '',
+      requestOptionIds: [],
+      termsAccepted: true,
+    };
+
+    function created(): HoldRow {
+      return {
+        id: 'hold-1',
+        organization_id: ORG,
+        property_id: PROPERTY,
+        house_id: HOUSE_A,
+        status: 'active',
+        check_in: '2027-07-10',
+        check_out: '2027-07-12',
+        guest_count: 2,
+        payment_method: 'card',
+        expires_at: new Date('2027-05-01T12:15:00Z'),
+        booker_name: 'Ada',
+        booker_email: 'ada@example.com',
+        booker_phone: '+33612345678',
+        guest_note: '',
+        price_snapshot: null,
+      };
+    }
+
+    it('stores a hash of the caller on the hold, never the IP', async () => {
+      insertHold.mockResolvedValue(created());
+
+      await service.createHold(DTO, true, { ipHash: 'hash-of-ip' });
+
+      expect(insertHold.mock.calls[0]?.[1].creatorIpHash).toBe('hash-of-ip');
+    });
+
+    it('stores no caller hash when the IP is unknown', async () => {
+      insertHold.mockResolvedValue(created());
+
+      await service.createHold(DTO, true);
+
+      expect(insertHold.mock.calls[0]?.[1].creatorIpHash).toBeNull();
+    });
+
+    it('returns a masked email and phone on the hold, since the hold link works for anyone who has it', async () => {
+      insertHold.mockResolvedValue(created());
+
+      const hold = await service.createHold(DTO, true);
+
+      expect(hold.bookerEmail).toBe('a**@example.com');
+      expect(hold.bookerPhone).toBe('+••••• 678');
+      expect(JSON.stringify(hold)).not.toContain('ada@example.com');
+      expect(JSON.stringify(hold)).not.toContain('612345678');
     });
   });
 

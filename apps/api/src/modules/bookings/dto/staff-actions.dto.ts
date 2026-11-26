@@ -12,8 +12,20 @@ import type {
   StaffChangeQuoteRequest,
 } from '@resort-booking/shared-types';
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsIn, IsInt, IsString, Matches, MaxLength, Min, MinLength, ValidateIf } from 'class-validator';
+import {
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsString,
+  Matches,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+  ValidateIf,
+} from 'class-validator';
 import { KeepRawValue } from '../../../shared/validation/keep-raw-value';
+import { LIMITS } from '../../../shared/validation/limits';
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const CANCEL_REASONS: readonly StaffCancelReason[] = ['guest_request', 'property_cancelled', 'goodwill'];
@@ -49,6 +61,7 @@ export class StaffCancelDto extends NoteField implements StaffCancelRequest {
   @ValidateIf((_object: object, value: unknown): boolean => value !== null && value !== undefined)
   @IsInt()
   @Min(0)
+  @Max(LIMITS.maxCents)
   public refundCents: number | null = null;
 }
 

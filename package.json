@@ -18,9 +18,19 @@
     "db:up:orb": "bash scripts/db-up.sh",
     "db:migrate": "npm run migrate -w @resort-booking/api",
     "db:migrate:orb": "npm run db:up:orb && npm run migrate -w @resort-booking/api",
-    "docs:proposal-pdf": "bash docs/client/generate-pdf.sh"
+    "docs:proposal-pdf": "bash docs/client/generate-pdf.sh",
+    "audit:prod": "npm audit --omit=dev --audit-level=high",
+    "security:check": "bash scripts/security-check.sh"
   },
   "engines": {
     "node": ">=20"
+  },
+  "overrides": {
+    "next": {
+      "postcss": "8.5.33"
+    }
+  },
+  "devDependencies": {
+    "postcss": "^8.5.33"
   }
 }

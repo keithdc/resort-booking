@@ -12,7 +12,8 @@ import { UserAvatar } from '@/shared/components/user-avatar';
 
 interface AccountSummaryProps {
   staff: StaffProfile;
-  org: OrganizationSettings;
+  /** Null for an employee: the business settings are admin-only, so the business chip is left out. */
+  org: OrganizationSettings | null;
 }
 
 /**
@@ -29,7 +30,7 @@ export function AccountSummary({ staff, org }: AccountSummaryProps): React.JSX.E
           </Typography>
           <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
             <Chip size="small" variant="outlined" icon={<MailOutlineIcon />} label={staff.email} />
-            <Chip size="small" color="secondary" icon={<BusinessOutlinedIcon />} label={org.name} />
+            {org === null ? null : <Chip size="small" color="secondary" icon={<BusinessOutlinedIcon />} label={org.name} />}
           </Stack>
         </Stack>
       </Stack>

@@ -5,7 +5,7 @@
  */
 
 import type { OrganizationSettings, StaffProfile } from '@resort-booking/shared-types';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiRequestError } from '@/shared/services/api-client';
 import { organizationSettings, staffProfile } from '@/test/fixtures';
@@ -28,6 +28,8 @@ vi.mock('@/features/identity/services/staff-identity-api', () => ({
   saveStaffProfile: api.saveStaffProfile,
   changeStaffPassword: api.changeStaffPassword,
 }));
+// The two-step verification section has its own tests (features/account).
+vi.mock('@/features/account', () => ({ TwoFactorSection: (): null => null }));
 vi.mock('@/features/property/services/staff-property-api', () => ({
   fetchOrganizationSettings: api.fetchOrganizationSettings,
   saveOrganizationSettings: api.saveOrganizationSettings,
@@ -45,6 +47,13 @@ vi.mock('@resort-booking/ui/contact', () => ({
     <input aria-label={label} value={value} onChange={(event): void => onChange(event.target.value)} />
   ),
 }));
+
+/** The text of each line of the password checklist. */
+function rules(): string[] {
+  return within(screen.getByRole('list', { name: 'Password rules' }))
+    .getAllByRole('listitem')
+    .map((item) => item.textContent ?? '');
+}
 
 function type(label: string, value: string): void {
   fireEvent.change(screen.getByLabelText(label), { target: { value } });
@@ -153,7 +162,7 @@ describe('OwnerAccountForm', () => {
     expect(await screen.findByText('Email already used')).toBeTruthy();
   });
 
-  it('changes the password only with both fields and a strong new password', async () => {
+  it('changes the password only with both fields and a password that meets every rule', async () => {
     api.changeStaffPassword.mockResolvedValue({ changed: true });
     render(<OwnerAccountForm initial={staffProfile()} />);
     const button = screen.getByRole('button', { name: 'Change password' });
@@ -164,22 +173,79 @@ describe('OwnerAccountForm', () => {
     expect(button.hasAttribute('disabled')).toBe(true);
 
     type('New password', 'Sunny2027');
+    expect(button.hasAttribute('disabled')).toBe(true);
+
+    type('New password', 'Sunny-Days-2027');
     expect(button.hasAttribute('disabled')).toBe(false);
     fireEvent.click(button);
 
-    await waitFor(() => expect(api.changeStaffPassword).toHaveBeenCalledWith({ currentPassword: 'OldPass1!', newPassword: 'Sunny2027' }));
+    await waitFor(() => expect(api.changeStaffPassword).toHaveBeenCalledWith({ currentPassword: 'OldPass1!', newPassword: 'Sunny-Days-2027' }));
     await waitFor(() => expect((screen.getByLabelText('New password') as HTMLInputElement).value).toBe(''));
   });
 
+  it('blocks a new password made from the first part of the sign-in email', () => {
+    render(<OwnerAccountForm initial={staffProfile()} />);
+    type('Current password', 'OldPass1!');
+
+    type('New password', 'Marie-Is-Great-1');
+
+    expect(screen.getByRole('button', { name: 'Change password' }).hasAttribute('disabled')).toBe(true);
+    expect(rules().find((text) => text.startsWith('Does not contain your email name'))).toBe('Does not contain your email name (not yet)');
+  });
+
+  it('shows a live checklist with how many rules are met', () => {
+    render(<OwnerAccountForm initial={staffProfile()} />);
+    expect(screen.getByText('2 of 6 password rules met')).toBeTruthy();
+
+    type('New password', 'Sunny');
+    expect(screen.getByText('4 of 6 password rules met')).toBeTruthy();
+    expect(rules()).toContain('A capital letter (met)');
+    expect(rules()).toContain('At least 10 characters (not yet)');
+
+    type('New password', 'Sunny-Days-2027');
+    expect(screen.getByText('All password rules are met')).toBeTruthy();
+  });
+
+  it('shows and hides the new password with a toggle button', () => {
+    render(<OwnerAccountForm initial={staffProfile()} />);
+    const field = screen.getByLabelText('New password') as HTMLInputElement;
+    const toggle = screen.getByRole('button', { name: 'Show password' });
+    expect(field.type).toBe('password');
+    expect(toggle.getAttribute('aria-pressed')).toBe('false');
+
+    fireEvent.click(toggle);
+    expect(field.type).toBe('text');
+    expect(toggle.getAttribute('aria-pressed')).toBe('true');
+
+    fireEvent.click(toggle);
+    expect(field.type).toBe('password');
+  });
+
   it('shows the API message when the password change fails', async () => {
-    api.changeStaffPassword.mockRejectedValue(new ApiRequestError('Current password is wrong', 400));
+    api.changeStaffPassword.mockRejectedValue(new ApiRequestError('Current password is wrong', 401, { code: 'STAFF_PASSWORD_MISMATCH' }));
     render(<OwnerAccountForm initial={staffProfile()} />);
 
     type('Current password', 'bad');
-    type('New password', 'Sunny2027');
+    type('New password', 'Sunny-Days-2027');
     fireEvent.click(screen.getByRole('button', { name: 'Change password' }));
 
     expect(await screen.findByText('Current password is wrong')).toBeTruthy();
+  });
+
+  it('lists every rule the server says the password breaks', async () => {
+    api.changeStaffPassword.mockRejectedValue(
+      new ApiRequestError('Password is too weak', 400, { code: 'PASSWORD_TOO_WEAK', problems: ['Use at least 10 characters', 'Add a number'] }),
+    );
+    render(<OwnerAccountForm initial={staffProfile()} />);
+
+    type('Current password', 'OldPass1!');
+    type('New password', 'Sunny-Days-2027');
+    fireEvent.click(screen.getByRole('button', { name: 'Change password' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('The server did not accept that password');
+    expect(within(alert).getByText('Use at least 10 characters')).toBeTruthy();
+    expect(within(alert).getByText('Add a number')).toBeTruthy();
   });
 });
 
@@ -265,6 +331,18 @@ describe('ConfigurationPage', () => {
       expect(screen.getByRole('region', { name })).toBeTruthy();
     }
     expect(screen.getByRole('link', { name: 'Open properties' }).getAttribute('href')).toBe('/properties');
+  });
+
+  it('shows an employee only their own login: the business settings answer 403', async () => {
+    api.fetchStaffMe.mockResolvedValue(staffProfile());
+    api.fetchOrganizationSettings.mockRejectedValue(new ApiRequestError('Forbidden', 403));
+
+    render(<ConfigurationPage />);
+
+    expect(await screen.findByRole('region', { name: 'Your staff login' })).toBeTruthy();
+    expect(screen.queryByRole('region', { name: 'Business name and owner' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Cancellation, refunds and extras' })).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('shows the error and no forms when loading fails', async () => {

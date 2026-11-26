@@ -12,7 +12,7 @@ Guest site, staff admin, and one NestJS API share PostgreSQL (source of truth) a
 | Admin | `apps/admin` | http://localhost:3001 | Calendar, properties, account, reports |
 | API | `apps/api` | http://localhost:3002 | Quotes, holds, catalog, staff reports |
 
-Docker Postgres is on **5433** and Redis on **6380** so they do not collide with other local apps on 5432/6379.
+Docker Postgres is on **5433** and Redis on **6380** so they do not collide with other local apps on 5432/6379. Both are published on `127.0.0.1` only (not on your network). The API can run as a least-privilege database role instead of the Docker admin role: see `docs/11-database-access.md`.
 
 ## Prerequisites
 
@@ -69,7 +69,9 @@ Default owner (from `apps/api/.env.example`, created on API boot if no staff row
 - Email: `owner@atlantic.example`
 - Password: `AtlanticOwner1!`
 
-Change these in `apps/api/.env` before any shared or production use.
+The login page does not prefill them: type the email. Change these in `apps/api/.env` before any shared or production use.
+
+Registration is open by default outside production (set `ALLOW_REGISTRATION=false` to close it; in production it must be `true` to open): while open, the login page shows "Create an account" (http://localhost:3001/register) to create a new workspace through the UI. An admin invites teammates from **Team** (a one-time link to hand over); employees see no Team, Audit log or Properties.
 
 ## Seed catalog
 
@@ -96,9 +98,9 @@ Migrations publish two destinations (Alpine Lake and Pine Coast) with stays, pho
 
 Do not commit filled `.env` files. Examples:
 
-- `apps/api/.env.example` — `DATABASE_URL`, `REDIS_URL`, `PORT`, `CORS_ORIGINS`, staff owner email/password, `STAFF_TOKEN`, `PAYMENT_PROVIDER` (`mock` until the client picks a provider; the API refuses `mock` in production)
+- `apps/api/.env.example` — **copy it to `apps/api/.env`: the API reads only `.env`.** `DATABASE_URL`, `REDIS_URL`, `PORT`, `CORS_ORIGINS`, staff owner email/password (first start only), `TRUST_PROXY`, `IP_HASH_SALT`, the abuse-limit settings, `PAYMENT_PROVIDER` (`mock` until the client picks a provider; the API refuses `mock` in production), and optional email for team invitations (`RESEND_API_KEY`, `MAIL_FROM`, `ADMIN_APP_URL`; without them the admin copies the link; see `docs/12-email.md`)
 - `apps/web/.env.example` — `NEXT_PUBLIC_API_URL=http://localhost:3002`
-- `apps/admin/.env.example` — `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_STAFF_TOKEN`
+- `apps/admin/.env.example` — `NEXT_PUBLIC_API_URL` (never put a secret in a `NEXT_PUBLIC_` variable: it is published in the browser)
 
 ## Docs (product rules)
 

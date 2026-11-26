@@ -375,6 +375,8 @@ export interface ApiErrorBody {
   status: 'error';
   message: string;
   code?: string;
+  /** For PASSWORD_TOO_WEAK: every rule the password breaks, in plain language. */
+  problems?: string[];
 }
 
 export interface ApiOkBody<T> {
@@ -1045,3 +1047,6 @@ export interface MarkRefundPaidRequest {
   /** Required: how and when the money was sent. */
   note: string;
 }
+
+export type * from './team';
+export type * from './two-factor';

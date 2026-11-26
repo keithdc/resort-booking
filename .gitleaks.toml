@@ -1,0 +1,17 @@
+# Secret scanning rules for gitleaks (CI: .github/workflows/security.yml; local: scripts/security-check.sh).
+# Extends the default ruleset; only the documented development placeholders are allowed.
+title = "resort-booking gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Documented development placeholders (never real credentials)"
+paths = [
+  '''package-lock\.json''',
+  '''docs/10-security-review\.md''',
+]
+regexes = [
+  '''dev-staff-token''',
+  '''AtlanticOwner1!''',
+]

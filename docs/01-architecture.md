@@ -174,6 +174,8 @@ Details: `docs/05-eu-compliance-and-payments.md`.
 
 ## Data and migrations
 
+The API connects as a least-privilege role (`resort_app`: rows only, no DDL); migrations run as `resort_owner` through `MIGRATION_DATABASE_URL`; a read-only role sees PII-free `report_*` views. Roles, setup, production checklist, backups: `docs/11-database-access.md`.
+
 - PostgreSQL is required for all durable data.
 - Migrations live with the API and run in order on a fresh install.
 - Redis keys are ephemeral. Document key prefixes in the owning module.

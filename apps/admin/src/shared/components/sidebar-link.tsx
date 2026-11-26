@@ -7,6 +7,7 @@
 import { Badge, Box, ListItemButton, Tooltip, Typography } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import Link from 'next/link';
+import { VISUALLY_HIDDEN } from '../utils/visually-hidden';
 import type { NavItem } from './nav-config';
 
 interface SidebarLinkProps {
@@ -17,15 +18,6 @@ interface SidebarLinkProps {
   badgeCount?: number;
   onNavigate?: () => void;
 }
-
-const HIDDEN_TEXT = {
-  position: 'absolute',
-  width: 1,
-  height: 1,
-  overflow: 'hidden',
-  clip: 'rect(0 0 0 0)',
-  whiteSpace: 'nowrap',
-} as const;
 
 /**
  * A link on the deep primary sidebar. The active page gets a tinted pill, a bright left bar, a
@@ -79,7 +71,7 @@ export function SidebarLink({ item, active, collapsed, badgeCount = 0, onNavigat
           </Box>
         </Badge>
         {collapsed ? (
-          <Box component="span" sx={HIDDEN_TEXT}>
+          <Box component="span" sx={VISUALLY_HIDDEN}>
             {item.label}
             {badgeCount > 0 ? `, ${String(badgeCount)} waiting` : ''}
           </Box>
@@ -87,7 +79,7 @@ export function SidebarLink({ item, active, collapsed, badgeCount = 0, onNavigat
           <Box sx={{ minWidth: 0 }}>
             <Typography variant="body1" sx={{ fontWeight: active ? 700 : 500, lineHeight: 1.3 }}>
               {item.label}
-              {badgeCount > 0 ? <Box component="span" sx={HIDDEN_TEXT}>{`, ${String(badgeCount)} waiting`}</Box> : null}
+              {badgeCount > 0 ? <Box component="span" sx={VISUALLY_HIDDEN}>{`, ${String(badgeCount)} waiting`}</Box> : null}
             </Typography>
             <Typography variant="caption" sx={{ display: 'block', opacity: 0.8, lineHeight: 1.3 }} noWrap>
               {item.hint}

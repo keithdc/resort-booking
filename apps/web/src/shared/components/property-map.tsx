@@ -55,13 +55,13 @@ export function PropertyMap({ latitude, longitude, label }: PropertyMapProps): R
           Map from OpenStreetMap. Turn-by-turn opens in Google or Apple Maps.
         </Typography>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-          <Button href={osmUrl} target="_blank" rel="noreferrer" variant="outlined" fullWidth>
+          <Button href={osmUrl} target="_blank" rel="noopener noreferrer" variant="outlined" fullWidth>
             OpenStreetMap
           </Button>
-          <Button href={googleUrl} target="_blank" rel="noreferrer" variant="outlined" fullWidth>
+          <Button href={googleUrl} target="_blank" rel="noopener noreferrer" variant="outlined" fullWidth>
             Google Maps
           </Button>
-          <Button href={appleUrl} target="_blank" rel="noreferrer" variant="outlined" fullWidth>
+          <Button href={appleUrl} target="_blank" rel="noopener noreferrer" variant="outlined" fullWidth>
             Apple Maps
           </Button>
         </Stack>

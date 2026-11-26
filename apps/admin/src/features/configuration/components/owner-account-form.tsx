@@ -9,10 +9,13 @@
 import type { StaffProfile } from '@resort-booking/shared-types';
 import { Alert, Box, Button, Divider, Snackbar, Stack, TextField, Typography } from '@mui/material';
 import { EmailField, isValidEmail } from '@resort-booking/ui/contact';
+import { validatePassword } from '@resort-booking/ui/password';
 import { useState } from 'react';
+import { TwoFactorSection } from '@/features/account';
 import { changeStaffPassword, saveStaffProfile } from '@/features/identity/services/staff-identity-api';
 import { ApiRequestError } from '@/shared/services/api-client';
-import { isFormDirty, passwordProblem } from '../utils/form-dirty';
+import { isFormDirty } from '../utils/form-dirty';
+import { NewPasswordField } from './new-password-field';
 import { SaveBar } from './save-bar';
 
 interface OwnerAccountFormProps {
@@ -32,12 +35,12 @@ export function OwnerAccountForm({ initial }: OwnerAccountFormProps): React.JSX.
   const [pendingProfile, setPendingProfile] = useState(false);
   const [pendingPassword, setPendingPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [passwordProblems, setPasswordProblems] = useState<string[]>([]);
   const [notice, setNotice] = useState(false);
 
   const dirty = isFormDirty({ fullName: saved.fullName, email: saved.email }, { fullName: name, email });
   const profileProblem = isValidEmail(email) ? null : 'Enter a valid login email to save.';
-  const newPasswordProblem = passwordProblem(newPassword);
-  const canChangePassword = currentPassword !== '' && newPassword !== '' && newPasswordProblem === null;
+  const canChangePassword = currentPassword !== '' && validatePassword(newPassword, { email: saved.email }).ok;
 
   const onSaveProfile = async (): Promise<void> => {
     setPendingProfile(true);
@@ -58,13 +61,19 @@ export function OwnerAccountForm({ initial }: OwnerAccountFormProps): React.JSX.
   const onSavePassword = async (): Promise<void> => {
     setPendingPassword(true);
     setError(null);
+    setPasswordProblems([]);
     try {
       await changeStaffPassword({ currentPassword, newPassword });
       setCurrentPassword('');
       setNewPassword('');
       setNotice(true);
     } catch (err: unknown) {
-      setError(err instanceof ApiRequestError ? err.message : 'Could not change password');
+      if (err instanceof ApiRequestError && err.code === 'PASSWORD_TOO_WEAK' && err.problems.length > 0) {
+        // The server knows a rule this screen does not (or the page is out of date): show exactly what it said.
+        setPasswordProblems(err.problems);
+      } else {
+        setError(err instanceof ApiRequestError ? err.message : 'Could not change password');
+      }
     } finally {
       setPendingPassword(false);
     }
@@ -100,21 +109,25 @@ export function OwnerAccountForm({ initial }: OwnerAccountFormProps): React.JSX.
           onChange={(event): void => setCurrentPassword(event.target.value)}
           autoComplete="current-password"
         />
-        <TextField
-          label="New password"
-          type="password"
-          error={newPasswordProblem !== null}
-          helperText="At least 8 characters, with a letter and a number."
-          value={newPassword}
-          onChange={(event): void => setNewPassword(event.target.value)}
-          autoComplete="new-password"
-        />
+        <NewPasswordField label="New password" value={newPassword} onChange={setNewPassword} email={saved.email} />
       </Box>
+      {passwordProblems.length > 0 ? (
+        <Alert severity="error">
+          The server did not accept that password:
+          <Box component="ul" sx={{ m: 0, pl: 3 }}>
+            {passwordProblems.map((problem: string): React.JSX.Element => (
+              <li key={problem}>{problem}</li>
+            ))}
+          </Box>
+        </Alert>
+      ) : null}
       <Box>
         <Button variant="outlined" disabled={pendingPassword || !canChangePassword} onClick={(): void => void onSavePassword()}>
           {pendingPassword ? 'Saving…' : 'Change password'}
         </Button>
       </Box>
+      <Divider />
+      <TwoFactorSection />
       <Snackbar open={notice} autoHideDuration={3000} onClose={(): void => setNotice(false)}>
         <Alert severity="success" onClose={(): void => setNotice(false)}>
           Account saved

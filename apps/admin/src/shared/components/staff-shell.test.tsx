@@ -4,7 +4,7 @@
  * @shared Staff navigation and sidebar
  */
 
-import type { StaffProfile, StaffRefund } from '@resort-booking/shared-types';
+import type { StaffAccount, StaffRefund } from '@resort-booking/shared-types';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { staffRefund } from '@/test/fixtures';
@@ -13,7 +13,7 @@ import { StaffShell } from './staff-shell';
 
 const navigation = vi.hoisted(() => ({ pathname: '/', replace: vi.fn(), refresh: vi.fn() }));
 const api = vi.hoisted(() => ({
-  fetchStaffMe: vi.fn<() => Promise<StaffProfile>>(),
+  fetchStaffMe: vi.fn<() => Promise<StaffAccount>>(),
   logoutStaff: vi.fn<() => Promise<{ loggedOut: true }>>(),
   fetchStaffRefunds: vi.fn<(status: string, propertyId: string) => Promise<StaffRefund[]>>(),
   clearStaffSession: vi.fn<() => Promise<void>>(),
@@ -26,14 +26,20 @@ vi.mock('next/navigation', () => ({
     refresh: navigation.refresh,
   }),
 }));
-vi.mock('@/features/identity/services/staff-identity-api', () => ({
-  fetchStaffMe: api.fetchStaffMe,
-  logoutStaff: api.logoutStaff,
-}));
+vi.mock('@/features/identity/services/staff-identity-api', () => ({ logoutStaff: api.logoutStaff }));
+vi.mock('@/shared/services/staff-account', () => ({ fetchStaffAccount: api.fetchStaffMe }));
 vi.mock('@/features/refunds/services/staff-refunds-api', () => ({ fetchStaffRefunds: api.fetchStaffRefunds }));
 vi.mock('@/shared/services/api-client', () => ({ clearStaffSession: api.clearStaffSession }));
 
-const PROFILE: StaffProfile = { id: 's1', organizationId: 'o1', fullName: 'Marie Dupont', email: 'marie@humphreys.example' };
+const PROFILE: StaffAccount = {
+  id: 's1',
+  organizationId: 'o1',
+  fullName: 'Marie Dupont',
+  email: 'marie@humphreys.example',
+  role: 'admin',
+  organizationName: 'Humphreys',
+};
+const EMPLOYEE: StaffAccount = { ...PROFILE, id: 's2', fullName: 'Paul Martin', email: 'paul@humphreys.example', role: 'employee' };
 
 function refunds(count: number): StaffRefund[] {
   return Array.from({ length: count }, (_, index) => staffRefund({ id: `r${String(index)}` }));
@@ -66,11 +72,42 @@ describe('StaffShell sidebar', () => {
   it('groups the links: Operations, Insights, Setup', async () => {
     render(<StaffShell>content</StaffShell>);
 
-    expect(hrefs()).toEqual(['/', '/', '/refunds', '/reports', '/properties', '/configuration']);
+    await waitFor(() => expect(hrefs()).toContain('/team'));
+    expect(hrefs()).toEqual(['/', '/', '/refunds', '/reports', '/properties', '/team', '/audit', '/configuration']);
     for (const group of ['Operations', 'Insights', 'Setup']) {
       expect(screen.getByRole('region', { name: group })).toBeTruthy();
     }
-    await waitFor(() => expect(screen.getByText('Marie Dupont')).toBeTruthy());
+    expect(screen.getByText('Admin')).toBeTruthy();
+  });
+
+  it('hides the admin-only links and shows an Employee chip for an employee', async () => {
+    api.fetchStaffMe.mockResolvedValue(EMPLOYEE);
+
+    render(<StaffShell>content</StaffShell>);
+
+    expect(await screen.findByText('Employee')).toBeTruthy();
+    expect(hrefs()).toEqual(['/', '/', '/refunds', '/reports', '/configuration']);
+  });
+
+  it('shows no admin-only link until the role is known, or when it cannot load', async () => {
+    api.fetchStaffMe.mockRejectedValue(new Error('offline'));
+
+    render(<StaffShell>content</StaffShell>);
+
+    await waitFor(() => expect(api.fetchStaffMe).toHaveBeenCalled());
+    expect(hrefs()).not.toContain('/team');
+    expect(hrefs()).not.toContain('/audit');
+    expect(hrefs()).not.toContain('/properties');
+  });
+
+  it('renders the register and invitation pages without the sidebar or any account call', () => {
+    navigation.pathname = '/invite/abc';
+
+    render(<StaffShell>invitation</StaffShell>);
+
+    expect(screen.getByText('invitation')).toBeTruthy();
+    expect(screen.queryByRole('navigation', { name: 'Main' })).toBeNull();
+    expect(api.fetchStaffMe).not.toHaveBeenCalled();
   });
 
   it('marks the current page with aria-current and leaves the others unmarked', async () => {
@@ -89,7 +126,7 @@ describe('StaffShell sidebar', () => {
 
     render(<StaffShell>content</StaffShell>);
 
-    expect(screen.getByRole('link', { name: /Properties/ }).getAttribute('aria-current')).toBe('page');
+    expect((await screen.findByRole('link', { name: /Properties/ })).getAttribute('aria-current')).toBe('page');
     await waitFor(() => expect(api.fetchStaffMe).toHaveBeenCalled());
   });
 

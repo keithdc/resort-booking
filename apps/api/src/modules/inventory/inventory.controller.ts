@@ -22,6 +22,8 @@ import {
 import { CreateHoldDto } from './dto/create-hold.dto';
 import { QuoteQueryDto } from './dto/quote-query.dto';
 import { SearchQueryDto } from './dto/search-query.dto';
+import { clientIp } from '../../shared/http/client-ip';
+import { HoldRateLimiter } from './hold-rate-limiter';
 import { InventoryService } from './inventory.service';
 import { PromoRateLimiter } from './promo-rate-limiter';
 
@@ -31,6 +33,7 @@ export class InventoryController {
     private readonly inventory: InventoryService,
     private readonly availability: AvailabilityService,
     private readonly promoLimiter: PromoRateLimiter,
+    private readonly holdLimiter: HoldRateLimiter,
   ) {}
 
   /**
@@ -38,7 +41,8 @@ export class InventoryController {
    */
   @Get('quotes')
   public async getQuote(@Query() query: QuoteQueryDto, @Req() request: Request): Promise<ApiOkBody<Quote>> {
-    await this.promoLimiter.check(request.ip, query.promoCode);
+    await this.holdLimiter.checkBrowse(clientIp(request));
+    await this.promoLimiter.check(clientIp(request), query.promoCode);
     return { status: 'ok', data: await this.inventory.getQuote(query, true) };
   }
 
@@ -46,7 +50,8 @@ export class InventoryController {
    * Guest stay search across one property or all properties.
    */
   @Get('search')
-  public async searchStays(@Query() query: SearchQueryDto): Promise<ApiOkBody<HouseSearchResult[]>> {
+  public async searchStays(@Query() query: SearchQueryDto, @Req() request: Request): Promise<ApiOkBody<HouseSearchResult[]>> {
+    await this.holdLimiter.checkBrowse(clientIp(request));
     return { status: 'ok', data: await this.inventory.searchStays(query) };
   }
 
@@ -58,7 +63,9 @@ export class InventoryController {
     @Param('slug') slug: string,
     @Param('houseSlug') houseSlug: string,
     @Query() query: HouseAvailabilityQueryDto,
+    @Req() request: Request,
   ): Promise<ApiOkBody<HouseAvailability>> {
+    await this.holdLimiter.checkBrowse(clientIp(request));
     return { status: 'ok', data: await this.availability.getHouseAvailability(slug, houseSlug, query) };
   }
 
@@ -69,7 +76,9 @@ export class InventoryController {
   public async getPropertyAvailability(
     @Param('slug') slug: string,
     @Query() query: PropertyAvailabilityQueryDto,
+    @Req() request: Request,
   ): Promise<ApiOkBody<PropertyAvailability>> {
+    await this.holdLimiter.checkBrowse(clientIp(request));
     return { status: 'ok', data: await this.availability.getPropertyAvailability(slug, query) };
   }
 
@@ -78,8 +87,12 @@ export class InventoryController {
    */
   @Post('holds')
   public async createHold(@Body() body: CreateHoldDto, @Req() request: Request): Promise<ApiOkBody<Hold>> {
-    await this.promoLimiter.check(request.ip, body.promoCode);
-    return { status: 'ok', data: await this.inventory.createHold(body, true) };
+    const ip = clientIp(request);
+    await this.holdLimiter.checkHold(ip, body.bookerEmail);
+    await this.promoLimiter.check(ip, body.promoCode);
+    const ipHash = this.holdLimiter.hashIp(ip);
+    await this.inventory.assertHoldCapacity(body.bookerEmail, ipHash, this.holdLimiter.holdCaps());
+    return { status: 'ok', data: await this.inventory.createHold(body, true, { ipHash }) };
   }
 
   /**

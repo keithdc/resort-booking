@@ -1,0 +1,49 @@
+# Security checks (docs/10-security-review.md, Phase 1 and 3). Same checks as scripts/security-check.sh.
+name: security
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 5 * * 1' # weekly: new advisories appear without any code change
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-audit:
+    name: npm audit (production, high and critical)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run audit:prod
+
+  secret-scan:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # scan the history, not only the latest commit
+      # Official action, pinned to a release tag. Organisations need a GITLEAKS_LICENSE secret; personal repositories do not.
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+          GITLEAKS_CONFIG: .gitleaks.toml
+
+  code-rules:
+    name: public env names and banned escape hatches
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # NEXT_PUBLIC_* values are shipped to every browser: no SECRET, TOKEN, PASSWORD or KEY in the name.
+      # NEXT_PUBLIC_MAPTILER_KEY is allowed: a MapTiler browser key is public by design and must be restricted
+      # to our domains in the MapTiler dashboard. Also bans eslint-disable and `as unknown as` (docs/02).
+      - run: bash scripts/security-check.sh --offline

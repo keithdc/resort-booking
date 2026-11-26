@@ -42,6 +42,8 @@ export interface CsvContext {
   propertyName: string;
   periodLabel: string;
   generatedOn: string;
+  /** The API withheld the money figures: leave every money row and column out instead of writing zeros. */
+  moneyHidden?: boolean;
 }
 
 /**
@@ -49,6 +51,7 @@ export interface CsvContext {
  * order mark so Excel reads accents correctly.
  */
 export function buildReportCsv(report: StaffReport, context: CsvContext): string {
+  const withMoney = context.moneyHidden !== true;
   const rows: CsvCell[][] = [
     ['Humphreys report'],
     ['Property', context.propertyName],
@@ -57,17 +60,15 @@ export function buildReportCsv(report: StaffReport, context: CsvContext): string
     ['Currency', report.currencyCode],
     [],
     ['Summary', 'Value'],
-    ['Revenue (after refunds)', money(report.netRevenueCents)],
-    ['Paid by guests', money(report.grossRevenueCents)],
-    ['Refunded', money(report.refundedCents)],
+    ...(withMoney ? [['Revenue (after refunds)', money(report.netRevenueCents)], ['Paid by guests', money(report.grossRevenueCents)], ['Refunded', money(report.refundedCents)]] : []),
     ['Bookings (confirmed)', report.reservationCount],
     ['Nights booked', report.occupiedNights],
     ['Occupancy (%)', report.occupancyPercent],
-    ['Average nightly rate', money(report.averageNightlyCents)],
+    ...(withMoney ? [['Average nightly rate', money(report.averageNightlyCents)]] : []),
     ['Cancelled bookings', report.cancellationReasons.reduce((sum: number, row): number => sum + row.cancelledCount, 0)],
     ['Cancellation rate (%)', report.cancellationRatePercent],
     [],
-    ['Reference', 'Guest', 'Email', 'Property', 'Stay', 'Check-in', 'Check-out', 'Nights', 'Guests', 'Amount', 'Payment method', 'Status'],
+    ['Reference', 'Guest', 'Email', 'Property', 'Stay', 'Check-in', 'Check-out', 'Nights', 'Guests', ...(withMoney ? ['Amount'] : []), 'Payment method', 'Status'],
     ...report.pipeline.map((booking: StaffReservation): CsvCell[] => [
       booking.reference,
       booking.bookerName,
@@ -78,7 +79,7 @@ export function buildReportCsv(report: StaffReport, context: CsvContext): string
       booking.checkOut,
       bookingNights(booking),
       booking.guestCount,
-      money(booking.totalCents),
+      ...(withMoney ? [money(booking.totalCents)] : []),
       paymentMethodLabel(booking.paymentMethod),
       bookingStatusLabel(booking),
     ]),

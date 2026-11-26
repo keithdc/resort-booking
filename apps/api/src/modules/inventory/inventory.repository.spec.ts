@@ -47,3 +47,44 @@ describe('InventoryRepository.listOccupiedRanges', () => {
     expect(query).not.toHaveBeenCalled();
   });
 });
+
+describe('InventoryRepository.countActiveHolds', () => {
+  const query = jest.fn<Promise<{ rows: unknown[] }>, [string, ...unknown[]]>();
+  let repository: InventoryRepository;
+
+  beforeEach(async () => {
+    jest.resetAllMocks();
+    const moduleRef = await Test.createTestingModule({
+      providers: [InventoryRepository, { provide: DatabaseService, useValue: { query } }],
+    }).compile();
+    repository = moduleRef.get(InventoryRepository);
+  });
+
+  it('counts both callers in ONE statement, case-insensitive on the email', async () => {
+    query.mockResolvedValue({ rows: [{ by_email: 2, by_ip: 4 }] });
+
+    await expect(repository.countActiveHolds('  Ada@Example.com ', 'iphash')).resolves.toEqual({ byEmail: 2, byIp: 4 });
+
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(query.mock.calls[0]?.[0]).toContain('lower(booker_email) = lower($1)');
+    expect(query.mock.calls[0]?.[1]).toEqual(['Ada@Example.com', 'iphash']);
+  });
+
+  it('only counts live unpaid holds: not expired, not paid, not reservations', async () => {
+    query.mockResolvedValue({ rows: [] });
+
+    await repository.countActiveHolds('a@b.co', null);
+
+    const sql = query.mock.calls[0]?.[0] ?? '';
+    expect(sql).toContain("kind = 'hold'");
+    expect(sql).toContain("status = 'active'");
+    expect(sql).toContain('expires_at > now()');
+  });
+
+  it('treats an unknown IP as no IP count and no rows as zero', async () => {
+    query.mockResolvedValue({ rows: [] });
+
+    await expect(repository.countActiveHolds('a@b.co', null)).resolves.toEqual({ byEmail: 0, byIp: 0 });
+    expect(query.mock.calls[0]?.[1]).toEqual(['a@b.co', null]);
+  });
+});

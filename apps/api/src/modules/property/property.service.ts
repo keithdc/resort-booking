@@ -1,7 +1,7 @@
 /**
  * @file apps/api/src/modules/property/property.service.ts
  * @feature property
- * @dependencies PropertyRepository, IdentityService
+ * @dependencies PropertyRepository, GeocodeService
  */
 
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
@@ -17,7 +17,6 @@ import type {
   PropertySummary,
   UpdatePropertyRequest,
 } from '@resort-booking/shared-types';
-import { IdentityService } from '../identity/identity.service';
 import { GeocodeService } from './geocode.service';
 import { PropertyRepository } from './property.repository';
 import { slugifyPropertyName } from './property.rules';
@@ -26,7 +25,6 @@ import { slugifyPropertyName } from './property.rules';
 export class PropertyService {
   public constructor(
     private readonly properties: PropertyRepository,
-    private readonly identity: IdentityService,
     private readonly geocode: GeocodeService,
   ) {}
 
@@ -38,10 +36,10 @@ export class PropertyService {
   }
 
   /**
-   * Staff catalog: all properties.
+   * Staff catalog: every property of the caller's organization (and no other).
    */
-  public listStaffProperties(): Promise<PropertySummary[]> {
-    return this.properties.listProperties(false);
+  public listStaffProperties(organizationId: string): Promise<PropertySummary[]> {
+    return this.properties.listProperties(false, organizationId);
   }
 
   /**
@@ -93,21 +91,17 @@ export class PropertyService {
   }
 
   /**
-   * Adds a property under the operator org and seeds a refund ladder.
+   * Adds a property under the caller's organization and seeds a refund ladder.
    */
-  public async createStaffProperty(input: CreatePropertyRequest): Promise<PropertyDetail> {
-    const org = await this.identity.getOrganization();
-    if (org === null) {
-      throw new NotFoundException({ message: 'Organization not found', code: 'ORG_NOT_FOUND' });
-    }
-    const slug = await this.uniqueSlug(org.id, input.slug === '' ? slugifyPropertyName(input.name) : input.slug, null);
+  public async createStaffProperty(organizationId: string, input: CreatePropertyRequest): Promise<PropertyDetail> {
+    const slug = await this.uniqueSlug(organizationId, input.slug === '' ? slugifyPropertyName(input.name) : input.slug, null);
     if (input.published) {
       throw new BadRequestException({
         message: 'New properties start unpublished until listing and refunds are reviewed',
         code: 'PROPERTY_PUBLISH_ON_CREATE',
       });
     }
-    return this.properties.createProperty(org.id, { ...input, slug, published: false });
+    return this.properties.createProperty(organizationId, { ...input, slug, published: false });
   }
 
   /**

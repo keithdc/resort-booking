@@ -34,6 +34,7 @@ import {
   type StayRow,
 } from '../utils/report-properties';
 import { MetricInfo } from './metric-info';
+import { useMoneyHidden } from './money-visibility';
 import { EmptyNote, ReportSection } from './report-section';
 import type { ReportDetail } from './report-detail-dialog';
 
@@ -54,7 +55,9 @@ const COLUMNS: { key: PropertySortKey; label: string; numeric: boolean }[] = [
  * the revenue as a bar.
  */
 export function PropertiesTab({ report, onOpenDetail }: PropertiesTabProps): React.JSX.Element {
-  const [sortKey, setSortKey] = useState<PropertySortKey>('revenue');
+  const moneyHidden = useMoneyHidden();
+  // Revenue is withheld for employees, so the first sort is by nights instead.
+  const [sortKey, setSortKey] = useState<PropertySortKey>(moneyHidden ? 'nights' : 'revenue');
   const [direction, setDirection] = useState<SortDirection>('desc');
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
   const rows = useMemo(
@@ -109,16 +112,18 @@ export function PropertiesTab({ report, onOpenDetail }: PropertiesTabProps): Rea
                   Property / stay
                 </TableSortLabel>
               </TableCell>
-              {COLUMNS.map((column): React.JSX.Element => (
+              {(moneyHidden ? COLUMNS.filter((column): boolean => column.key !== 'revenue') : COLUMNS).map((column): React.JSX.Element => (
                 <TableCell key={column.key} align="right" sortDirection={sortKey === column.key ? direction : false}>
                   <TableSortLabel active={sortKey === column.key} direction={sortKey === column.key ? direction : 'desc'} onClick={(): void => sortBy(column.key)}>
                     {column.label}
                   </TableSortLabel>
                 </TableCell>
               ))}
-              <TableCell sx={{ minWidth: 180 }}>
-                Share of revenue <MetricInfo metric="revenueShare" />
-              </TableCell>
+              {moneyHidden ? null : (
+                <TableCell sx={{ minWidth: 180 }}>
+                  Share of revenue <MetricInfo metric="revenueShare" />
+                </TableCell>
+              )}
             </TableRow>
           </TableHead>
           <TableBody>
@@ -146,10 +151,10 @@ export function PropertiesTab({ report, onOpenDetail }: PropertiesTabProps): Rea
                         {property.stayCount} {property.stayCount === 1 ? 'stay' : 'stays'}
                       </Typography>
                     </TableCell>
-                    <Numbers row={property} currencyCode={property.currencyCode} />
+                    <Numbers row={property} currencyCode={property.currencyCode} moneyHidden={moneyHidden} />
                   </TableRow>
                   <TableRow sx={{ display: isOpen ? undefined : { xs: 'none', '@media print': 'table-row' } }}>
-                    <TableCell colSpan={7} sx={{ p: 0, borderBottom: isOpen ? undefined : 0 }}>
+                    <TableCell colSpan={moneyHidden ? 5 : 7} sx={{ p: 0, borderBottom: isOpen ? undefined : 0 }}>
                       <Collapse in={isOpen} timeout="auto" sx={{ '@media print': { height: 'auto !important', visibility: 'visible !important', overflow: 'visible' } }}>
                         <Table size="small" aria-label={`Stays of ${property.name}`}>
                           <TableBody>
@@ -161,7 +166,7 @@ export function PropertiesTab({ report, onOpenDetail }: PropertiesTabProps): Rea
                                     {stay.name}
                                   </MuiLink>
                                 </TableCell>
-                                <Numbers row={stay} currencyCode={property.currencyCode} />
+                                <Numbers row={stay} currencyCode={property.currencyCode} moneyHidden={moneyHidden} />
                               </TableRow>
                             ))}
                           </TableBody>
@@ -182,16 +187,17 @@ export function PropertiesTab({ report, onOpenDetail }: PropertiesTabProps): Rea
 interface NumbersProps {
   row: StayRow;
   currencyCode: string;
+  moneyHidden: boolean;
 }
 
-function Numbers({ row, currencyCode }: NumbersProps): React.JSX.Element {
+function Numbers({ row, currencyCode, moneyHidden }: NumbersProps): React.JSX.Element {
   return (
     <>
       <TableCell align="right">{row.bookings}</TableCell>
       <TableCell align="right">{row.nights}</TableCell>
       <TableCell align="right">{row.occupancyPercent}%</TableCell>
-      <TableCell align="right">{formatCents(row.revenueCents, currencyCode)}</TableCell>
-      <TableCell>
+      {moneyHidden ? null : <TableCell align="right">{formatCents(row.revenueCents, currencyCode)}</TableCell>}
+      {moneyHidden ? null : <TableCell>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <Box aria-hidden sx={{ flexGrow: 1, height: 8, borderRadius: 4, bgcolor: 'action.hover', overflow: 'hidden', minWidth: 80 }}>
             <Box sx={{ width: `${row.sharePercent}%`, height: '100%', bgcolor: 'secondary.main' }} />
@@ -200,7 +206,7 @@ function Numbers({ row, currencyCode }: NumbersProps): React.JSX.Element {
             {row.sharePercent}%
           </Typography>
         </Box>
-      </TableCell>
+      </TableCell>}
     </>
   );
 }

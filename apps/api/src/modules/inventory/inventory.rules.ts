@@ -21,6 +21,12 @@ export function holdTtlSeconds(paymentMethod: PaymentMethod): number {
   return paymentMethod === 'bank_transfer' ? BANK_HOLD_TTL_SECONDS : CARD_HOLD_TTL_SECONDS;
 }
 
+/** The longest stay one quote or hold may cover (a longer range is a typo or an attack: pricing is per night). */
+export const MAX_STAY_NIGHTS = 120;
+
+/** How far ahead of today a guest may book (about two years and a bit: availability is published for 24 months). */
+export const MAX_BOOKING_ADVANCE_DAYS = 800;
+
 /**
  * Inclusive-exclusive night count. Returns null when the range is invalid.
  */
@@ -99,4 +105,27 @@ export function isPriceSnapshot(value: unknown): value is PriceSnapshot {
  */
 export function referenceFor(stayId: string): string {
   return `BK-${stayId.replace(/-/g, '').slice(0, 10).toUpperCase()}`;
+}
+
+/**
+ * "ada@example.com" => "a**@example.com". The hold URL is a link anyone holding it can open, so the guest
+ * page gets a masked address (enough to recognise it), not the full one.
+ */
+export function maskEmail(email: string): string {
+  const at = email.indexOf('@');
+  if (at <= 0) {
+    return '***';
+  }
+  return `${email.slice(0, 1)}${'*'.repeat(Math.min(at - 1, 6))}${email.slice(at)}`;
+}
+
+/**
+ * "+33612345678" => "+••••• 678": only the last three digits are shown.
+ */
+export function maskPhone(phone: string): string {
+  const digits = phone.replace(/[^\d]/g, '');
+  if (digits.length < 6) {
+    return '•••';
+  }
+  return `${phone.trim().startsWith('+') ? '+' : ''}••••• ${digits.slice(-3)}`;
 }

@@ -78,10 +78,10 @@ export class ReservationsService {
   /**
    * Occupancy counts per day. Admin UI only renders this.
    */
-  public async getCalendar(query: StaffRangeQueryDto): Promise<StaffCalendar> {
+  public async getCalendar(query: StaffRangeQueryDto, organizationId: string): Promise<StaffCalendar> {
     this.assertRange(query.from, query.to);
     const propertyId = query.propertyId ?? null;
-    const stays = await this.reservations.listPipelineOverlapping(query.from, query.to, propertyId);
+    const stays = await this.reservations.listPipelineOverlapping(query.from, query.to, propertyId, organizationId);
     const days: CalendarDayOccupancy[] = eachIsoDate(query.from, query.to).map(
       (date: string): CalendarDayOccupancy => calendarDayCounts(stays, date),
     );
@@ -91,8 +91,8 @@ export class ReservationsService {
   /**
    * Who is in-house on this date, including cancelled and rebooked stays.
    */
-  public async listOnDate(query: StaffDayQueryDto): Promise<StaffReservation[]> {
-    const rows = await this.reservations.listPipelineOnDate(query.onDate, query.propertyId ?? null);
+  public async listOnDate(query: StaffDayQueryDto, organizationId: string): Promise<StaffReservation[]> {
+    const rows = await this.reservations.listPipelineOnDate(query.onDate, query.propertyId ?? null, organizationId);
     return sortCalendarDayStays(rows);
   }
 
@@ -112,22 +112,22 @@ export class ReservationsService {
    * discounts, what needs attention today, and the same headline numbers for the period before.
    * UI only renders this. Every statement here is one query for the whole property, not per booking.
    */
-  public async getReport(query: StaffRangeQueryDto): Promise<StaffReport> {
+  public async getReport(query: StaffRangeQueryDto, organizationId: string): Promise<StaffReport> {
     this.assertRange(query.from, query.to);
     const propertyId = query.propertyId ?? null;
     const asOfDate = reportAsOfDate();
     const before = previousRange(query.from, query.to) ?? { from: query.from, to: query.from };
     const [stays, pipeline, catalog, reasons, refunds, discountUsage, attention, previousStays, previousReasons] =
       await Promise.all([
-        this.reservations.listConfirmedOverlapping(query.from, query.to, propertyId),
-        this.reservations.listPipelineOverlapping(query.from, query.to, propertyId),
-        this.summaries.houseCatalog(propertyId),
-        this.summaries.cancellationsByReason(query.from, query.to, propertyId),
-        this.summaries.cancellationRefunds(query.from, query.to, propertyId),
-        this.summaries.discountUsage(query.from, query.to, propertyId),
-        this.summaries.attention(asOfDate, propertyId),
-        this.reservations.listConfirmedOverlapping(before.from, before.to, propertyId),
-        this.summaries.cancellationsByReason(before.from, before.to, propertyId),
+        this.reservations.listConfirmedOverlapping(query.from, query.to, propertyId, organizationId),
+        this.reservations.listPipelineOverlapping(query.from, query.to, propertyId, organizationId),
+        this.summaries.houseCatalog(propertyId, organizationId),
+        this.summaries.cancellationsByReason(query.from, query.to, propertyId, organizationId),
+        this.summaries.cancellationRefunds(query.from, query.to, propertyId, organizationId),
+        this.summaries.discountUsage(query.from, query.to, propertyId, organizationId),
+        this.summaries.attention(asOfDate, propertyId, organizationId),
+        this.reservations.listConfirmedOverlapping(before.from, before.to, propertyId, organizationId),
+        this.summaries.cancellationsByReason(before.from, before.to, propertyId, organizationId),
       ]);
 
     const houseCount = catalog.length;
@@ -290,8 +290,8 @@ export class ReservationsService {
   /**
    * Live cancellation / rebook settings from Postgres.
    */
-  public listConfig(): Promise<PropertyBookingConfig[]> {
-    return this.reservations.listBookingConfig();
+  public listConfig(organizationId: string): Promise<PropertyBookingConfig[]> {
+    return this.reservations.listBookingConfig(organizationId);
   }
 
   /**

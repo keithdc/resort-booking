@@ -5,19 +5,24 @@
  */
 
 import { HttpException, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
-import { RedisService } from '../../shared/redis/redis.service';
+import { RedisService, type WindowState } from '../../shared/redis/redis.service';
 import { PROMO_ATTEMPTS_PER_WINDOW, PROMO_WINDOW_SECONDS, PromoRateLimiter } from './promo-rate-limiter';
 
 describe('PromoRateLimiter', () => {
-  const hitWindow = jest.fn<Promise<number>, [string, number]>();
+  const hitWindowWithTtl = jest.fn<Promise<WindowState>, [string, number]>();
   let limiter: PromoRateLimiter;
 
   beforeEach(async (): Promise<void> => {
     jest.resetAllMocks();
     jest.spyOn(Logger.prototype, 'warn').mockImplementation((): void => undefined);
     const moduleRef = await Test.createTestingModule({
-      providers: [PromoRateLimiter, { provide: RedisService, useValue: { hitWindow } }],
+      providers: [
+        PromoRateLimiter,
+        { provide: RedisService, useValue: { hitWindowWithTtl } },
+        { provide: ConfigService, useValue: { get: (): undefined => undefined } },
+      ],
     }).compile();
     limiter = moduleRef.get(PromoRateLimiter);
   });
@@ -27,15 +32,15 @@ describe('PromoRateLimiter', () => {
   });
 
   it('allows attempts up to the limit, counted per caller', async () => {
-    hitWindow.mockResolvedValue(PROMO_ATTEMPTS_PER_WINDOW);
+    hitWindowWithTtl.mockResolvedValue({ count: PROMO_ATTEMPTS_PER_WINDOW, ttlSeconds: 20 });
 
     await expect(limiter.check('1.2.3.4', 'WELCOME15')).resolves.toBeUndefined();
 
-    expect(hitWindow).toHaveBeenCalledWith('ratelimit:promo:1.2.3.4', PROMO_WINDOW_SECONDS);
+    expect(hitWindowWithTtl).toHaveBeenCalledWith('ratelimit:promo:1.2.3.4', PROMO_WINDOW_SECONDS);
   });
 
   it('blocks with 429 and a clear code once the caller is over the limit', async () => {
-    hitWindow.mockResolvedValue(PROMO_ATTEMPTS_PER_WINDOW + 1);
+    hitWindowWithTtl.mockResolvedValue({ count: PROMO_ATTEMPTS_PER_WINDOW + 1, ttlSeconds: 20 });
 
     const attempt = limiter.check('1.2.3.4', 'GUESS');
 
@@ -48,19 +53,19 @@ describe('PromoRateLimiter', () => {
     await limiter.check('1.2.3.4', '');
     await limiter.check('1.2.3.4', '   ');
 
-    expect(hitWindow).not.toHaveBeenCalled();
+    expect(hitWindowWithTtl).not.toHaveBeenCalled();
   });
 
   it('groups callers with no address together instead of skipping the limit', async () => {
-    hitWindow.mockResolvedValue(1);
+    hitWindowWithTtl.mockResolvedValue({ count: 1, ttlSeconds: 20 });
 
     await limiter.check(undefined, 'CODE');
 
-    expect(hitWindow).toHaveBeenCalledWith('ratelimit:promo:unknown', PROMO_WINDOW_SECONDS);
+    expect(hitWindowWithTtl).toHaveBeenCalledWith('ratelimit:promo:unknown', PROMO_WINDOW_SECONDS);
   });
 
   it('lets booking continue when Redis is down', async () => {
-    hitWindow.mockRejectedValue(new Error('redis down'));
+    hitWindowWithTtl.mockRejectedValue(new Error('redis down'));
 
     await expect(limiter.check('1.2.3.4', 'CODE')).resolves.toBeUndefined();
     expect(Logger.prototype.warn).toHaveBeenCalledTimes(1);

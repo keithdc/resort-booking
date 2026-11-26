@@ -70,6 +70,14 @@ interface InsertHoldInput {
   termsAcceptedAt: Date;
   /** JSON text of the cancellation policy in force when the guest booked. */
   policySnapshot: string;
+  /** One-way hash of the caller's IP, for the concurrent-hold cap. Null when unknown. */
+  creatorIpHash?: string | null;
+}
+
+/** How many unpaid holds a caller keeps open right now. */
+export interface ActiveHoldCounts {
+  byEmail: number;
+  byIp: number;
 }
 
 @Injectable()
@@ -170,6 +178,28 @@ export class InventoryRepository {
   }
 
   /**
+   * Live unpaid holds of one email and of one IP hash, in a single statement (not one query per caller).
+   * A hold past its expiry no longer counts, whether or not the sweeper has marked it yet.
+   */
+  public async countActiveHolds(email: string, ipHash: string | null): Promise<ActiveHoldCounts> {
+    const result = await this.database.query<{ by_email: number; by_ip: number }>(
+      `
+      SELECT
+        COUNT(*) FILTER (WHERE lower(booker_email) = lower($1))::int AS by_email,
+        COUNT(*) FILTER (WHERE $2::text IS NOT NULL AND creator_ip_hash = $2)::int AS by_ip
+      FROM inventory_blocks
+      WHERE kind = 'hold'
+        AND status = 'active'
+        AND (expires_at IS NULL OR expires_at > now())
+        AND (lower(booker_email) = lower($1) OR ($2::text IS NOT NULL AND creator_ip_hash = $2))
+      `,
+      [email.trim(), ipHash],
+    );
+    const row = result.rows[0];
+    return { byEmail: row?.by_email ?? 0, byIp: row?.by_ip ?? 0 };
+  }
+
+  /**
    * Inserts a hold row inside a transaction. Caller maps unique-violation to conflict.
    */
   public async insertHold(client: PoolClient, input: InsertHoldInput): Promise<HoldRow> {
@@ -179,12 +209,12 @@ export class InventoryRepository {
         organization_id, property_id, house_id, kind, status,
         check_in, check_out, guest_count, payment_method, expires_at,
         booker_name, booker_email, booker_phone, guest_note,
-        total_cents, currency_code, price_snapshot, policy_snapshot, terms_accepted_at
+        total_cents, currency_code, price_snapshot, policy_snapshot, terms_accepted_at, creator_ip_hash
       ) VALUES (
         $1, $2, $3, 'hold', 'active',
         $4, $5, $6, $7, $8,
         $9, $10, $11, $12,
-        $13, $14, $15::jsonb, $16::jsonb, $17
+        $13, $14, $15::jsonb, $16::jsonb, $17, $18
       )
       RETURNING id, organization_id, property_id, house_id, status,
         check_in::text, check_out::text, guest_count, payment_method, expires_at,
@@ -208,6 +238,7 @@ export class InventoryRepository {
         input.priceSnapshot,
         input.policySnapshot,
         input.termsAcceptedAt,
+        input.creatorIpHash ?? null,
       ],
     );
     const row = result.rows[0];

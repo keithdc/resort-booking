@@ -1,18 +1,18 @@
 /**
  * @file apps/admin/src/shared/hooks/use-sidebar-data.ts
- * @shared Who is signed in and how many refunds need a person (both optional extras for the sidebar)
- * @dependencies identity + refunds services
+ * @shared Who is signed in (with role) and how many refunds need a person (both optional extras for the sidebar)
+ * @dependencies staff-account + refunds services
  */
 
 'use client';
 
-import type { StaffProfile } from '@resort-booking/shared-types';
+import type { StaffAccount } from '@resort-booking/shared-types';
 import { useEffect, useState } from 'react';
-import { fetchStaffMe } from '@/features/identity/services/staff-identity-api';
 import { fetchStaffRefunds } from '@/features/refunds/services/staff-refunds-api';
+import { fetchStaffAccount } from '@/shared/services/staff-account';
 
 interface SidebarData {
-  profile: StaffProfile | null;
+  profile: StaffAccount | null;
   refundsWaiting: number;
 }
 
@@ -21,13 +21,13 @@ interface SidebarData {
  * navigation never depends on them.
  */
 export function useSidebarData(enabled: boolean): SidebarData {
-  const [profile, setProfile] = useState<StaffProfile | null>(null);
+  const [profile, setProfile] = useState<StaffAccount | null>(null);
   const [refundsWaiting, setRefundsWaiting] = useState(0);
 
   useEffect((): (() => void) => {
     let cancelled = false;
     if (enabled) {
-      fetchStaffMe()
+      fetchStaffAccount()
         .then((me): void => {
           if (!cancelled) {
             setProfile(me);

@@ -16,8 +16,9 @@ import type { ReactElement } from 'react';
 import type { StaffReport } from '@resort-booking/shared-types';
 import { TAB_PURPOSES, type ReportTabKey } from '../utils/metric-definitions';
 import type { BookingStatusKey } from '../utils/report-labels';
-import { REPORT_TABS } from '../utils/report-tabs';
+import { DEFAULT_REPORT_TAB, REPORT_TABS } from '../utils/report-tabs';
 import { BookingsTab } from './bookings-tab';
+import { useMoneyHidden } from './money-visibility';
 import { CancellationsTab } from './cancellations-tab';
 import { OverviewTab } from './overview-tab';
 import { PaymentsTab } from './payments-tab';
@@ -48,13 +49,17 @@ interface ReportBodyProps {
  */
 export function ReportBody({
   report,
-  tab,
+  tab: requestedTab,
   onTabChange,
   bookingStatus,
   onBookingStatusChange,
   onOpenDetail,
   onChanged,
 }: ReportBodyProps): React.JSX.Element {
+  // Payments & offers is all money, so an employee does not get that tab.
+  const tabs = useMoneyHidden() ? REPORT_TABS.filter((option): boolean => option.key !== 'payments') : REPORT_TABS;
+  // A link to the hidden tab (?tab=payments) falls back to the first one.
+  const tab = tabs.some((option): boolean => option.key === requestedTab) ? requestedTab : DEFAULT_REPORT_TAB;
   return (
     <Box>
       <Box data-print="hide">
@@ -67,7 +72,7 @@ export function ReportBody({
           aria-label="Report sections"
           sx={{ px: 1 }}
         >
-          {REPORT_TABS.map((option): React.JSX.Element => (
+          {tabs.map((option): React.JSX.Element => (
             <Tab key={option.key} value={option.key} icon={TAB_ICONS[option.key]} iconPosition="start" label={option.label} id={`report-tab-${option.key}`} aria-controls={`report-panel-${option.key}`} sx={{ textTransform: 'none' }} />
           ))}
         </Tabs>
@@ -76,7 +81,7 @@ export function ReportBody({
           {TAB_PURPOSES[tab]}
         </Typography>
       </Box>
-      {REPORT_TABS.map((option): React.JSX.Element => (
+      {tabs.map((option): React.JSX.Element => (
         <Box key={option.key} role="tabpanel" id={`report-panel-${option.key}`} aria-labelledby={`report-tab-${option.key}`} hidden={tab !== option.key} sx={{ pt: 1, pb: 4 }}>
           <Typography variant="h5" component="h2" data-print="only" sx={{ display: 'none', mb: 1 }}>
             {option.label}

@@ -131,7 +131,7 @@ describe('ReservationsRepository staff reads', () => {
     const bookings = Array.from({ length: count }, (_, index) => bookingRow(index + 1));
     answer(bookings, bookings.map((row) => refundRow(String(row['id']))), []);
 
-    const result = await repository.listConfirmedOnDate('2027-07-10', null);
+    const result = await repository.listConfirmedOnDate('2027-07-10', null, 'org-1');
 
     expect(result).toHaveLength(count);
     expect(query).toHaveBeenCalledTimes(3);
@@ -140,7 +140,7 @@ describe('ReservationsRepository staff reads', () => {
   it('listPipelineOnDate also sends 3 statements for many bookings', async () => {
     answer(Array.from({ length: 20 }, (_, index) => bookingRow(index + 1)), [], []);
 
-    await repository.listPipelineOnDate('2027-07-10', null);
+    await repository.listPipelineOnDate('2027-07-10', null, 'org-1');
 
     expect(query).toHaveBeenCalledTimes(3);
   });
@@ -148,7 +148,7 @@ describe('ReservationsRepository staff reads', () => {
   it('asks for history with the whole id list in one array each', async () => {
     answer([bookingRow(1), bookingRow(2)], [], []);
 
-    await repository.listConfirmedOnDate('2027-07-10', null);
+    await repository.listConfirmedOnDate('2027-07-10', null, 'org-1');
 
     expect(query.mock.calls[1]?.[1]).toEqual([[id(1), id(2)]]);
     expect(query.mock.calls[2]?.[1]).toEqual([[id(1), id(2)]]);
@@ -158,15 +158,15 @@ describe('ReservationsRepository staff reads', () => {
   it('skips both history queries when there are no bookings', async () => {
     answer([], [], []);
 
-    expect(await repository.listConfirmedOnDate('2027-07-10', null)).toEqual([]);
+    expect(await repository.listConfirmedOnDate('2027-07-10', null, 'org-1')).toEqual([]);
     expect(query).toHaveBeenCalledTimes(1);
   });
 
   it('the aggregate-only lists load no history at all', async () => {
     answer([bookingRow(1), bookingRow(2)], [refundRow(id(1))], []);
 
-    const pipeline = await repository.listPipelineOverlapping('2027-07-01', '2027-07-31', null);
-    await repository.listConfirmedOverlapping('2027-07-01', '2027-07-31', null);
+    const pipeline = await repository.listPipelineOverlapping('2027-07-01', '2027-07-31', null, 'org-1');
+    await repository.listConfirmedOverlapping('2027-07-01', '2027-07-31', null, 'org-1');
 
     expect(query).toHaveBeenCalledTimes(2);
     expect(pipeline[0]?.refunds).toEqual([]);
@@ -176,7 +176,7 @@ describe('ReservationsRepository staff reads', () => {
   it('puts each refund and change on the right booking, and a change on both its old and new booking', async () => {
     answer([bookingRow(1), bookingRow(2), bookingRow(3)], [refundRow(id(1)), refundRow(id(1), { id: 'r2', kind: 'rebook_difference' }), refundRow(id(3))], [changeRow(id(1), id(2))]);
 
-    const [first, second, third] = await repository.listConfirmedOnDate('2027-07-10', null);
+    const [first, second, third] = await repository.listConfirmedOnDate('2027-07-10', null, 'org-1');
 
     expect(first?.refunds.map((refund) => refund.id)).toEqual([`refund-${id(1)}`, 'r2']);
     expect(second?.refunds).toEqual([]);
@@ -189,7 +189,7 @@ describe('ReservationsRepository staff reads', () => {
   it('maps the booking fields staff need: reference, paid, terms, replaced and rebook references', async () => {
     answer([bookingRow(2, { rebook_of_id: id(1) }), bookingRow(1, { status: 'cancelled', replaced_by_id: id(2), cancelled_at: NOW, cancel_reason: 'dates_changed', cancelled_by_staff_id: 's', cancelled_by_name: 'Sam', cancel_note: 'Moved' })], [], []);
 
-    const [replacement, original] = await repository.listPipelineOnDate('2027-07-10', null);
+    const [replacement, original] = await repository.listPipelineOnDate('2027-07-10', null, 'org-1');
 
     expect(replacement).toMatchObject({ reference: referenceFor(id(2)), paidCents: 10000, termsAcceptedAt: NOW.toISOString(), rebookOfReference: referenceFor(id(1)), cancellation: null });
     expect(original).toMatchObject({
@@ -201,7 +201,7 @@ describe('ReservationsRepository staff reads', () => {
   it('a guest cancellation of an old booking (no staff, no reason saved) reads as the guest asking', async () => {
     answer([bookingRow(1, { status: 'cancelled', cancelled_at: null })], [], []);
 
-    const [only] = await repository.listPipelineOnDate('2027-07-10', null);
+    const [only] = await repository.listPipelineOnDate('2027-07-10', null, 'org-1');
 
     expect(only?.cancellation).toMatchObject({ initiatedBy: 'guest', reason: 'guest_request', staffName: null, cancelledAt: NOW.toISOString() });
   });
@@ -215,5 +215,48 @@ describe('ReservationsRepository staff reads', () => {
     answer([], [], []);
     expect(await repository.getById(id(1))).toBeNull();
     expect(query).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('ReservationsRepository scopes every list to one organization', () => {
+  const query = jest.fn();
+  let repository: ReservationsRepository;
+
+  beforeEach(async (): Promise<void> => {
+    query.mockReset();
+    query.mockResolvedValue({ rows: [] });
+    const moduleRef = await Test.createTestingModule({
+      providers: [ReservationsRepository, { provide: DatabaseService, useValue: { query } }],
+    }).compile();
+    repository = moduleRef.get(ReservationsRepository);
+  });
+
+  it.each([
+    ['listConfirmedOverlapping', (r: ReservationsRepository) => r.listConfirmedOverlapping('2027-07-01', '2027-07-31', null, 'org-1'), 'ib.organization_id = $4'],
+    ['listPipelineOverlapping', (r: ReservationsRepository) => r.listPipelineOverlapping('2027-07-01', '2027-07-31', null, 'org-1'), 'ib.organization_id = $4'],
+    ['listConfirmedOnDate', (r: ReservationsRepository) => r.listConfirmedOnDate('2027-07-10', null, 'org-1'), 'ib.organization_id = $3'],
+    ['listPipelineOnDate', (r: ReservationsRepository) => r.listPipelineOnDate('2027-07-10', null, 'org-1'), 'ib.organization_id = $3'],
+  ])('%s filters by organization_id and passes the organization after the property filter', async (_name, call, fragment) => {
+    await call(repository);
+
+    expect(String(query.mock.calls[0]?.[0])).toContain(fragment);
+    const params = query.mock.calls[0]?.[1] ?? [];
+    expect(params[params.length - 1]).toBe('org-1');
+  });
+
+  it("listBookingConfig reads only the organization's properties and ladders", async () => {
+    await repository.listBookingConfig('org-1');
+
+    expect(String(query.mock.calls[0]?.[0])).toContain('p.organization_id = $1::uuid');
+    expect(query.mock.calls[0]?.[1]).toEqual(['org-1', null]);
+    expect(String(query.mock.calls[1]?.[0])).toContain('organization_id = $1::uuid');
+    expect(query.mock.calls[1]?.[1]).toEqual(['org-1', null]);
+  });
+
+  it('getBookingConfig asks for one property id only (no whole-table read)', async () => {
+    await repository.getBookingConfig('p1');
+
+    expect(query.mock.calls[0]?.[1]).toEqual([null, 'p1']);
+    expect(query.mock.calls[1]?.[1]).toEqual([null, 'p1']);
   });
 });

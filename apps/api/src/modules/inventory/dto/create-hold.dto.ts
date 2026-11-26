@@ -5,6 +5,7 @@
  */
 
 import {
+  ArrayMaxSize,
   Equals,
   IsArray,
   IsBoolean,
@@ -18,11 +19,13 @@ import {
   Max,
   MaxLength,
   Min,
+  MinLength,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import type { CreateHoldRequest, PaymentMethod } from '@resort-booking/shared-types';
 import { KeepRawValue } from '../../../shared/validation/keep-raw-value';
 import { UUID_LIKE } from '../../../shared/validation/uuid-like';
+import { LIMITS } from '../../../shared/validation/limits';
 
 export class CreateHoldDto implements CreateHoldRequest {
   @Matches(UUID_LIKE)
@@ -44,10 +47,12 @@ export class CreateHoldDto implements CreateHoldRequest {
   public paymentMethod!: PaymentMethod;
 
   @IsString()
-  @MaxLength(120)
+  @MinLength(1)
+  @MaxLength(LIMITS.name)
   public bookerName!: string;
 
   @IsEmail()
+  @MaxLength(LIMITS.email)
   public bookerEmail!: string;
 
   // International format (+33...), checked against real numbering plans.
@@ -68,11 +73,12 @@ export class CreateHoldDto implements CreateHoldRequest {
 
   @IsOptional()
   @IsString()
-  @MaxLength(2000)
+  @MaxLength(LIMITS.note)
   public guestNote: string = '';
 
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(LIMITS.requestOptions)
   @Matches(UUID_LIKE, { each: true })
   public requestOptionIds: string[] = [];
 }

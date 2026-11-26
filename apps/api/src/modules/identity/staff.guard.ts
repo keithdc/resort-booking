@@ -5,12 +5,12 @@
  */
 
 import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
-import type { StaffProfile } from '@resort-booking/shared-types';
 import type { Request } from 'express';
+import type { StaffAccount } from '../../shared/roles/staff-role';
 import { IdentityService } from './identity.service';
 
 export interface StaffRequest extends Request {
-  staff?: StaffProfile;
+  staff?: StaffAccount;
 }
 
 @Injectable()
@@ -18,7 +18,7 @@ export class StaffGuard implements CanActivate {
   public constructor(private readonly identity: IdentityService) {}
 
   /**
-   * Accepts a staff session token or the prototype STAFF_TOKEN env value.
+   * Accepts a staff session token (from /staff/login) and nothing else.
    */
   public async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<StaffRequest>();

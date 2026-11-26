@@ -4,10 +4,16 @@
  * @dependencies class-validator
  */
 
-import { IsString, MinLength } from 'class-validator';
+import {
+  IsString,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
+import { LIMITS } from '../../../shared/validation/limits';
 
 export class GeocodeQueryDto {
   @IsString()
   @MinLength(3)
+  @MaxLength(LIMITS.searchText)
   public q!: string;
 }

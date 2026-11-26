@@ -10,6 +10,7 @@ import { PropertyModule } from '../property/property.module';
 import { RatesModule } from '../rates/rates.module';
 import { ReservationsModule } from '../reservations/reservations.module';
 import { AvailabilityService } from './availability.service';
+import { HoldRateLimiter } from './hold-rate-limiter';
 import { HoldSweeperService } from './hold-sweeper.service';
 import { InventoryController } from './inventory.controller';
 import { InventoryRepository } from './inventory.repository';
@@ -19,7 +20,7 @@ import { PromoRateLimiter } from './promo-rate-limiter';
 @Module({
   imports: [PropertyModule, RatesModule, DiscountsModule, ReservationsModule],
   controllers: [InventoryController],
-  providers: [InventoryService, AvailabilityService, HoldSweeperService, InventoryRepository, PromoRateLimiter],
+  providers: [InventoryService, AvailabilityService, HoldSweeperService, InventoryRepository, PromoRateLimiter, HoldRateLimiter],
   exports: [InventoryService, AvailabilityService],
 })
 export class InventoryModule {}

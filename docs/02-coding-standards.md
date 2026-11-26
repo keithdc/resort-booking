@@ -229,5 +229,6 @@ const byHouse = groupBy(photos, (p) => p.houseId);
 - API: `[filename].spec.ts` next to the Nest provider.
 - Test hooks, utils, component behavior, and service rules (holds, overlap, cancel).
 - API list endpoints and repositories that return parents with children: test that the query count stays constant as rows grow (e.g. assert the repository is called once with all ids).
+- **Tenant isolation (every staff route):** staff of one organization must never reach another organization's rows. A staff route that names rows by id puts `@TenantScoped({ resource, from, key })` on the handler and `TenantGuard` after `StaffGuard` (the guard answers 404, never 403). A route that names no id (a list, a create, "my own profile") carries `@TenantExempt('how it is scoped')`, filters by `organization_id` in SQL, and gets one line in the exempt table of `apps/api/src/shared/tenancy/tenant-isolation.spec.ts`. That suite reads every controller's metadata and fails the build for a staff route with neither decoration, so a new route cannot ship without the decision. Repository methods that list across rows take `organizationId` as a required parameter and have a spec asserting it is in the SQL and the parameters.
 - Mock Redis, Postgres, and HTTP. Never hit real services in unit tests.
 - Tests must be fast, isolated, and deterministic.

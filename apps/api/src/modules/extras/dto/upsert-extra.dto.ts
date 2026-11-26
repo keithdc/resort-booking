@@ -5,8 +5,18 @@
  */
 
 import { Type } from 'class-transformer';
-import { IsBoolean, IsIn, IsInt, IsString, MaxLength, Min, MinLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+} from 'class-validator';
 import type { ExtraServiceKind } from '@resort-booking/shared-types';
+import { LIMITS } from '../../../shared/validation/limits';
 
 export class UpsertExtraDto {
   @IsString()
@@ -15,6 +25,7 @@ export class UpsertExtraDto {
   public name!: string;
 
   @IsString()
+  @MaxLength(LIMITS.note)
   public description!: string;
 
   @IsIn(['instant', 'on_request'])
@@ -23,10 +34,12 @@ export class UpsertExtraDto {
   @Type((): NumberConstructor => Number)
   @IsInt()
   @Min(0)
+  @Max(LIMITS.maxCents)
   public priceCents!: number;
 
   @IsString()
   @MinLength(3)
+  @MaxLength(LIMITS.currencyCode)
   public currencyCode!: string;
 
   @Type((): BooleanConstructor => Boolean)

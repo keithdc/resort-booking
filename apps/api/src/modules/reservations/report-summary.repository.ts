@@ -75,6 +75,7 @@ export class ReportSummaryRepository {
     from: string,
     to: string,
     propertyId: string | null,
+    organizationId: string,
   ): Promise<CancellationReasonRow[]> {
     const result = await this.database.query<CancellationRow>(
       `
@@ -94,6 +95,7 @@ export class ReportSummaryRepository {
           )
           AND ib.check_in < $2::date AND ib.check_out > $1::date
           AND ($3::uuid IS NULL OR ib.property_id = $3)
+          AND ib.organization_id = $4::uuid
       )
       SELECT reason,
         COUNT(*)::int AS cancelled_count,
@@ -103,7 +105,7 @@ export class ReportSummaryRepository {
       GROUP BY reason
       ORDER BY cancelled_count DESC, reason ASC
       `,
-      [from, to, propertyId],
+      [from, to, propertyId, organizationId],
     );
     return result.rows.map(
       (row: CancellationRow): CancellationReasonRow => ({
@@ -118,15 +120,21 @@ export class ReportSummaryRepository {
   /**
    * The cancellation refunds of those cancelled bookings, newest first (one statement, capped).
    */
-  public async cancellationRefunds(from: string, to: string, propertyId: string | null): Promise<StaffRefund[]> {
+  public async cancellationRefunds(
+    from: string,
+    to: string,
+    propertyId: string | null,
+    organizationId: string,
+  ): Promise<StaffRefund[]> {
     const result = await this.database.query<StaffRefundRow>(
       `${STAFF_REFUND_SELECT}
        WHERE r.kind = 'cancellation'
          AND ib.check_in < $2::date AND ib.check_out > $1::date
          AND ($3::uuid IS NULL OR r.property_id = $3)
+         AND r.organization_id = $4::uuid
        ORDER BY r.created_at DESC
        LIMIT ${REFUND_LIST_LIMIT}`,
-      [from, to, propertyId],
+      [from, to, propertyId, organizationId],
     );
     return result.rows.map(mapStaffRefund);
   }
@@ -134,7 +142,12 @@ export class ReportSummaryRepository {
   /**
    * Discount given on confirmed bookings with nights in [from, to), per discount, biggest first.
    */
-  public async discountUsage(from: string, to: string, propertyId: string | null): Promise<DiscountUsageRow[]> {
+  public async discountUsage(
+    from: string,
+    to: string,
+    propertyId: string | null,
+    organizationId: string,
+  ): Promise<DiscountUsageRow[]> {
     const result = await this.database.query<DiscountUsageDbRow>(
       `
       SELECT d.id AS discount_id, d.label,
@@ -147,10 +160,12 @@ export class ReportSummaryRepository {
         AND ib.status = 'confirmed'
         AND ib.check_in < $2::date AND ib.check_out > $1::date
         AND ($3::uuid IS NULL OR ib.property_id = $3)
+        AND ib.organization_id = $4::uuid
+        AND d.organization_id = $4::uuid
       GROUP BY d.id, d.label
       ORDER BY discount_cents DESC, d.label ASC
       `,
-      [from, to, propertyId],
+      [from, to, propertyId, organizationId],
     );
     return result.rows.map(
       (row: DiscountUsageDbRow): DiscountUsageRow => ({
@@ -166,7 +181,7 @@ export class ReportSummaryRepository {
    * What needs a person as of `asOfDate`: live unpaid holds, arrivals today and in the next 7 days,
    * and refunds still waiting to be paid. Two statements in total.
    */
-  public async attention(asOfDate: string, propertyId: string | null): Promise<ReportAttention> {
+  public async attention(asOfDate: string, propertyId: string | null, organizationId: string): Promise<ReportAttention> {
     const bookings = await this.database.query<AttentionBookingRow>(
       `
       SELECT
@@ -184,8 +199,9 @@ export class ReportSummaryRepository {
         )::int AS arrivals_next_7_days_count
       FROM inventory_blocks ib
       WHERE ($2::uuid IS NULL OR ib.property_id = $2)
+        AND ib.organization_id = $3::uuid
       `,
-      [asOfDate, propertyId],
+      [asOfDate, propertyId, organizationId],
     );
     const refunds = await this.database.query<AttentionRefundRow>(
       `
@@ -193,8 +209,9 @@ export class ReportSummaryRepository {
       FROM refunds r
       WHERE r.status IN ('pending', 'failed')
         AND ($1::uuid IS NULL OR r.property_id = $1)
+        AND r.organization_id = $2::uuid
       `,
-      [propertyId],
+      [propertyId, organizationId],
     );
     const booking = bookings.rows[0];
     const refund = refunds.rows[0];
@@ -210,7 +227,7 @@ export class ReportSummaryRepository {
   /**
    * Every stay of the property (or of all properties), so unbooked stays show up with zeros.
    */
-  public async houseCatalog(propertyId: string | null): Promise<HouseCatalogRow[]> {
+  public async houseCatalog(propertyId: string | null, organizationId: string): Promise<HouseCatalogRow[]> {
     const result = await this.database.query<HouseCatalogDbRow>(
       `
       SELECT h.id AS house_id, h.name AS house_name, p.id AS property_id, p.name AS property_name,
@@ -218,9 +235,10 @@ export class ReportSummaryRepository {
       FROM houses h
       INNER JOIN properties p ON p.id = h.property_id
       WHERE ($1::uuid IS NULL OR p.id = $1)
+        AND p.organization_id = $2::uuid
       ORDER BY p.name ASC, h.name ASC
       `,
-      [propertyId],
+      [propertyId, organizationId],
     );
     return result.rows.map(
       (row: HouseCatalogDbRow): HouseCatalogRow => ({

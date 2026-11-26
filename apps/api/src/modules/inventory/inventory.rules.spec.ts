@@ -8,6 +8,8 @@ import {
   holdTtlSeconds,
   isPriceSnapshot,
   isCheckInBeforeToday,
+  maskEmail,
+  maskPhone,
   nightsBetween,
   referenceFor,
 } from './inventory.rules';
@@ -63,5 +65,30 @@ describe('isPriceSnapshot with discount percents', () => {
 
   it('still accepts an older snapshot without a percent', () => {
     expect(isPriceSnapshot({ ...base, discounts: [{ discountId: 'd', label: 'Long stay', amountCents: 9800 }] })).toBe(true);
+  });
+});
+
+describe('masking contact details for the hold link', () => {
+  it('keeps the first letter and the domain of an email', () => {
+    expect(maskEmail('ada@example.com')).toBe('a**@example.com');
+    expect(maskEmail('a@example.com')).toBe('a@example.com');
+    expect(maskEmail('very.long.name@example.com')).toBe('v******@example.com');
+  });
+
+  it('hides an email with no @ or no name part', () => {
+    expect(maskEmail('nonsense')).toBe('***');
+    expect(maskEmail('@example.com')).toBe('***');
+    expect(maskEmail('')).toBe('***');
+  });
+
+  it('shows only the last three digits of a phone number', () => {
+    expect(maskPhone('+33612345678')).toBe('+••••• 678');
+    expect(maskPhone('+1 (415) 555-0132')).toBe('+••••• 132');
+    expect(maskPhone('0612345678')).toBe('••••• 678');
+  });
+
+  it('hides a number that is too short to mask meaningfully', () => {
+    expect(maskPhone('12345')).toBe('•••');
+    expect(maskPhone('')).toBe('•••');
   });
 });

@@ -22,6 +22,14 @@ import { AccountSummary } from './account-summary';
 import { OrganizationSettingsForm } from './organization-settings-form';
 import { OwnerAccountForm } from './owner-account-form';
 
+/** An employee's 403 on the business settings becomes "no settings to show"; any other failure still surfaces. */
+function orNullWhenForbidden(error: unknown): null {
+  if (error instanceof ApiRequestError && error.status === 403) {
+    return null;
+  }
+  throw error;
+}
+
 /**
  * Operator account in short sections: who is signed in, how you sign in, your business, guest
  * emails, and legal and bank details. Refunds and extras stay on each property.
@@ -33,7 +41,8 @@ export function ConfigurationPage(): React.JSX.Element {
 
   useEffect((): (() => void) => {
     let cancelled = false;
-    void Promise.all([fetchOrganizationSettings(), fetchStaffMe()])
+    // Business settings are admin-only: an employee gets a 403 there and still sees their own login section.
+    void Promise.all([fetchOrganizationSettings().catch(orNullWhenForbidden), fetchStaffMe()])
       .then(([nextOrg, nextStaff]): void => {
         if (!cancelled) {
           setOrg(nextOrg);
@@ -59,7 +68,7 @@ export function ConfigurationPage(): React.JSX.Element {
         description="How you sign in, your business, where booking emails go, and the legal and bank details for transfers."
       />
       {error !== null ? <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert> : null}
-      {staff === null || org === null ? (
+      {staff === null ? (
         error === null ? (
           <Stack spacing={3} aria-busy="true" aria-label="Loading account">
             <Skeleton variant="rounded" height={120} />
@@ -78,23 +87,25 @@ export function ConfigurationPage(): React.JSX.Element {
           >
             <OwnerAccountForm initial={staff} />
           </SectionCard>
-          <OrganizationSettingsForm initial={org} />
-          <SectionCard
-            icon={<GavelOutlinedIcon />}
-            tone="warning"
-            title="Cancellation, refunds and extras"
-            description="These are set for each property, not here."
-            action={
-              <Button component={Link} href="/properties" variant="outlined">
-                Open properties
-              </Button>
-            }
-          >
-            <Typography color="text.secondary">
-              Open a property and use the tabs “If they cancel”, “Guest extras” and “Discounts” to change what guests are refunded,
-              what they can add, and the offers they see.
-            </Typography>
-          </SectionCard>
+          {org === null ? null : <OrganizationSettingsForm initial={org} />}
+          {org === null ? null : (
+            <SectionCard
+              icon={<GavelOutlinedIcon />}
+              tone="warning"
+              title="Cancellation, refunds and extras"
+              description="These are set for each property, not here."
+              action={
+                <Button component={Link} href="/properties" variant="outlined">
+                  Open properties
+                </Button>
+              }
+            >
+              <Typography color="text.secondary">
+                Open a property and use the tabs “If they cancel”, “Guest extras” and “Discounts” to change what guests are refunded,
+                what they can add, and the offers they see.
+              </Typography>
+            </SectionCard>
+          )}
         </Stack>
       )}
     </Box>

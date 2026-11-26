@@ -21,12 +21,12 @@ interface CalendarGridProps {
 }
 
 /**
- * The month as a 7-column grid, Monday first. Scrolls sideways on a narrow screen instead of squashing.
+ * The month as a 7-column grid, Monday first. On a narrow window it keeps a sensible minimum width and the page area scrolls sideways (see StaffShell), instead of the grid scrolling by itself.
  */
 export function CalendarGrid({ year, month, occupancy, selectedDate, todayIso, onSelect }: CalendarGridProps): React.JSX.Element {
   const cells = buildMonthCells(year, month);
   return (
-    <Box sx={{ overflowX: 'auto', pb: 1 }}>
+    <Box>
       <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(104px, 1fr))', gap: 1, minWidth: 800 }}>
         {WEEKDAYS.map((day, index): React.JSX.Element => (
           <Typography

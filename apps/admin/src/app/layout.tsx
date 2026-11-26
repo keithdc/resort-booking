@@ -5,6 +5,7 @@
  */
 
 import type { Metadata } from 'next';
+import { headers } from 'next/headers';
 import type { ReactNode } from 'react';
 import { AppProviders } from '@/shared/components/app-providers';
 import { StaffShell } from '@/shared/components/staff-shell';
@@ -18,9 +19,11 @@ interface RootLayoutProps {
 }
 
 /**
- * Staff HTML shell with sidebar.
+ * Staff HTML shell with sidebar. Reading the request headers makes every page render per request, which the
+ * Content-Security-Policy nonce (set in middleware.ts) needs.
  */
-export default function RootLayout({ children }: RootLayoutProps): React.JSX.Element {
+export default async function RootLayout({ children }: RootLayoutProps): Promise<React.JSX.Element> {
+  await headers();
   return (
     <html lang="en">
       <head>

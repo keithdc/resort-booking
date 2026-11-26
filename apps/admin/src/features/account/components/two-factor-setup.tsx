@@ -1,0 +1,117 @@
+/**
+ * @file apps/admin/src/features/account/components/two-factor-setup.tsx
+ * @feature account
+ * @dependencies staff-identity-api, clipboard utils
+ */
+
+'use client';
+
+import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined';
+import type { TwoFactorRecoveryCodes, TwoFactorSetup } from '@resort-booking/shared-types';
+import { Alert, Box, Button, IconButton, Stack, TextField, Tooltip, Typography } from '@mui/material';
+import { useState } from 'react';
+import { enableTwoFactor } from '@/features/identity/services/staff-identity-api';
+import { ApiRequestError } from '@/shared/services/api-client';
+import { copyText } from '../utils/clipboard';
+
+interface TwoFactorSetupPanelProps {
+  setup: TwoFactorSetup;
+  onEnabled: (result: TwoFactorRecoveryCodes) => void;
+  onCancel: () => void;
+}
+
+interface CopyableProps {
+  label: string;
+  value: string;
+}
+
+/** A read-only line of text with a copy button (the secret and the otpauth link). */
+function Copyable({ label, value }: CopyableProps): React.JSX.Element {
+  const [copied, setCopied] = useState(false);
+  return (
+    <Box>
+      <Typography variant="caption" color="text.secondary" component="div">
+        {label}
+      </Typography>
+      <Stack direction="row" spacing={1} alignItems="center">
+        <Box
+          component="code"
+          data-testid={`copyable-${label}`}
+          sx={{ flex: 1, minWidth: 0, p: 1, borderRadius: 1, border: 1, borderColor: 'divider', bgcolor: 'background.default', fontSize: 14, wordBreak: 'break-all' }}
+        >
+          {value}
+        </Box>
+        <Tooltip title={copied ? 'Copied' : `Copy ${label.toLowerCase()}`}>
+          <IconButton
+            aria-label={`Copy ${label.toLowerCase()}`}
+            onClick={(): void => {
+              void copyText(value).then(setCopied);
+            }}
+          >
+            <ContentCopyOutlinedIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+      </Stack>
+    </Box>
+  );
+}
+
+/**
+ * Step two of turning two-step verification on: the secret as text (no QR image), then one code from the app to
+ * prove it works. Nothing is protected until the code is accepted.
+ */
+export function TwoFactorSetupPanel({ setup, onEnabled, onCancel }: TwoFactorSetupPanelProps): React.JSX.Element {
+  const [code, setCode] = useState('');
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const onConfirm = async (): Promise<void> => {
+    setPending(true);
+    setError(null);
+    try {
+      onEnabled(await enableTwoFactor(code.trim()));
+    } catch (err: unknown) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not turn on two-step verification');
+      setCode('');
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <Stack spacing={2}>
+      <Typography color="text.secondary">
+        In your authenticator app (or password manager), add an account with the setup key below, or open the link. Then type the
+        6-digit code it shows.
+      </Typography>
+      <Copyable label="Setup key" value={setup.secret} />
+      <Copyable label="Setup link" value={setup.otpauthUri} />
+      {error !== null ? <Alert severity="error">{error}</Alert> : null}
+      <Stack
+        component="form"
+        direction={{ xs: 'column', sm: 'row' }}
+        spacing={2}
+        alignItems={{ sm: 'flex-start' }}
+        onSubmit={(event): void => {
+          event.preventDefault();
+          void onConfirm();
+        }}
+      >
+        <TextField
+          label="6-digit code"
+          value={code}
+          onChange={(event): void => setCode(event.target.value)}
+          autoComplete="one-time-code"
+          slotProps={{ htmlInput: { inputMode: 'numeric', maxLength: 7 } }}
+          sx={{ maxWidth: 220 }}
+        />
+        <Button type="submit" variant="contained" disabled={pending || code.replace(/\s/g, '').length !== 6} sx={{ height: 56 }}>
+          {pending ? 'Checking…' : 'Confirm and turn on'}
+        </Button>
+        <Button type="button" onClick={onCancel} disabled={pending} sx={{ height: 56 }}>
+          Cancel
+        </Button>
+      </Stack>
+    </Stack>
+  );
+}

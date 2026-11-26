@@ -122,6 +122,7 @@ export class ReservationsRepository {
     from: string,
     to: string,
     propertyId: string | null,
+    organizationId: string,
   ): Promise<StaffReservation[]> {
     const result = await this.database.query<ReservationRow>(
       `
@@ -130,9 +131,10 @@ export class ReservationsRepository {
         AND ib.status = 'confirmed'
         AND daterange(ib.check_in, ib.check_out, '[)') && daterange($1::date, $2::date, '[)')
         AND ($3::uuid IS NULL OR ib.property_id = $3)
+        AND ib.organization_id = $4::uuid
       ORDER BY ib.check_in ASC, h.name ASC
       `,
-      [from, to, propertyId],
+      [from, to, propertyId, organizationId],
     );
     return result.rows.map((row): StaffReservation => mapReservation(row, [], []));
   }
@@ -143,6 +145,7 @@ export class ReservationsRepository {
   public async listConfirmedOnDate(
     onDate: string,
     propertyId: string | null,
+    organizationId: string,
   ): Promise<StaffReservation[]> {
     const result = await this.database.query<ReservationRow>(
       `
@@ -152,9 +155,10 @@ export class ReservationsRepository {
         AND ib.check_in <= $1::date
         AND ib.check_out > $1::date
         AND ($2::uuid IS NULL OR ib.property_id = $2)
+        AND ib.organization_id = $3::uuid
       ORDER BY p.name ASC, h.name ASC
       `,
-      [onDate, propertyId],
+      [onDate, propertyId, organizationId],
     );
     return this.withHistory(result.rows);
   }
@@ -166,6 +170,7 @@ export class ReservationsRepository {
   public async listPipelineOnDate(
     onDate: string,
     propertyId: string | null,
+    organizationId: string,
   ): Promise<StaffReservation[]> {
     const result = await this.database.query<ReservationRow>(
       `
@@ -175,9 +180,10 @@ export class ReservationsRepository {
         AND ib.check_in <= $1::date
         AND ib.check_out > $1::date
         AND ($2::uuid IS NULL OR ib.property_id = $2)
+        AND ib.organization_id = $3::uuid
       ORDER BY p.name ASC, h.name ASC
       `,
-      [onDate, propertyId],
+      [onDate, propertyId, organizationId],
     );
     return this.withHistory(result.rows);
   }
@@ -190,6 +196,7 @@ export class ReservationsRepository {
     from: string,
     to: string,
     propertyId: string | null,
+    organizationId: string,
   ): Promise<StaffReservation[]> {
     const result = await this.database.query<ReservationRow>(
       `
@@ -197,9 +204,10 @@ export class ReservationsRepository {
       WHERE ib.kind IN ('hold', 'reservation')
         AND daterange(ib.check_in, ib.check_out, '[)') && daterange($1::date, $2::date, '[)')
         AND ($3::uuid IS NULL OR ib.property_id = $3)
+        AND ib.organization_id = $4::uuid
       ORDER BY ib.check_in ASC, h.name ASC
       `,
-      [from, to, propertyId],
+      [from, to, propertyId, organizationId],
     );
     return result.rows.map((row): StaffReservation => mapReservation(row, [], []));
   }
@@ -271,9 +279,25 @@ export class ReservationsRepository {
   }
 
   /**
-   * Property cancellation ladders and rebook flags.
+   * Cancellation ladders and rebook flags of every property of ONE organization (the staff screen).
    */
-  public async listBookingConfig(): Promise<PropertyBookingConfig[]> {
+  public async listBookingConfig(organizationId: string): Promise<PropertyBookingConfig[]> {
+    return this.loadBookingConfig(organizationId, null);
+  }
+
+  /**
+   * One property's live refund + rebook settings. Keyed by a property id the caller already proved (the staff
+   * route is guarded by ownership, the public policy resolves the id from a published slug).
+   */
+  public async getBookingConfig(propertyId: string): Promise<PropertyBookingConfig | null> {
+    const found = await this.loadBookingConfig(null, propertyId);
+    return found[0] ?? null;
+  }
+
+  private async loadBookingConfig(
+    organizationId: string | null,
+    propertyId: string | null,
+  ): Promise<PropertyBookingConfig[]> {
     const properties = await this.database.query<ConfigRow>(
       `
       SELECT p.id AS property_id, p.name AS property_name,
@@ -282,15 +306,21 @@ export class ReservationsRepository {
         COALESCE(r.rebook_fee_value, 0) AS rebook_fee_value
       FROM properties p
       LEFT JOIN property_rebook_settings r ON r.property_id = p.id
+      WHERE ($1::uuid IS NULL OR p.organization_id = $1::uuid)
+        AND ($2::uuid IS NULL OR p.id = $2::uuid)
       ORDER BY p.name ASC
       `,
+      [organizationId, propertyId],
     );
     const tiers = await this.database.query<TierRow>(
       `
       SELECT id, property_id, min_days_before_check_in, refund_percent
       FROM cancellation_tiers
+      WHERE ($1::uuid IS NULL OR organization_id = $1::uuid)
+        AND ($2::uuid IS NULL OR property_id = $2::uuid)
       ORDER BY min_days_before_check_in DESC
       `,
+      [organizationId, propertyId],
     );
     return properties.rows.map((row): PropertyBookingConfig => ({
       propertyId: row.property_id,
@@ -309,14 +339,6 @@ export class ReservationsRepository {
           }),
         ),
     }));
-  }
-
-  /**
-   * One property's live refund + rebook settings.
-   */
-  public async getBookingConfig(propertyId: string): Promise<PropertyBookingConfig | null> {
-    const all = await this.listBookingConfig();
-    return all.find((row: PropertyBookingConfig): boolean => row.propertyId === propertyId) ?? null;
   }
 
   /**
