@@ -630,6 +630,21 @@ describe('BookingsService', () => {
       expect(issueRefund).not.toHaveBeenCalled();
     });
 
+    it('tells the repository which payment status the refund was planned on, so a booking marked paid meanwhile is not cancelled', async () => {
+      await service.cancel(REQUEST);
+
+      expect(markCancelled).toHaveBeenCalledWith(expect.anything(), expect.any(String), expect.objectContaining({ expectedPaymentStatus: row().payment_status }));
+    });
+
+    it('rolls back and refunds nothing when the booking changed after the plan was made', async () => {
+      markCancelled.mockRejectedValue(new ConflictException({ code: 'BOOKING_CHANGED' }));
+
+      await expect(service.cancel(REQUEST)).rejects.toMatchObject({ response: { code: 'BOOKING_CHANGED' } });
+      expect(log).toContain('ROLLBACK');
+      expect(insertRefund).not.toHaveBeenCalled();
+      expect(issueRefund).not.toHaveBeenCalled();
+    });
+
     it('is a 404 if the booking vanished before the lock', async () => {
       lockForCancel.mockResolvedValue(null);
 

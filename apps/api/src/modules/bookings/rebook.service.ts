@@ -493,6 +493,7 @@ export class RebookService {
       reason: 'dates_changed',
       staffId: plan.actor.staffId,
       note: plan.actor.note,
+      expectedPaymentStatus: row.payment_status,
     });
 
     let newBookingId: string;

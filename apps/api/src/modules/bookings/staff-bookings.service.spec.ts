@@ -577,7 +577,7 @@ describe('StaffBookingsService', () => {
 
       const booking = await service.markPaid(PERMITTED, ID);
 
-      expect(markPaid).toHaveBeenCalledWith(ID, PERMITTED.id);
+      expect(markPaid).toHaveBeenCalledWith(ID, PERMITTED.id, PERMITTED.organizationId);
       expect(booking).toEqual({ id: ID });
     });
 
@@ -587,7 +587,7 @@ describe('StaffBookingsService', () => {
 
       await service.markPaid(STAFF, ID);
 
-      expect(markPaid).toHaveBeenCalledWith(ID, STAFF.id);
+      expect(markPaid).toHaveBeenCalledWith(ID, STAFF.id, STAFF.organizationId);
     });
 
     it('refuses an employee without refund access before reading or changing anything', async () => {

@@ -17,6 +17,7 @@ import { ReservationsService } from '../reservations/reservations.service';
 import { InventoryRepository } from './inventory.repository';
 import { InventoryService } from './inventory.service';
 import { StaffBookingCreator } from './staff-booking-creator';
+import { StaffBookingLimiter } from './staff-booking-limiter';
 
 const STAFF: StaffAccount = { id: 'staff-1', organizationId: 'org', fullName: 'Sam', email: 's@example.com', role: 'employee', organizationName: 'Org', canManageRefunds: false };
 
@@ -47,6 +48,11 @@ function extra(overrides: Partial<ExtraService> = {}): ExtraService {
   return { id: 'ex-1', organizationId: 'org', propertyId: 'prop', name: 'Breakfast basket', description: '', kind: 'instant', priceCents: 1800, currencyCode: 'EUR', published: true, ...overrides };
 }
 
+/** The SQL the transaction ran, with the hold clean-up named. */
+function statementsOf(calls: readonly (readonly unknown[])[]): string[] {
+  return calls.map((call): string => (String(call[0]).includes("SET status = 'expired'") ? 'EXPIRE_HOLDS' : String(call[0])));
+}
+
 describe('StaffBookingCreator', () => {
   const listPublishedForBooking = jest.fn();
   const insertAllExtras = jest.fn();
@@ -56,14 +62,19 @@ describe('StaffBookingCreator', () => {
   const recordRedemptions = jest.fn();
   const getPolicySnapshot = jest.fn();
   const getReservation = jest.fn();
+  const checkQuote = jest.fn();
+  const checkCreate = jest.fn();
   const clientQuery = jest.fn();
   let creator: StaffBookingCreator;
+  const statements = (): string[] => statementsOf(clientQuery.mock.calls);
 
   beforeEach(async (): Promise<void> => {
     jest.resetAllMocks();
     getHouseById.mockResolvedValue({ id: 'house', propertyId: 'prop', organizationId: 'org', propertyTimezone: 'Europe/Paris' });
     listPublishedForBooking.mockResolvedValue([extra(), extra({ id: 'ex-2', name: 'Extra pillows', kind: 'on_request', priceCents: 0 })]);
     insertAllExtras.mockResolvedValue(undefined);
+    checkQuote.mockResolvedValue(undefined);
+    checkCreate.mockResolvedValue(undefined);
     getQuote.mockResolvedValue(quote());
     insertStaffBooking.mockResolvedValue('new-1');
     recordRedemptions.mockResolvedValue(undefined);
@@ -81,6 +92,7 @@ describe('StaffBookingCreator', () => {
         { provide: ReservationsService, useValue: { getPolicySnapshot, getReservation } },
         { provide: ExtrasRepository, useValue: { listPublishedForBooking } },
         { provide: ReservationExtrasRepository, useValue: { insertAll: insertAllExtras } },
+        { provide: StaffBookingLimiter, useValue: { checkQuote, checkCreate } },
       ],
     }).compile();
     creator = moduleRef.get(StaffBookingCreator);
@@ -108,6 +120,24 @@ describe('StaffBookingCreator', () => {
       });
       await expect(creator.quote(STAFF, { ...REQUEST, checkIn: '9999-01-01', checkOut: '9999-01-03' })).rejects.toBeInstanceOf(BadRequestException);
       expect(getQuote).not.toHaveBeenCalled();
+    });
+
+    it('refuses a booking whose total would not go over the one million euro ceiling', async () => {
+      listPublishedForBooking.mockResolvedValue([extra({ priceCents: 4_000_000 })]);
+      const many = Array.from({ length: 1 }, (): { extraId: string; quantity: number } => ({ extraId: 'ex-1', quantity: 20 }));
+      getQuote.mockResolvedValue(quote({ totalCents: 86400 }));
+
+      await expect(creator.quote(STAFF, { ...REQUEST, extras: many })).resolves.toMatchObject({ extrasCents: 80_000_000 });
+      getQuote.mockResolvedValue(quote({ totalCents: 30_000_000 }));
+      await expect(creator.quote(STAFF, { ...REQUEST, extras: many })).rejects.toMatchObject({ response: { code: 'BOOKING_TOO_LARGE' } });
+    });
+
+    it('counts each price check against the staff member\'s limit and stops when the limit says so', async () => {
+      await creator.quote(STAFF, REQUEST);
+      expect(checkQuote).toHaveBeenCalledWith('staff-1');
+      checkQuote.mockRejectedValueOnce(new BadRequestException({ code: 'STAFF_BOOKING_RATE_LIMITED' }));
+      await expect(creator.quote(STAFF, REQUEST)).rejects.toMatchObject({ response: { code: 'STAFF_BOOKING_RATE_LIMITED' } });
+      expect(getQuote).toHaveBeenCalledTimes(1);
     });
 
     it('adds no extras line and does not look at the catalog when none are chosen', async () => {
@@ -160,6 +190,25 @@ describe('StaffBookingCreator', () => {
   });
 
   describe('create', () => {
+    it('first expires the house\'s timed-out guest holds, so free dates are not refused for a hold nobody swept', async () => {
+      await creator.create(STAFF, REQUEST);
+
+      const sql = String(clientQuery.mock.calls.find((call) => String(call[0]).includes("SET status = 'expired'"))?.[0] ?? '');
+      expect(sql).toContain("kind = 'hold' AND status = 'active'");
+      expect(clientQuery.mock.invocationCallOrder[1]).toBeLessThan(insertStaffBooking.mock.invocationCallOrder[0] ?? 0);
+    });
+
+    it('counts the booking against the staff member\'s limit before anything is priced or saved', async () => {
+      checkCreate.mockRejectedValueOnce(new BadRequestException({ code: 'STAFF_BOOKING_RATE_LIMITED' }));
+
+      await expect(creator.create(STAFF, REQUEST)).rejects.toMatchObject({ response: { code: 'STAFF_BOOKING_RATE_LIMITED' } });
+      expect(getQuote).not.toHaveBeenCalled();
+      expect(insertStaffBooking).not.toHaveBeenCalled();
+      await creator.create(STAFF, REQUEST);
+      expect(checkCreate).toHaveBeenLastCalledWith('staff-1');
+      expect(checkQuote).not.toHaveBeenCalled();
+    });
+
     it('saves a pending pay-at-hotel booking with the quoted price, trimmed text and who made it', async () => {
       const booking = await creator.create(STAFF, REQUEST);
 
@@ -173,7 +222,7 @@ describe('StaffBookingCreator', () => {
       });
       expect(JSON.parse(String(input.priceSnapshot))).toMatchObject({ totalCents: 86400, discountCents: 9600 });
       expect(JSON.parse(String(input.policySnapshot))).toMatchObject({ rebookable: false });
-      expect(clientQuery.mock.calls.map((call) => String(call[0]))).toEqual(['BEGIN', 'COMMIT']);
+      expect(statements()).toEqual(['BEGIN', 'EXPIRE_HOLDS', 'COMMIT']);
     });
 
     it('saves the extras in the same transaction, with the whole total (stay plus instant extras) on the booking', async () => {
@@ -186,7 +235,7 @@ describe('StaffBookingCreator', () => {
       expect(insertAllExtras).toHaveBeenCalledTimes(1);
       expect(insertAllExtras.mock.calls[0]?.[1]).toMatchObject({ organizationId: 'org', propertyId: 'prop', bookingId: 'new-1' });
       expect((insertAllExtras.mock.calls[0]?.[1] as { lines: unknown[] }).lines).toHaveLength(2);
-      expect(clientQuery.mock.calls.map((call) => String(call[0]))).toEqual(['BEGIN', 'COMMIT']);
+      expect(statements()).toEqual(['BEGIN', 'EXPIRE_HOLDS', 'COMMIT']);
     });
 
     it('saves nothing when an extra is refused', async () => {
@@ -199,7 +248,7 @@ describe('StaffBookingCreator', () => {
       insertAllExtras.mockRejectedValue(new Error('extras insert failed'));
 
       await expect(creator.create(STAFF, { ...REQUEST, extras: [{ extraId: 'ex-1', quantity: 1 }] })).rejects.toThrow('extras insert failed');
-      expect(clientQuery.mock.calls.map((call) => String(call[0]))).toEqual(['BEGIN', 'ROLLBACK']);
+      expect(statements()).toEqual(['BEGIN', 'EXPIRE_HOLDS', 'ROLLBACK']);
     });
 
     it('counts the discounts it applied toward their use limits, in the same transaction', async () => {
@@ -219,7 +268,7 @@ describe('StaffBookingCreator', () => {
       insertStaffBooking.mockRejectedValue(Object.assign(new Error('conflicting key value violates exclusion constraint'), { code: '23P01' }));
 
       await expect(creator.create(STAFF, REQUEST)).rejects.toBeInstanceOf(ConflictException);
-      expect(clientQuery.mock.calls.map((call) => String(call[0]))).toEqual(['BEGIN', 'ROLLBACK']);
+      expect(statements()).toEqual(['BEGIN', 'EXPIRE_HOLDS', 'ROLLBACK']);
       expect(getReservation).not.toHaveBeenCalled();
     });
 
@@ -227,7 +276,7 @@ describe('StaffBookingCreator', () => {
       recordRedemptions.mockRejectedValue(new Error('connection lost'));
 
       await expect(creator.create(STAFF, REQUEST)).rejects.toThrow('connection lost');
-      expect(clientQuery.mock.calls.map((call) => String(call[0]))).toEqual(['BEGIN', 'ROLLBACK']);
+      expect(statements()).toEqual(['BEGIN', 'EXPIRE_HOLDS', 'ROLLBACK']);
     });
   });
 });

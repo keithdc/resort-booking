@@ -4,7 +4,7 @@
  * @dependencies DatabaseService
  */
 
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import type { ActionInitiator, BookingExtra, BookingPaymentStatus, RefundStatus, StaffCancelReason } from '@resort-booking/shared-types';
 import type { PoolClient } from 'pg';
 import { DatabaseService } from '../../shared/database/database.service';
@@ -67,6 +67,12 @@ export interface CancelMeta {
   reason: CancelReasonCode;
   staffId: string | null;
   note: string | null;
+  /**
+   * The payment status the caller based its money decision on (the refund plan). If the booking has moved on since
+   * (a pay-at-hotel booking was marked paid a moment ago) nothing is cancelled and 409 BOOKING_CHANGED is thrown, so a
+   * cancellation can never record a refund of nothing for money that was just received.
+   */
+  expectedPaymentStatus?: BookingPaymentStatus;
 }
 
 /** What a booking is, for answering staff about an id that is not a reservation. */
@@ -221,15 +227,26 @@ export class BookingsRepository {
    * constraint only covers active and confirmed rows. Without `meta` it is the guest's own request.
    */
   public async markCancelled(client: PoolClient, bookingId: string, meta?: CancelMeta): Promise<void> {
-    await client.query(
+    const params: unknown[] = [bookingId, meta?.reason ?? 'guest_request', meta?.staffId ?? null, meta?.note ?? null];
+    const expected = meta?.expectedPaymentStatus;
+    if (expected !== undefined) {
+      params.push(expected);
+    }
+    const result = await client.query(
       `
       UPDATE inventory_blocks
       SET status = 'cancelled', cancelled_at = now(),
         cancel_reason = $2, cancelled_by_staff_id = $3, cancel_note = $4
-      WHERE id = $1 AND status = 'confirmed'
+      WHERE id = $1 AND status = 'confirmed'${expected === undefined ? '' : ' AND payment_status = $5'}
       `,
-      [bookingId, meta?.reason ?? 'guest_request', meta?.staffId ?? null, meta?.note ?? null],
+      params,
     );
+    if (expected !== undefined && (result.rowCount ?? 0) === 0) {
+      throw new ConflictException({
+        message: 'This booking was just updated by someone else. Reload it and try again.',
+        code: 'BOOKING_CHANGED',
+      });
+    }
   }
 
   /**
@@ -237,18 +254,19 @@ export class BookingsRepository {
    * Returns false when no row matched (not pending, not confirmed, or not a pay-at-hotel booking), so a second
    * tick, or a tick after a cancel, changes nothing.
    */
-  public async markPaid(bookingId: string, staffId: string): Promise<boolean> {
+  public async markPaid(bookingId: string, staffId: string, organizationId: string): Promise<boolean> {
     const result = await this.database.query(
       `
       UPDATE inventory_blocks
       SET payment_status = 'paid', paid_at = now(), paid_cents = COALESCE(total_cents, 0), marked_paid_by_staff_id = $2
       WHERE id = $1
+        AND organization_id = $3
         AND kind = 'reservation'
         AND status = 'confirmed'
         AND payment_status = 'pending'
         AND payment_method = 'pay_at_hotel'
       `,
-      [bookingId, staffId],
+      [bookingId, staffId, organizationId],
     );
     return (result.rowCount ?? 0) === 1;
   }

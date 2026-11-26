@@ -12,6 +12,7 @@ import type {
   StaffCreateBookingRequest,
   StaffReservation,
 } from '@resort-booking/shared-types';
+import { LIMITS } from '../../shared/validation/limits';
 import { DatabaseService } from '../../shared/database/database.service';
 import type { StaffAccount } from '../../shared/roles/staff-role';
 import { DiscountsService } from '../discounts/discounts.service';
@@ -30,6 +31,10 @@ import {
   snapshotOf,
 } from './inventory.rules';
 import { InventoryService } from './inventory.service';
+import { StaffBookingLimiter } from './staff-booking-limiter';
+
+/** A booking above this (one million euros, the same ceiling as any single price) is refused: amounts are 32-bit, and report sums add many bookings. */
+export const MAX_STAFF_BOOKING_TOTAL_CENTS = LIMITS.maxCents;
 
 /**
  * Bookings made by staff for a guest who will pay at the property (pay at hotel).
@@ -51,6 +56,7 @@ export class StaffBookingCreator {
     private readonly reservations: ReservationsService,
     private readonly extras: ExtrasRepository,
     private readonly bookingExtras: ReservationExtrasRepository,
+    private readonly limiter: StaffBookingLimiter,
   ) {}
 
   /**
@@ -59,6 +65,11 @@ export class StaffBookingCreator {
    * priced in: an instant extra adds its price to the total, an on-request one adds nothing (see `StaffBookingQuote`).
    */
   public async quote(staff: StaffAccount, request: StaffBookingQuoteRequest): Promise<StaffBookingQuote> {
+    await this.limiter.checkQuote(staff.id);
+    return this.priceBooking(staff, request);
+  }
+
+  private async priceBooking(staff: StaffAccount, request: StaffBookingQuoteRequest): Promise<StaffBookingQuote> {
     const house = await this.houses.getHouseById(request.houseId);
     if (house === null || house.organizationId !== staff.organizationId) {
       throw new NotFoundException({ message: 'Stay not found', code: 'HOUSE_NOT_FOUND' });
@@ -75,14 +86,19 @@ export class StaffBookingCreator {
       false,
     );
     const priced = await this.priceChosenExtras(house.propertyId, house.organizationId, request.extras ?? [], stay.currencyCode);
-    return { ...stay, totalCents: stay.totalCents + priced.extrasCents, extras: priced.lines, extrasCents: priced.extrasCents };
+    const totalCents = stay.totalCents + priced.extrasCents;
+    if (totalCents > MAX_STAFF_BOOKING_TOTAL_CENTS) {
+      throw new BadRequestException({ message: 'That booking is too large. Check the extras and their quantities', code: 'BOOKING_TOO_LARGE' });
+    }
+    return { ...stay, totalCents, extras: priced.lines, extrasCents: priced.extrasCents };
   }
 
   /**
    * Makes the booking. A clash with another booking (even one made a moment ago) is a 409 and nothing is saved.
    */
   public async create(staff: StaffAccount, request: StaffCreateBookingRequest): Promise<StaffReservation> {
-    const quote = await this.quote(staff, request);
+    await this.limiter.checkCreate(staff.id);
+    const quote = await this.priceBooking(staff, request);
     if (!quote.available) {
       throw this.datesUnavailable();
     }
@@ -98,6 +114,13 @@ export class StaffBookingCreator {
       const id = await this.database.withClient(async (client): Promise<string> => {
         await client.query('BEGIN');
         try {
+          // A guest's checkout that ran out of time but has not been swept yet would still block these dates (the same
+          // clean-up the guest hold does first), and the staff member would be told "no longer available" for free dates.
+          await client.query(
+            `UPDATE inventory_blocks SET status = 'expired'
+             WHERE house_id = $1 AND kind = 'hold' AND status = 'active' AND expires_at IS NOT NULL AND expires_at < now()`,
+            [house.id],
+          );
           const bookingId = await this.inventory.insertStaffBooking(client, {
             organizationId: house.organizationId,
             propertyId: house.propertyId,

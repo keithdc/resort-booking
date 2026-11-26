@@ -1089,7 +1089,7 @@ describe('RebookService', () => {
     it('applies a cheaper change, refunds the difference and keeps who did it and why', async () => {
       const outcome = await service.staffChange(row({ policy_snapshot: snapshot({ rebookable: false }) }), STAFF_CHANGE, STAFF);
 
-      expect(markCancelled).toHaveBeenCalledWith(expect.anything(), ID, { reason: 'dates_changed', staffId: 'staff-1', note: 'Guest called to ask' });
+      expect(markCancelled).toHaveBeenCalledWith(expect.anything(), ID, expect.objectContaining({ reason: 'dates_changed', staffId: 'staff-1', note: 'Guest called to ask' }));
       expect(insertRefund).toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({ kind: 'rebook_difference', amountCents: 34000, reasonCode: 'dates_changed', initiatedBy: 'staff', createdByStaffId: 'staff-1' }),

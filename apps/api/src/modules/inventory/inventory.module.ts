@@ -18,11 +18,12 @@ import { InventoryRepository } from './inventory.repository';
 import { InventoryService } from './inventory.service';
 import { PromoRateLimiter } from './promo-rate-limiter';
 import { StaffBookingCreator } from './staff-booking-creator';
+import { StaffBookingLimiter } from './staff-booking-limiter';
 
 @Module({
   imports: [PropertyModule, RatesModule, DiscountsModule, ReservationsModule, ExtrasModule],
   controllers: [InventoryController],
-  providers: [InventoryService, AvailabilityService, HoldSweeperService, InventoryRepository, PromoRateLimiter, HoldRateLimiter, StaffBookingCreator],
+  providers: [InventoryService, AvailabilityService, HoldSweeperService, InventoryRepository, PromoRateLimiter, HoldRateLimiter, StaffBookingCreator, StaffBookingLimiter],
   exports: [InventoryService, AvailabilityService, StaffBookingCreator],
 })
 export class InventoryModule {}

@@ -12,7 +12,7 @@ const RANGE = { low: '1a2b3c4d-5e00-0000-0000-000000000000', high: '1a2b3c4d-5ef
 
 describe('BookingsRepository', () => {
   const query = jest.fn<Promise<{ rows: unknown[]; rowCount?: number }>, [string, ...unknown[]]>();
-  const clientQuery = jest.fn<Promise<{ rows: unknown[] }>, [string, ...unknown[]]>();
+  const clientQuery = jest.fn<Promise<{ rows: unknown[]; rowCount?: number }>, [string, ...unknown[]]>();
   let repository: BookingsRepository;
   let client: PoolClient;
 
@@ -116,6 +116,17 @@ describe('BookingsRepository', () => {
     expect(clientQuery.mock.calls[0]?.[1]).toEqual(['abc', 'goodwill', 'staff-1', 'Burst pipe']);
   });
 
+  it('refuses with 409 when the payment status moved on since the money was decided (marked paid a moment ago)', async () => {
+    clientQuery.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+
+    await expect(repository.markCancelled(client, 'abc', { reason: 'guest_request', staffId: null, note: null, expectedPaymentStatus: 'pending' })).rejects.toMatchObject({
+      response: { code: 'BOOKING_CHANGED' },
+    });
+    const [sql, params] = clientQuery.mock.calls[0] as [string, unknown[]];
+    expect(sql).toContain('payment_status = $5');
+    expect(params).toEqual(['abc', 'guest_request', null, null, 'pending']);
+  });
+
   it('records a date change as "dates_changed"', async () => {
     await repository.markCancelled(client, 'abc', { reason: 'dates_changed', staffId: null, note: null });
 
@@ -204,11 +215,12 @@ describe('BookingsRepository', () => {
   it('marks a booking paid only from pending, only for a confirmed pay-at-hotel booking, and counts the whole total as paid', async () => {
     query.mockResolvedValueOnce({ rows: [], rowCount: 1 }).mockResolvedValueOnce({ rows: [], rowCount: 0 });
 
-    expect(await repository.markPaid('booking-1', 'staff-1')).toBe(true);
-    expect(await repository.markPaid('booking-1', 'staff-1')).toBe(false);
+    expect(await repository.markPaid('booking-1', 'staff-1', 'org-1')).toBe(true);
+    expect(await repository.markPaid('booking-1', 'staff-1', 'org-1')).toBe(false);
 
     const [sql, params] = query.mock.calls[0] as [string, unknown[]];
-    expect(params).toEqual(['booking-1', 'staff-1']);
+    expect(params).toEqual(['booking-1', 'staff-1', 'org-1']);
+    expect(sql).toContain('organization_id = $3');
     expect(sql).toContain("payment_status = 'paid', paid_at = now(), paid_cents = COALESCE(total_cents, 0), marked_paid_by_staff_id = $2");
     expect(sql).toContain("payment_status = 'pending'");
     expect(sql).toContain("payment_method = 'pay_at_hotel'");

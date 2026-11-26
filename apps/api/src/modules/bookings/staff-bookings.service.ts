@@ -190,7 +190,7 @@ export class StaffBookingsService {
     if (row.payment_status === 'paid') {
       throw this.alreadyPaid();
     }
-    if (!(await this.bookings.markPaid(id, staff.id))) {
+    if (!(await this.bookings.markPaid(id, staff.id, staff.organizationId))) {
       // Lost a race: someone marked it paid, or it was cancelled, between the read and the write.
       const latest = await this.bookings.findById(id);
       throw latest?.status === 'cancelled' ? this.alreadyCancelled() : this.alreadyPaid();

@@ -501,3 +501,83 @@ New staff routes: `POST /staff/reservations/quote`, `POST /staff/reservations` (
   bound as a SQL parameter, and always combined with the caller's organization, so another workspace's member id returns an empty page
   and nothing about it. Works with `action`, dates and paging (the cursor is built from the filtered rows). Tested with a real Postgres in
   `shared/audit/audit-member-filter.integration.spec.ts`.
+
+## 9. Round 5: review of staff-made bookings, mark-paid, extras, unpaid report and the audit member filter
+
+Adversarial pass over everything since `98aaf5b` (migrations 040 to 042, `StaffBookingCreator`, mark-paid, `reservation_extras`, the
+report changes, rebook with carried extras, the audit member filter, employee money access in Reports). Checked: tenant isolation of every new
+route and SQL, IDOR through house, extra, booking and member ids, DTO strictness, money integrity, the role matrix, redaction, DB guards and
+grants, logs, rendering and CSV.
+
+| ID | Severity | Finding | Status |
+|---|---|---|---|
+| R5-01 | Medium | A cancel (or date change) planned on a pay-at-hotel booking that was marked paid a moment later recorded a refund of nothing for money already received | fixed |
+| R5-02 | Low | A staff booking total could overflow the 32-bit amount columns (10 extras x 20 x up to EUR 1M each) and end as a 500 | fixed |
+| R5-03 | Low | The mark-paid UPDATE did not carry the organization in its own WHERE (it relied on the earlier read) | fixed |
+| R5-04 | Low | No per-person limit on the staff New booking routes | fixed |
+| R5-05 | Low | A guest checkout that timed out but was not swept yet blocked a staff booking of free dates with "no longer available" | fixed |
+| R5-06 | Info | Three stale build files tracked in `packages/shared-types/src` (`index.js`, `index.d.ts`, `index.js.map`) | fixed |
+| R5-07 | Medium | The `resort.record_maintenance` hatch is a plain setting: any database role, `resort_app` included, can switch it on inside its own transaction. If SQL injection ever existed, the triggers of 032, 040 and 041 would not stop it | open decision |
+| R5-08 | Low | Report totals are summed and cast to 32-bit integers (a pattern from before this round); very many very large bookings could overflow a sum | open decision |
+| R5-09 | Info | An employee without money access sees the price lines of extras (and a staff booking's total) on the booking card; only the report is redacted | open decision |
+
+**R5-01. Status: fixed.** `cancelRow` and the date-change swap lock the booking row, but the refund plan was made from a read taken before the
+lock. If an admin marked the booking paid in between, the cancel still refunded the planned 0. `markCancelled` now takes
+`expectedPaymentStatus` (the status the plan was made on) and adds `AND payment_status = $5`; if no row matches it throws 409
+`BOOKING_CHANGED` ("This booking was just updated by someone else. Reload it and try again.") and the transaction rolls back (no cancel, no refund
+row). Both the guest/staff cancel (`bookings.service.ts`) and the date change (`rebook.service.ts`) pass it. Specs: `bookings.repository.spec.ts`
+(SQL and the 409), `bookings.service.spec.ts` (status passed through, rollback and no refund on the 409). Manual check 14.27.
+
+**R5-02. Status: fixed.** `StaffBookingCreator` refuses a total above `LIMITS.maxCents` (EUR 1,000,000, the same ceiling as any single price) with 400
+`BOOKING_TOO_LARGE`, for the quote and the create. Spec: `staff-booking-creator.spec.ts`.
+
+**R5-03. Status: fixed.** `markPaid(bookingId, staffId, organizationId)` adds `AND organization_id = $3`. The route and the service already refused another
+workspace's booking (404, `TenantScoped` and `requireConfirmed`); the SQL no longer depends on that. Specs: `bookings.repository.spec.ts`,
+`staff-bookings.service.spec.ts`.
+
+**R5-04. Status: fixed.** `StaffBookingLimiter` (per signed-in staff member, Redis, `ratelimit:staffbooking:create:<id>` 20 a minute and
+`ratelimit:staffbooking:quote:<id>` 120 a minute, tunable with `STAFF_BOOKING_CREATE_LIMIT`, `STAFF_BOOKING_QUOTE_LIMIT` and `*_WINDOW_SECONDS`), 429
+`STAFF_BOOKING_RATE_LIMITED` with Retry-After. Fail-open if Redis is down (a signed-in, audited person; the no-overlap rule still protects the
+dates), like the other booking limiters. Specs: `staff-booking-limiter.spec.ts`, `staff-booking-creator.spec.ts`.
+
+**R5-05. Status: fixed.** The create transaction first marks that house's timed-out guest holds `expired` (the same statement the guest hold runs),
+so the no-overlap rule is not tripped by a hold nobody swept. Spec: `staff-booking-creator.spec.ts`; manual check 14.30.
+
+**R5-06. Status: fixed.** The three files were removed (`git rm`), nothing imported them (`package.json` points `main`, `types` and `exports` at `index.ts`;
+`transpilePackages`, the tsconfig and the test configs do not mention them) and `.gitignore` now ignores emitted `.js`, `.js.map` and `.d.ts` next to the sources.
+
+**R5-07. Status: open decision (owner).** `resort_app` is deliberately given `UPDATE` on `payment_status` and `paid_cents` (mark-paid is a normal action), so for
+those columns the trigger, not a privilege, forbids `paid -> pending`. The trigger lets everything through when `resort.record_maintenance = 'on'`, and that
+setting can be switched on by any role for its own transaction. The privilege layer still holds without it (no `DELETE` on money tables, no `UPDATE` of frozen
+columns, `OWNER_ONLY_TABLES`), but the status machines and the paid-status rule do not. The application never runs SQL built from input (all queries are parameterised,
+the DTOs whitelist), so this needs a second flaw to matter. Proposed fix, as a new migration so no applied file changes: one helper
+`resort_maintenance_allowed()` that requires the setting AND that `session_user` is the owner (or not the app role), used by every guard function.
+It needs the real role names in each environment (`docs/11`), hence your decision. Until then the audit log is the detective control: every state change below is audited with
+the actor.
+
+**R5-08. Status: open decision (low).** `report-summary.repository.ts` casts sums with `::int` (revenue, paid, refunded, discount, and the new unpaid total). The per-booking
+ceiling of R5-02 keeps one booking small, but about 21 bookings of the maximum would overflow a period sum and fail the report. Real totals are far below this. Proposed: read the sums
+as `bigint` and convert in the mapper; a small change touching several queries and specs, so left for a decision.
+
+**R5-09. Status: open decision (info).** `StaffReservation.extras[].unitPriceCents` and `lineCents`, and the booking `totalCents`, are shown to every staff member on a booking card, as before this
+round for totals; `redactReportForEmployee` zeroes only the report. Extras prices are public on the guest site, so nothing secret is added. If the owner wants employees without money access to
+see no amounts at all on booking cards, it is a wider change than the report.
+
+**Checked and clean (no finding).**
+
+- **Tenant isolation:** `POST /staff/reservations/quote`, `POST /staff/reservations` (both `TenantScoped` on `houseId`, and the creator compares the house's organization again),
+  `POST /staff/reservations/:id/mark-paid` (`TenantScoped` booking, org in SQL since R5-03), `GET /staff/properties/:id/booking-extras` (`TenantScoped` property; the query filters property and organization),
+  `GET /staff/audit?member=` (organization always in the WHERE, a foreign id gives an empty page; covered by a real-database spec). The composite keys of 041 stop a booking extra pointing at another organization's booking or property.
+- **IDOR and mass assignment:** the request carries only ids and counts (never a price, name, status or organization). `extraId` of another property or organization, an unpublished one, or an unknown id is the same 404
+  `EXTRA_NOT_FOUND`. The DTO is whitelisted (unknown fields refused), `houseId` and `extraId` are checked as uuid-like, quantity 1-20, 10 extras, repeats refused, a priced extra in a different currency refused, dates are strict ISO and checked again
+  for real calendar dates, nights and capacity by the quote, strings are trimmed and length-bounded, email and phone use the project validators (a phone number must be a real international number, so the `tel:` link cannot carry anything else).
+- **Money integrity:** integer cents everywhere; instant extras are `unit x quantity` (checked again by a database CHECK), on-request extras 0; the booking keeps a copy of name and price (a trigger forbids changing them); mark-paid is one conditional UPDATE (a second tick is 409 `ALREADY_PAID`, an online booking `NOT_PAY_AT_HOTEL`, a cancelled one `BOOKING_CANCELLED`); creating twice for the same dates is
+  refused by the no-overlap constraint (409), also against a guest's active hold; a rolled-back extras insert rolls the booking back.
+- **Role matrix:** unauthenticated is refused by `StaffGuard`; create and quote are admin or employee; mark-paid needs money access (route and service); the audit log and its member filter are admin only; employees without money access get the redacted report, so the new money figures and the CSV amounts are withheld
+  (the CSV is built from the redacted report, which also removes the amount columns).
+- **Audit:** `booking.created_by_staff` and `booking.marked_paid` record who, with reference, amounts, dates and extras names, never email, phone or notes; cancellations and date changes of such bookings use the existing audited routes.
+- **Rendering and export:** React escapes the guest's name, note and extras' names (no `dangerouslySetInnerHTML` in the new screens); the CSV guard puts an apostrophe before `=`, `+`, `-`, `@`, tab and carriage return (tested), so a guest named `=HYPERLINK(...)` cannot run as a formula.
+- **Logs:** the new code writes no log lines with guest data; `log-hygiene.spec.ts` still passes. Error messages for another organization's ids are the same as for unknown ids.
+- **Guest `/manage`:** shows the booking's own extras and payment state only; no staff name, no creator id, no internal catalog hints beyond the extra's name and price.
+- **Database:** `reservation_extras` is in `RESTRICTED_TABLES` (no `DELETE`, update only `status` and `updated_at`); `report_bookings` gains two non-personal columns; the migrations are additive, replayable and checksummed.
+

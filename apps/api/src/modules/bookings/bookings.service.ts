@@ -122,6 +122,7 @@ export class BookingsService {
           reason: input.reasonCode,
           staffId: input.staffId,
           note: input.note,
+          expectedPaymentStatus: row.payment_status,
         });
         const refundId = await this.bookings.insertRefund(client, {
           organizationId: row.organization_id,
