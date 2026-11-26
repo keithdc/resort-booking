@@ -558,9 +558,11 @@ export function CheckoutForm({
             position: { xs: 'sticky', md: 'static' },
             bottom: 0,
             zIndex: 2,
-            // Stack resets its children's margins, so the bleed to the card edges needs !important.
-            marginLeft: { xs: '-16px !important', md: 0 },
-            marginRight: { xs: '-16px !important', md: 0 },
+            // Stack resets its children's margins, so the bleed to the card edges needs !important. The desktop
+            // value needs it too: an !important rule at xs would otherwise also win at md and push the button
+            // 16px past the side panel's padding.
+            marginLeft: { xs: '-16px !important', md: '0 !important' },
+            marginRight: { xs: '-16px !important', md: '0 !important' },
             px: { xs: 2, md: 0 },
             pt: { xs: 1.5, md: 0 },
             pb: { xs: 'calc(12px + env(safe-area-inset-bottom))', md: 0 },

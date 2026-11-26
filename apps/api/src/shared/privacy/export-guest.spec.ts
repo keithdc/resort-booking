@@ -18,10 +18,10 @@ describe('collectGuestExport', () => {
 
     expect(db.transactions).toHaveLength(1);
     expect(db.transactions[0]?.options.readOnly).toBe(true);
-    expect(db.transactions[0]?.statements).toHaveLength(7);
+    expect(db.transactions[0]?.statements).toHaveLength(8);
     expect(data.subjectEmail).toBe('ada@example.com');
     expect(data.bookings[0]).toMatchObject({ reference: 'BK-1A2B3C4D00' });
-    expect(countExport(data)).toMatchObject({ bookings: 2, payments: 1, refunds: 1 });
+    expect(countExport(data)).toMatchObject({ bookings: 2, payments: 1, refunds: 1, staffNotes: 1 });
   });
 });
 

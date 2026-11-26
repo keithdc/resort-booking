@@ -57,6 +57,7 @@ import { CancellationBlock, HistoryBlock, RefundsBlock } from './booking-records
 import { PaymentStatusChip } from './payment-status-chip';
 import { StaffCancelDialog } from './staff-cancel-dialog';
 import { StaffChangeDatesDialog } from './staff-change-dates-dialog';
+import { StaffNotesBlock } from './staff-notes-block';
 import { StayBlock, StayFact } from './stay-block';
 
 /** On a phone each action group takes the full width and its buttons share the row. */
@@ -270,6 +271,12 @@ export function StayDetailDialog({ stay, onClose, onUpdated, onChanged }: StayDe
                     </Typography>
                   </Box>
                 </StayBlock>
+                {stay.kind === 'reservation' ? (
+                  <StaffNotesBlock
+                    bookingId={stay.id}
+                    onChanged={(count: number, lastNoteAt: string | null): void => onUpdated({ ...stay, notesCount: count, lastNoteAt })}
+                  />
+                ) : null}
                 {stay.cancellation !== null ? <CancellationBlock cancellation={stay.cancellation} /> : null}
                 {stay.kind === 'reservation' ? <RefundsBlock refunds={stay.refunds} /> : null}
                 {stay.kind === 'reservation' ? <HistoryBlock stay={stay} /> : null}

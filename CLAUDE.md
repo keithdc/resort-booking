@@ -17,3 +17,4 @@ Same instructions as `AGENTS.md`. Full rules:
 - `docs/14-payments-operations.md`
 - `docs/15-data-retention-and-backups.md`
 - `docs/16-manual-test-guide.md`
+- `docs/17-pending-work.md`

@@ -34,7 +34,7 @@ export function staffReservation(overrides: Partial<StaffReservation> = {}): Sta
     paymentMethod: 'card',
     paymentStatus: 'paid',
     paidAt: null,
-    createdByName: null,
+    createdByName: null, notesCount: 0, lastNoteAt: null,
     status: 'confirmed',
     kind: 'reservation',
     arrivalStatus: 'expected',

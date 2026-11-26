@@ -152,6 +152,29 @@ Needs migrations `040`, `041` and `042` (restart the API first). Use a stay with
 29. **Rate limit on New booking (optional).** Press the quote refresh quickly more than about 120 times a minute, or create more than 20 bookings in a minute with a script using your session. **Expected:** a "Too many ... Wait a moment" message and a Retry-After; normal use never sees it.
 30. **Free dates are not refused for a stale guest hold.** On the guest site start a checkout for dates and let it run out of time (15 minutes) without paying. As staff, book the same dates at once. **Expected:** the booking is accepted (not "no longer available").
 
+## 15. Guest page spacing and staff notes
+
+Section 15 needs migration `043` (restart the API first) for the notes. Steps 1-2 are only layout and need no data.
+
+1. **Pay button spacing (guest site).** Open a stay with dates in the address (for example `/properties/<property>/stays/<stay>?checkIn=2026-12-10&checkOut=2026-12-11&guests=2`). Scroll to "Book this stay". **Expected:** at every width (320, 360, 390, 430, tablet 820 and desktop 1280) the **Pay** button has the same left and right edge as the promo field, the totals and the checkbox above it. On a phone it stays pinned to the bottom of the screen with a gap to the card's edges. On desktop (the narrow panel next to the photos) it does **not** reach the card's border. No horizontal scrolling at any width.
+2. **Search bar spacing (guest site).** Open the home page and `/search?checkIn=2026-12-10&checkOut=2026-12-11&guests=2`. **Expected:** on a laptop or desktop width **Check-in, Nights, Guests and Search** sit in one row with a clear gap between each (the three fields never touch). On a phone the fields stack, Nights and Guests share a row with a gap, and nothing touches the screen edge. Also check the stay page's "Check availability" bar and the one-line summary with **Edit** on the results page at phone width.
+3. **Add a note.** As an employee, open a booking from the list under the calendar. **Expected:** a **Staff notes** section with a box ("Add a note for your team"), a counter like `0 / 2000`, **Add note** (greyed out while the box is empty) and "Only your team sees these notes. The guest never does." Type `Deposit of 50 EUR taken in cash` and press **Add note**. **Expected:** it appears at the top with your name and the time, the box empties.
+4. **Icon in the list.** Close the card. **Expected:** that booking's row under the calendar now shows a small note icon with `1` (hover or a screen reader: "1 staff note"). A booking without notes shows no icon. Add a second note: the icon shows `2`.
+5. **The guest's own note is separate.** In the same card, "Note from the guest" is unchanged and has no edit box. **Expected:** staff notes never appear inside it.
+6. **Who can remove.** As the **employee**, the **Remove note** button shows only on your own notes. As **admin**, open the same booking: every note has **Remove note**. Remove one as admin and confirm. **Expected:** it disappears for everyone after a reload, and the icon count drops. Reload as the employee: a colleague's note still has no Remove button for them.
+7. **Limits.** Type 2,001 characters: the counter turns red and **Add note** stays off. Paste text with a tab or a new line: it is kept. A note that looks like code (`<b>hi</b>`) is shown as plain text.
+8. **Audit log.** As admin, Audit log, filter Member = the employee. **Expected:** `booking.note_added` and `booking.note_removed` rows with who and which booking, and **no note text** anywhere in the row.
+9. **The guest never sees notes.** Open the guest's `/manage` page for that booking (reference + email). **Expected:** no staff notes, no staff names.
+10. **Database check (read only).** In a terminal:
+    ```bash
+    docker exec -i resort-booking-postgres-1 psql -U resort -d resort_booking <<'SQL'
+    begin; delete from booking_staff_notes; rollback;
+    begin; update booking_staff_notes set body = 'changed'; rollback;
+    SQL
+    ```
+    **Expected:** both statements fail with an error (notes are never deleted or edited), even for the owner role. With no notes yet the statements affect no row and the error may not show: add a note first.
+11. **Erasure scrubs notes (dry run).** `npm run privacy:erase-guest -w @resort-booking/api -- --email <test guest email>` (no `--apply`). **Expected:** a dry run; nothing changes. With `--apply` on a **test** booking the note text becomes `[removed]` (the receipt says "staff notes scrubbed: N").
+
 ## If something fails
 
 1. Note the step, what you did and what you saw (a screenshot helps).

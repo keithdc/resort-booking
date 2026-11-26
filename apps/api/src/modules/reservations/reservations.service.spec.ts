@@ -204,7 +204,7 @@ describe('ReservationsService.getReport after a guest changed the dates of a boo
       paymentMethod: 'card',
       paymentStatus: 'paid',
       paidAt: null,
-      createdByName: null,
+      createdByName: null, notesCount: 0, lastNoteAt: null,
       status: 'confirmed',
       kind: 'reservation',
       arrivalStatus: 'expected',
@@ -303,7 +303,7 @@ describe('ReservationsService.getReport owner numbers', () => {
     return {
       id: 'b', organizationId: 'org', propertyId: PROPERTY, propertyName: 'Alpine Lake', houseId: 'house',
       houseName: 'Lake Chalet', checkIn: '2027-07-10', checkOut: '2027-07-12', guestCount: 2, bookerName: 'Ada',
-      bookerEmail: 'ada@example.com', bookerPhone: '+33612345678', guestNote: '', paymentMethod: 'card', paymentStatus: 'paid', paidAt: null, createdByName: null,
+      bookerEmail: 'ada@example.com', bookerPhone: '+33612345678', guestNote: '', paymentMethod: 'card', paymentStatus: 'paid', paidAt: null, createdByName: null, notesCount: 0, lastNoteAt: null,
       status: 'confirmed', kind: 'reservation', arrivalStatus: 'expected', rebookOfId: null, totalCents: 20000,
       currencyCode: 'EUR', requestNames: [], reference: 'BK-0000000000', paidCents: 20000, termsAcceptedAt: null,
       cancellation: null, replacedByReference: null, rebookOfReference: null, refunds: [], changes: [], extras: [],

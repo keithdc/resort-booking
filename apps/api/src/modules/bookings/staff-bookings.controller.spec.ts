@@ -13,6 +13,7 @@ import { StaffGuard, type StaffRequest } from '../identity/staff.guard';
 import { StaffBookingCreator } from '../inventory/staff-booking-creator';
 import { StaffBookingsController } from './staff-bookings.controller';
 import { StaffBookingsService } from './staff-bookings.service';
+import { StaffNotesService } from './staff-notes.service';
 import { StaffRefundsService } from './staff-refunds.service';
 
 const STAFF: StaffAccount = { id: 'staff-1', organizationId: 'org', fullName: 'Sam', email: 's@example.com', role: 'admin', organizationName: 'Org', canManageRefunds: true };
@@ -28,6 +29,7 @@ describe('StaffBookingsController', () => {
   };
   const creator = { quote: jest.fn(), create: jest.fn() };
   const refunds = { list: jest.fn(), retry: jest.fn(), markPaid: jest.fn() };
+  const notes = { list: jest.fn(), add: jest.fn(), remove: jest.fn() };
   let controller: StaffBookingsController;
 
   beforeEach(async (): Promise<void> => {
@@ -38,6 +40,7 @@ describe('StaffBookingsController', () => {
         { provide: StaffBookingsService, useValue: bookings },
         { provide: StaffRefundsService, useValue: refunds },
         { provide: StaffBookingCreator, useValue: creator },
+        { provide: StaffNotesService, useValue: notes },
       ],
     })
       // Only the wiring is under test here; the real guard is checked through its metadata below.
@@ -117,6 +120,20 @@ describe('StaffBookingsController', () => {
 
     expect(refunds.retry).toHaveBeenCalledWith(STAFF, 'r');
     expect(refunds.markPaid).toHaveBeenCalledWith(STAFF, 'r', 'Bank transfer');
+  });
+
+  it('lists, adds and hides staff notes through the service, as the signed-in person', async () => {
+    notes.list.mockResolvedValue([{ id: 'n1' }]);
+    notes.add.mockResolvedValue({ id: 'n2' });
+    notes.remove.mockResolvedValue(undefined);
+
+    expect(await controller.listNotes('b1', REQUEST)).toEqual({ status: 'ok', data: [{ id: 'n1' }] });
+    expect(await controller.addNote('b1', { body: 'Deposit 50 EUR' }, REQUEST)).toEqual({ status: 'ok', data: { id: 'n2' } });
+    expect(await controller.removeNote('b1', 'n2', REQUEST)).toEqual({ status: 'ok', data: { removed: true } });
+
+    expect(notes.list).toHaveBeenCalledWith(STAFF, 'b1');
+    expect(notes.add).toHaveBeenCalledWith(STAFF, 'b1', 'Deposit 50 EUR');
+    expect(notes.remove).toHaveBeenCalledWith(STAFF, 'b1', 'n2');
   });
 
   it('fails loudly if the guard somehow left no staff on the request', async () => {

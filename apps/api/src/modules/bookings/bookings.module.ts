@@ -23,6 +23,9 @@ import { RefundReconcilerService } from './refund-reconciler.service';
 import { RefundTimings } from './refund-timings';
 import { StaffBookingsController } from './staff-bookings.controller';
 import { StaffBookingsService } from './staff-bookings.service';
+import { StaffNoteLimiter } from './staff-note-limiter';
+import { StaffNotesRepository } from './staff-notes.repository';
+import { StaffNotesService } from './staff-notes.service';
 import { StaffRefundsRepository } from './staff-refunds.repository';
 import { StaffRefundsService } from './staff-refunds.service';
 
@@ -41,6 +44,9 @@ import { StaffRefundsService } from './staff-refunds.service';
     RebookService,
     RebookSettlementHandler,
     StaffBookingsService,
+    StaffNoteLimiter,
+    StaffNotesRepository,
+    StaffNotesService,
     StaffRefundsService,
     StaffRefundsRepository,
   ],

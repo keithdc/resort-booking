@@ -466,6 +466,10 @@ export interface StaffReservation {
   replacedByReference: string | null;
   /** When this booking replaced an earlier one after a date change, that earlier booking's reference. */
   rebookOfReference: string | null;
+  /** How many staff notes are on the booking (hidden ones not counted). The text is loaded on demand, never in lists. */
+  notesCount: number;
+  /** When the newest staff note was written, or null when there are none. */
+  lastNoteAt: string | null;
   /** Every refund recorded for this booking (cancellation refund, date-change difference). */
   refunds: StaffRefund[];
   /** Every date change involving this booking, oldest first. */
@@ -521,6 +525,24 @@ export interface StaffCreateBookingRequest extends StaffBookingQuoteRequest {
   /** Optional: international format when given. */
   bookerPhone: string;
   guestNote: string;
+}
+
+/** One internal staff note on a booking. Only staff ever see these: no guest route returns them. */
+export interface StaffBookingNote {
+  id: string;
+  /** The booking it belongs to. */
+  bookingId: string;
+  /** What was written (1 to 2000 characters). Never edited after saving. */
+  body: string;
+  /** Who wrote it, or null when that account was erased. */
+  authorName: string | null;
+  createdAt: string;
+  /** May the signed-in person hide it? An admin: any note. An employee: only their own. */
+  canDelete: boolean;
+}
+
+export interface CreateStaffNoteRequest {
+  body: string;
 }
 
 export interface CalendarDayOccupancy {

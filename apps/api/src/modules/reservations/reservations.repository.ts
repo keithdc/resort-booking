@@ -52,6 +52,8 @@ interface ReservationRow {
   payment_status: BookingPaymentStatus;
   paid_at: Date | null;
   created_by_name: string | null;
+  note_count: number;
+  last_note_at: Date | null;
   status: HoldStatus;
   total_cents: number | null;
   currency_code: string;
@@ -94,7 +96,9 @@ const RESERVATION_SELECT = `
       FROM inventory_block_requests ibr
       INNER JOIN property_request_options pro ON pro.id = ibr.request_option_id
       WHERE ibr.inventory_block_id = ib.id
-    ), ARRAY[]::text[]) AS request_names
+    ), ARRAY[]::text[]) AS request_names,
+    (SELECT count(*)::int FROM booking_staff_notes bn WHERE bn.inventory_block_id = ib.id AND bn.deleted_at IS NULL) AS note_count,
+    (SELECT max(bn.created_at) FROM booking_staff_notes bn WHERE bn.inventory_block_id = ib.id AND bn.deleted_at IS NULL) AS last_note_at
   FROM inventory_blocks ib
   INNER JOIN properties p ON p.id = ib.property_id
   INNER JOIN houses h ON h.id = ib.house_id
@@ -458,6 +462,8 @@ function mapReservation(
     paymentStatus: row.payment_status,
     paidAt: row.paid_at === null ? null : row.paid_at.toISOString(),
     createdByName: row.created_by_name,
+    notesCount: row.note_count ?? 0,
+    lastNoteAt: row.last_note_at === null || row.last_note_at === undefined ? null : row.last_note_at.toISOString(),
     status: row.status,
     totalCents: row.total_cents ?? computed,
     currencyCode: row.currency_code,

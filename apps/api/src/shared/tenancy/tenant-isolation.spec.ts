@@ -117,6 +117,10 @@ const ROLE_MATRIX: Record<string, StaffRole[]> = {
   'POST /staff/reservations': BOTH,
   'POST /staff/reservations/:id/change-dates/quote': BOTH,
   'POST /staff/reservations/:id/change-dates': BOTH,
+  // Internal staff notes: both roles read and add; hiding is checked in the service (admin any note, employee only their own).
+  'GET /staff/reservations/:id/notes': BOTH,
+  'POST /staff/reservations/:id/notes': BOTH,
+  'DELETE /staff/reservations/:id/notes/:noteId': BOTH,
   'GET /staff/refunds': BOTH,
   // The published extras of a property, for the New booking form (the full list with unpublished ones stays admin-only).
   'GET /staff/properties/:propertyId/booking-extras': BOTH,

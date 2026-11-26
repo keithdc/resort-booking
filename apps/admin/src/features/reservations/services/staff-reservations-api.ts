@@ -19,6 +19,7 @@ import type {
   StaffChangeQuoteRequest,
   StaffChangeResult,
   StaffCreateBookingRequest,
+  StaffBookingNote,
   StaffReport,
   StaffReservation,
 } from '@resort-booking/shared-types';
@@ -159,4 +160,28 @@ export function markStaffReservationPaid(reservationId: string): Promise<StaffRe
   return mutateStaffApiOk<RawStaffReservation>(`/staff/reservations/${reservationId}/mark-paid`, 'POST', {}).then(
     withReservationDefaults,
   );
+}
+
+/**
+ * The internal staff notes of a booking, newest first. Only staff ever see these.
+ */
+export function fetchStaffBookingNotes(reservationId: string): Promise<StaffBookingNote[]> {
+  return getStaffApiOk<StaffBookingNote[]>(`/staff/reservations/${encodeURIComponent(reservationId)}/notes`);
+}
+
+/**
+ * Adds an internal note to a booking.
+ */
+export function addStaffBookingNote(reservationId: string, body: string): Promise<StaffBookingNote> {
+  return mutateStaffApiOk<StaffBookingNote>(`/staff/reservations/${encodeURIComponent(reservationId)}/notes`, 'POST', { body });
+}
+
+/**
+ * Hides a note (an admin any note, an employee their own). The server keeps a record of it.
+ */
+export function removeStaffBookingNote(reservationId: string, noteId: string): Promise<void> {
+  return mutateStaffApiOk<{ removed: true }>(
+    `/staff/reservations/${encodeURIComponent(reservationId)}/notes/${encodeURIComponent(noteId)}`,
+    'DELETE',
+  ).then((): void => undefined);
 }

@@ -54,6 +54,8 @@ describe('ROLE_PROBES', () => {
       'DELETE FROM payment_webhook_events',
       'UPDATE reservation_extras SET unit_price_cents',
       'DELETE FROM reservation_extras',
+      'DELETE FROM booking_staff_notes',
+      'UPDATE booking_staff_notes SET body',
     ]) {
       expect(denied).toContain(needle);
     }

@@ -139,6 +139,8 @@ export const RESTRICTED_TABLES: readonly RestrictedTable[] = [
   { table: 'payment_webhook_events', updatableColumns: ['status', 'attempts', 'error', 'updated_at', 'processed_at'] },
   // Extras on a booking (migration 041): the price and quantity are fixed once saved; only the status can move.
   { table: 'reservation_extras', updatableColumns: ['status', 'updated_at'] },
+  // Staff notes on a booking (migration 043): append-only. A note is hidden (deleted_at), never edited or deleted.
+  { table: 'booking_staff_notes', updatableColumns: ['deleted_at', 'deleted_by_staff_id'] },
 ];
 
 /**

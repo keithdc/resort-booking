@@ -131,3 +131,23 @@ export function markBookingPaidAuditDetails(input: AuditDetailsInput): AuditMeta
     paymentMethod: text(booking?.paymentMethod),
   };
 }
+
+/** Staff added a note: which booking, how long it is. Never the text. */
+export function noteAddedAuditDetails(input: AuditDetailsInput): AuditMetadata {
+  const note = dataOf(input.result);
+  const body = field(note, 'body');
+  return {
+    ...actor(input),
+    bookingId: text(input.params.id),
+    noteLength: typeof body === 'string' ? body.length : null,
+  };
+}
+
+/** Staff hid a note: which booking and which note. Never the text. */
+export function noteRemovedAuditDetails(input: AuditDetailsInput): AuditMetadata {
+  return {
+    ...actor(input),
+    bookingId: text(input.params.id),
+    noteId: text(input.params.noteId),
+  };
+}

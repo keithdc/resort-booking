@@ -23,6 +23,7 @@ export interface GuestExport {
   extraRequests: Record<string, unknown>[];
   /** Extras chosen on the bookings (name, kind, quantity, price). */
   bookingExtras: Record<string, unknown>[];
+  staffNotes: Record<string, unknown>[];
   dateChanges: Record<string, unknown>[];
   discountRedemptions: Record<string, unknown>[];
   notes: string[];
@@ -34,6 +35,7 @@ export interface ExportCounts {
   refunds: number;
   extraRequests: number;
   bookingExtras: number;
+  staffNotes: number;
   dateChanges: number;
   discountRedemptions: number;
 }
@@ -51,7 +53,7 @@ const BOOKINGS_SQL = `
 `;
 
 /**
- * Collects the export for one email in seven read-only queries (bookings, then the six tables keyed by booking ids).
+ * Collects the export for one email in eight read-only queries (bookings, then the seven tables keyed by booking ids).
  */
 export async function collectGuestExport(db: PrivacyDb, email: string, now: Date = new Date()): Promise<GuestExport> {
   const normalised = normaliseEmail(email);
@@ -77,6 +79,11 @@ export async function collectGuestExport(db: PrivacyDb, email: string, now: Date
         `SELECT inventory_block_id, name, kind, quantity, unit_price_cents, line_cents, currency_code, status, created_at
          FROM reservation_extras WHERE inventory_block_id = ANY($1::uuid[]) ORDER BY inventory_block_id, created_at, name`,
       );
+      // What staff wrote about the person is personal data too. Hidden notes are included: they are still stored.
+      const staffNotes = await byIds(
+        `SELECT inventory_block_id, body, created_at, deleted_at
+         FROM booking_staff_notes WHERE inventory_block_id = ANY($1::uuid[]) ORDER BY inventory_block_id, created_at, id`,
+      );
       const dateChanges = await byIds(
         `SELECT id, old_booking_id, new_booking_id, old_check_in::text AS old_check_in, old_check_out::text AS old_check_out,
                 new_check_in::text AS new_check_in, new_check_out::text AS new_check_out, old_total_cents, new_total_cents,
@@ -96,6 +103,7 @@ export async function collectGuestExport(db: PrivacyDb, email: string, now: Date
         refunds,
         extraRequests,
         bookingExtras,
+        staffNotes,
         dateChanges,
         discountRedemptions,
         notes: [
@@ -117,6 +125,7 @@ export function countExport(data: GuestExport): ExportCounts {
     refunds: data.refunds.length,
     extraRequests: data.extraRequests.length,
     bookingExtras: data.bookingExtras.length,
+    staffNotes: data.staffNotes.length,
     dateChanges: data.dateChanges.length,
     discountRedemptions: data.discountRedemptions.length,
   };

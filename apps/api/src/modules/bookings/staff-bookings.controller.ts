@@ -4,7 +4,7 @@
  * @dependencies StaffBookingsService, StaffRefundsService, StaffGuard
  */
 
-import { Body, Controller, Get, HttpCode, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import type {
   ApiOkBody,
   RebookQuote,
@@ -13,6 +13,7 @@ import type {
   StaffChangeResult,
   StaffBookingQuote,
   StaffRefund,
+  StaffBookingNote,
   StaffReservation,
 } from '@resort-booking/shared-types';
 import type { StaffAccount } from '../../shared/roles/staff-role';
@@ -21,15 +22,19 @@ import { StaffGuard, type StaffRequest } from '../identity/staff.guard';
 import { ParseUuidLikePipe } from '../../shared/validation/parse-uuid-like.pipe';
 import { MarkRefundPaidDto, StaffCancelDto, StaffChangeDatesDto, StaffChangeQuoteDto } from './dto/staff-actions.dto';
 import { StaffBookingQuoteDto, StaffCreateBookingDto } from './dto/staff-create-booking.dto';
+import { CreateStaffNoteDto } from './dto/staff-note.dto';
 import { StaffRefundsQueryDto } from './dto/staff-refunds-query.dto';
 import {
   cancelAuditDetails,
   changeDatesAuditDetails,
   createBookingAuditDetails,
   markBookingPaidAuditDetails,
+  noteAddedAuditDetails,
+  noteRemovedAuditDetails,
   refundActionAuditDetails,
 } from './staff-audit-details';
 import { StaffBookingsService } from './staff-bookings.service';
+import { StaffNotesService } from './staff-notes.service';
 import { StaffRefundsService } from './staff-refunds.service';
 import { Audited } from '../../shared/audit/audited.decorator';
 import { RoleGuard } from '../../shared/roles/role.guard';
@@ -47,6 +52,7 @@ export class StaffBookingsController {
     private readonly bookings: StaffBookingsService,
     private readonly refunds: StaffRefundsService,
     private readonly creator: StaffBookingCreator,
+    private readonly notes: StaffNotesService,
   ) {}
 
   /** What a stay would cost for these dates, and whether they are free. Changes nothing. */
@@ -84,6 +90,42 @@ export class StaffBookingsController {
     @Req() request: StaffRequest,
   ): Promise<ApiOkBody<StaffReservation>> {
     return { status: 'ok', data: await this.bookings.markPaid(this.staff(request), id) };
+  }
+
+  /** The internal staff notes on a booking, newest first. Only staff ever see them. */
+  @Get('reservations/:id/notes')
+  @AllowRoles('admin', 'employee')
+  @TenantScoped({ resource: 'booking', from: 'param', key: 'id' })
+  public async listNotes(@Param('id', ParseUuidLikePipe) id: string, @Req() request: StaffRequest): Promise<ApiOkBody<StaffBookingNote[]>> {
+    return { status: 'ok', data: await this.notes.list(this.staff(request), id) };
+  }
+
+  /** Adds an internal note to a booking. Audited with who wrote it and the length, never the text. */
+  @Post('reservations/:id/notes')
+  @AllowRoles('admin', 'employee')
+  @Audited({ action: 'booking.note_added', targetType: 'booking', targetParam: 'id', details: noteAddedAuditDetails })
+  @TenantScoped({ resource: 'booking', from: 'param', key: 'id' })
+  public async addNote(
+    @Param('id', ParseUuidLikePipe) id: string,
+    @Body() body: CreateStaffNoteDto,
+    @Req() request: StaffRequest,
+  ): Promise<ApiOkBody<StaffBookingNote>> {
+    return { status: 'ok', data: await this.notes.add(this.staff(request), id, body.body) };
+  }
+
+  /** Hides a note: an admin any note, an employee only their own. The row stays in the database. */
+  @Delete('reservations/:id/notes/:noteId')
+  @AllowRoles('admin', 'employee')
+  @Audited({ action: 'booking.note_removed', targetType: 'booking', targetParam: 'id', details: noteRemovedAuditDetails })
+  @HttpCode(200)
+  @TenantScoped({ resource: 'booking', from: 'param', key: 'id' })
+  public async removeNote(
+    @Param('id', ParseUuidLikePipe) id: string,
+    @Param('noteId', ParseUuidLikePipe) noteId: string,
+    @Req() request: StaffRequest,
+  ): Promise<ApiOkBody<{ removed: true }>> {
+    await this.notes.remove(this.staff(request), id, noteId);
+    return { status: 'ok', data: { removed: true } };
   }
 
   /** What cancelling would refund under the booking's saved policy. Changes nothing. */

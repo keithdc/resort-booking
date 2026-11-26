@@ -13,6 +13,8 @@ type NewerFields =
   | 'paymentStatus'
   | 'paidAt'
   | 'createdByName'
+  | 'notesCount'
+  | 'lastNoteAt'
   | 'termsAcceptedAt'
   | 'cancellation'
   | 'replacedByReference'
@@ -36,6 +38,8 @@ export function withReservationDefaults(raw: RawStaffReservation): StaffReservat
     paymentStatus: raw.paymentStatus ?? 'paid',
     paidAt: raw.paidAt ?? null,
     createdByName: raw.createdByName ?? null,
+    notesCount: raw.notesCount ?? 0,
+    lastNoteAt: raw.lastNoteAt ?? null,
     termsAcceptedAt: raw.termsAcceptedAt ?? null,
     cancellation: raw.cancellation ?? null,
     replacedByReference: raw.replacedByReference ?? null,

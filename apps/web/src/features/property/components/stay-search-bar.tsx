@@ -68,7 +68,9 @@ export function StaySearchBar({
           component="form"
           aria-labelledby={contextual ? headingId : undefined}
           direction={{ xs: 'column', md: 'row' }}
-          spacing={1.5}
+          // A real gap, not Stack's `spacing`: spacing puts margins on direct children, and the Nights and Guests
+          // wrapper is display: contents from md, so its fields would sit edge to edge.
+          sx={{ gap: 1.5 }}
           alignItems={{ xs: 'stretch', md: 'center' }}
           onSubmit={(event): void => {
             event.preventDefault();

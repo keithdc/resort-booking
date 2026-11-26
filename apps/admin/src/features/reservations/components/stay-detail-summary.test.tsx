@@ -15,6 +15,9 @@ vi.mock('../services/staff-reservations-api', () => ({
   cancelStaffReservation: vi.fn(),
   quoteStaffChangeDates: vi.fn(),
   changeStaffReservationDates: vi.fn(),
+  fetchStaffBookingNotes: vi.fn(() => Promise.resolve([])),
+  addStaffBookingNote: vi.fn(),
+  removeStaffBookingNote: vi.fn(),
 }));
 
 const FUTURE = { checkIn: '2999-07-10', checkOut: '2999-07-12' };

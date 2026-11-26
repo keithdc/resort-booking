@@ -7,7 +7,8 @@
  * paid amounts, payment method, price and policy snapshots, the cancellation reason CODE, timestamps, and every payment,
  * refund (amount, status, kind) and discount row. What goes: name (placeholder), email and phone (NULL, so nobody can
  * look the booking up by an address, not even a placeholder one), the note, the cancellation note, the abuse-limit IP hash,
- * and the free-text notes staff typed on refunds and date changes. `anonymised_at` marks the row as done.
+ * the free-text notes staff typed on refunds and date changes, and the staff notes on the booking (their text becomes `[removed]`; who wrote
+ * them and when stays). `anonymised_at` marks the row as done.
  */
 
 /** Shown in the admin instead of the guest's name. */
@@ -29,8 +30,8 @@ export const LIVE_HOLD_SQL = `(ib.kind = 'hold' AND ib.status = 'active' AND ib.
 /**
  * One batch: anonymise the bookings chosen by `pickedSql` (a SELECT of `ib.id` over `inventory_blocks ib`), in a single
  * statement. Parameters `$1` = ANONYMISED_NAME and `$2` = REMOVED_TEXT are always bound; `pickedSql` brings its own
- * from `$3` on. Returns one row: `n` bookings, `refund_notes` and `change_notes` scrubbed. Needs the maintenance switch
- * (refunds and booking_changes are guarded tables).
+ * from `$3` on. Returns one row: `n` bookings, `refund_notes`, `change_notes` and `staff_notes` scrubbed. Needs the maintenance switch
+ * (refunds, booking_changes and booking_staff_notes are guarded tables).
  */
 export function anonymiseBookingsSql(pickedSql: string): string {
   return `
@@ -49,6 +50,11 @@ export function anonymiseBookingsSql(pickedSql: string): string {
       WHERE r.inventory_block_id = done.id AND r.resolution_note IS NOT NULL AND r.resolution_note <> $2::text
       RETURNING r.id
     ),
+    staff_notes AS (
+      UPDATE booking_staff_notes n SET body = $2::text
+      WHERE n.inventory_block_id IN (SELECT id FROM done) AND n.body <> $2::text
+      RETURNING n.id
+    ),
     change_notes AS (
       UPDATE booking_changes bc SET note = $2::text
       WHERE (bc.old_booking_id IN (SELECT id FROM done) OR bc.new_booking_id IN (SELECT id FROM done))
@@ -57,6 +63,7 @@ export function anonymiseBookingsSql(pickedSql: string): string {
     )
     SELECT (SELECT count(*) FROM done)::int AS n,
            (SELECT count(*) FROM refund_notes)::int AS refund_notes,
-           (SELECT count(*) FROM change_notes)::int AS change_notes
+           (SELECT count(*) FROM change_notes)::int AS change_notes,
+           (SELECT count(*) FROM staff_notes)::int AS staff_notes
   `;
 }

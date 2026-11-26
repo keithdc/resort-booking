@@ -7,6 +7,7 @@
 import type {
   ArrivalStatus,
   RebookQuote,
+  StaffBookingNote,
   StaffCancelPreview,
   StaffCancelRequest,
   StaffCancelResult,
@@ -29,6 +30,9 @@ const api = vi.hoisted(() => ({
   quoteStaffChangeDates: vi.fn<(id: string, body: StaffChangeQuoteRequest) => Promise<RebookQuote>>(),
   changeStaffReservationDates: vi.fn<(id: string, body: StaffChangeDatesRequest) => Promise<StaffChangeResult>>(),
   markStaffReservationPaid: vi.fn<(id: string) => Promise<StaffReservation>>(),
+  fetchStaffBookingNotes: vi.fn<(id: string) => Promise<StaffBookingNote[]>>(),
+  addStaffBookingNote: vi.fn<(id: string, body: string) => Promise<StaffBookingNote>>(),
+  removeStaffBookingNote: vi.fn<(id: string, noteId: string) => Promise<void>>(),
 }));
 
 const role = vi.hoisted(() => ({ canManageRefunds: true }));
@@ -72,6 +76,7 @@ describe('StayDetailDialog', () => {
     role.canManageRefunds = true;
     Object.values(api).forEach((mock) => mock.mockReset());
     api.fetchStaffCancelPreview.mockResolvedValue(PREVIEW);
+    api.fetchStaffBookingNotes.mockResolvedValue([]);
   });
 
   afterEach(cleanup);

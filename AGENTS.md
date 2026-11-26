@@ -18,6 +18,7 @@ You are working on a **direct-booking** monorepo (Airbnb replacement), not a CRM
 12. `docs/14-payments-operations.md` — refund and payment runbook
 13. `docs/15-data-retention-and-backups.md` — personal-data map, retention job, erasure and export, backups, restore drill
 14. `docs/16-manual-test-guide.md` — step-by-step manual checks for the hardening work
+15. `docs/17-pending-work.md` — what is not built yet and which owner decisions are open
 
 ## Non-negotiables
 
