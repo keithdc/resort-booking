@@ -38,12 +38,12 @@ export function PromoCodeField({
   const hasApplied = appliedCode !== '';
   const unchanged = value.trim() === appliedCode;
   return (
-    <Stack direction="row" spacing={1} alignItems="flex-start">
+    <Stack direction="row" useFlexGap flexWrap="wrap" spacing={1} alignItems="flex-start">
       <TextField
         label="Promo code (optional)"
         value={value}
         disabled={disabled}
-        fullWidth
+        sx={{ flex: '1 1 180px', minWidth: 0 }}
         onChange={(event): void => onChange(event.target.value)}
         onKeyDown={(event): void => {
           if (event.key === 'Enter') {
@@ -55,7 +55,9 @@ export function PromoCodeField({
         }}
         error={result !== null && !result.applied}
         helperText={result !== null && hasApplied ? result.message : undefined}
-        slotProps={{ htmlInput: { maxLength: 40, autoCapitalize: 'characters' } }}
+        slotProps={{
+          htmlInput: { maxLength: 40, autoCapitalize: 'characters', autoComplete: 'off', autoCorrect: 'off', spellCheck: false, enterKeyHint: 'done' },
+        }}
       />
       {hasApplied ? (
         <Button sx={{ height: 56, flexShrink: 0 }} onClick={onRemove} disabled={disabled}>

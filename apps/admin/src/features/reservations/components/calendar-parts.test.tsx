@@ -8,6 +8,7 @@ import type { CalendarDayOccupancy, PropertySummary } from '@resort-booking/shar
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { staffReservation } from '@/test/fixtures';
+import { CalendarCompactCell } from './calendar-compact-cell';
 import { CalendarDayCell } from './calendar-day-cell';
 import { CalendarDayPanel } from './calendar-day-panel';
 import { CalendarGrid } from './calendar-grid';
@@ -240,5 +241,40 @@ describe('CalendarDayPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open booking of Ada Lovelace' }));
 
     expect(onOpen).toHaveBeenCalledWith('a');
+  });
+});
+
+describe('CalendarCompactCell and the compact grid', () => {
+  afterEach(cleanup);
+
+  it('shows icon + count per status, keeps the full description for screen readers, and selects on tap', () => {
+    const onSelect = vi.fn();
+    const { container } = render(
+      <CalendarCompactCell date="2026-11-25" day={BUSY} selected={false} today={false} weekend={false} onSelect={onSelect} />,
+    );
+
+    const button = screen.getByRole('button', { name: '25 November 2026, 2 booked, 1 rebooked, 1 on hold, 1 cancelled' });
+    expect(container.querySelectorAll('[data-lane]')).toHaveLength(4);
+    expect(button.textContent).toBe('25' + '2' + '1' + '1' + '1');
+    fireEvent.click(button);
+    expect(onSelect).toHaveBeenCalledWith('2026-11-25');
+  });
+
+  it('marks today and the selected day', () => {
+    render(<CalendarCompactCell date="2026-11-26" day={undefined} selected today weekend={false} onSelect={vi.fn()} />);
+
+    const button = screen.getByRole('button', { name: '26 November 2026, open' });
+    expect(button.getAttribute('aria-current')).toBe('date');
+    expect(button.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('renders every day of the month with compact cells when asked', () => {
+    const occupancy = new Map<string, CalendarDayOccupancy>([[BUSY.date, BUSY]]);
+    const { container } = render(
+      <CalendarGrid year={2026} month={11} occupancy={occupancy} selectedDate="2026-11-25" todayIso="2026-11-26" onSelect={vi.fn()} compact />,
+    );
+
+    expect(screen.getAllByRole('button')).toHaveLength(30);
+    expect(container.querySelectorAll('[data-lane]')).toHaveLength(4);
   });
 });

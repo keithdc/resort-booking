@@ -20,6 +20,9 @@ import { parsePropertyStaySearch, type PropertyStaySearch, type RawSearchParams 
 import { PropertyStayList } from './property-stay-list';
 import { StaySearchBar } from './stay-search-bar';
 
+// Contact links are 44px tall on a phone and wrap long emails instead of overflowing.
+const LINK_ROW_SX = { display: 'inline-flex', alignItems: 'center', minHeight: { xs: 44, md: 'auto' }, overflowWrap: 'anywhere' } as const;
+
 interface PropertyDetailPageProps {
   slug: string;
   /** The page's query string: checkIn, checkOut, nights, guestCount. */
@@ -108,9 +111,9 @@ export async function PropertyDetailPage({
         <Typography sx={{ mb: 1 }}>
           {formatAddress(property.addressLine, property.postalCode, property.city, property.countryCode)}
         </Typography>
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mb: 2 }}>
-          <MuiLink href={`tel:${property.phone}`}>{property.phone}</MuiLink>
-          <MuiLink href={`mailto:${property.email}`}>{property.email}</MuiLink>
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={{ xs: 0, sm: 2 }} sx={{ mb: 2 }}>
+          <MuiLink href={`tel:${property.phone}`} sx={LINK_ROW_SX}>{property.phone}</MuiLink>
+          <MuiLink href={`mailto:${property.email}`} sx={LINK_ROW_SX}>{property.email}</MuiLink>
         </Stack>
         <PropertyMap latitude={property.latitude} longitude={property.longitude} label={property.name} />
       </Container>

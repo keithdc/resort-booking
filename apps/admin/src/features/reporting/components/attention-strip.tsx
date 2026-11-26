@@ -21,6 +21,9 @@ import { MetricInfo } from './metric-info';
 import { useMoneyHidden } from './money-visibility';
 import { ReportSection } from './report-section';
 
+/** Phone: the whole line is at least 44px tall to tap. */
+const LINK_SX = { fontWeight: 600, textAlign: 'left', display: 'inline-flex', alignItems: 'center', minHeight: { xs: 44, md: 'auto' } } as const;
+
 interface AttentionStripProps {
   attention: ReportAttention;
   currencyCode: string;
@@ -55,7 +58,7 @@ export function AttentionStrip({ attention, currencyCode, onOpenTab }: Attention
                 <IconChip icon={ITEM_LOOK[item.key].icon} tone={ITEM_LOOK[item.key].tone} size={36} />
                 <Box sx={{ minWidth: 0 }}>
               {item.href !== null ? (
-                <MuiLink component={NextLink} href={item.href} underline="hover" sx={{ fontWeight: 600 }}>
+                <MuiLink component={NextLink} href={item.href} underline="hover" sx={LINK_SX}>
                   {item.text}
                 </MuiLink>
               ) : (
@@ -63,7 +66,7 @@ export function AttentionStrip({ attention, currencyCode, onOpenTab }: Attention
                   component="button"
                   type="button"
                   underline="hover"
-                  sx={{ fontWeight: 600, textAlign: 'left' }}
+                  sx={LINK_SX}
                   onClick={(): void => {
                     if (item.tab !== null) {
                       onOpenTab(item.tab);

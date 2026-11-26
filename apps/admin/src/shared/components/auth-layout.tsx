@@ -6,6 +6,7 @@
 
 import { Box, Paper, Stack, Typography } from '@mui/material';
 import type { ReactNode } from 'react';
+import { AuthBackdrop } from './auth-backdrop';
 
 interface AuthLayoutProps {
   icon: ReactNode;
@@ -19,7 +20,7 @@ interface AuthLayoutProps {
  */
 export function AuthLayout({ icon, title, description, children }: AuthLayoutProps): React.JSX.Element {
   return (
-    <Box component="main" sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', p: 2, bgcolor: 'primary.dark' }}>
+    <AuthBackdrop>
       <Paper elevation={6} sx={{ width: '100%', maxWidth: 480, borderRadius: 2, p: { xs: 3, sm: 4 } }}>
         <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 3 }}>
           <Box
@@ -61,6 +62,6 @@ export function AuthLayout({ icon, title, description, children }: AuthLayoutPro
         )}
         {children}
       </Paper>
-    </Box>
+    </AuthBackdrop>
   );
 }

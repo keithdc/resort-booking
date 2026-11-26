@@ -108,7 +108,9 @@ export function SearchResultsMapInner({ pins, activeHouseId, onHoverHouse }: Sea
     chipsByHouse.current = chips;
 
     if (pins.length > 1) {
-      map.fitBounds(bounds, { padding: 90, maxZoom: 13, duration: 0 });
+      // Chips are wide and sit above their point: on a phone leave room at the sides and top so none is cut off.
+      const padding = touchSized() ? { top: 150, bottom: 60, left: 130, right: 130 } : 90;
+      map.fitBounds(bounds, { padding, maxZoom: 13, duration: 0 });
     }
     const resize = (): void => {
       map.resize();
@@ -157,7 +159,7 @@ function stayChip(
   Object.assign(chip.style, chipStyle(palette));
   const name = document.createElement('span');
   name.textContent = stay.name;
-  Object.assign(name.style, { maxWidth: '130px', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: '500' });
+  Object.assign(name.style, { maxWidth: touchSized() ? '150px' : '130px', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: '500' });
   const price = document.createElement('span');
   price.textContent = stay.priceLabel;
   chip.append(name, price);
@@ -172,13 +174,18 @@ function moreChip(count: number, palette: Palette): HTMLButtonElement {
   const button = document.createElement('button');
   button.type = 'button';
   button.textContent = `+${String(count)} more`;
-  Object.assign(button.style, chipStyle(palette), { justifyContent: 'center', font: 'inherit', fontWeight: '600', fontSize: '13px' });
+  Object.assign(button.style, chipStyle(palette), { justifyContent: 'center', font: 'inherit', fontWeight: '600', fontSize: touchSized() ? '14px' : '13px' });
   return button;
 }
 
 /** People who ask for less motion get no hover animation (matchMedia is missing in some test and old browsers). */
 function reducedMotion(): boolean {
   return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+/** Phones and small tablets: chips and list rows grow to a 44px touch target. */
+function touchSized(): boolean {
+  return typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 899.95px)').matches;
 }
 
 /** An Airbnb-style pill: white, hairline border, soft shadow, bold price. The active one turns dark. */
@@ -191,9 +198,11 @@ function chipStyle(palette: Palette): Partial<CSSStyleDeclaration> {
     color: palette.ink,
     border: `1px solid ${palette.border}`,
     borderRadius: '999px',
-    padding: '6px 12px',
+    padding: touchSized() ? '12px 16px' : '6px 12px',
+    minHeight: touchSized() ? '44px' : '',
+    boxSizing: 'border-box',
     fontWeight: '700',
-    fontSize: '13px',
+    fontSize: touchSized() ? '14px' : '13px',
     lineHeight: '1.2',
     textDecoration: 'none',
     cursor: 'pointer',
@@ -230,7 +239,7 @@ function popupContent(pin: MapPinView): HTMLElement {
     const link = document.createElement('a');
     link.href = stay.href;
     link.style.display = 'block';
-    link.style.padding = '4px 0';
+    link.style.padding = touchSized() ? '12px 0' : '4px 0';
     link.style.fontWeight = '600';
     link.textContent = `${stay.name}: ${stay.priceLabel}`;
     wrapper.appendChild(link);

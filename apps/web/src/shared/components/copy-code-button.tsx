@@ -66,7 +66,8 @@ export function CopyCodeButton({ code }: CopyCodeButtonProps): React.JSX.Element
             event.stopPropagation();
             void copy();
           }}
-          sx={{ p: 0.5 }}
+          // Phone: 44px hit area, but negative margins keep the chip as short as before.
+          sx={{ p: 0.5, my: { xs: '-9px', md: 0 } }}
         >
           {status === 'copied' ? <CheckIcon fontSize="inherit" /> : <ContentCopyIcon fontSize="inherit" />}
         </IconButton>

@@ -9,7 +9,8 @@
 import type { CalendarDayOccupancy, PropertySummary, StaffReservation } from '@resort-booking/shared-types';
 import CalendarMonthOutlinedIcon from '@mui/icons-material/CalendarMonthOutlined';
 import { Alert, Box, Skeleton } from '@mui/material';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCompactLayout } from '@/shared/hooks/use-compact-layout';
 import { PageHeader } from '@/shared/components/page-header';
 import { ApiRequestError } from '@/shared/services/api-client';
 import { currentMonthBounds, localTodayIso, monthBounds, type MonthBounds } from '@/shared/utils/month-bounds';
@@ -40,6 +41,8 @@ export function OccupancyCalendar({ properties }: OccupancyCalendarProps): React
   const [dayLoading, setDayLoading] = useState(false);
   const [openStayId, setOpenStayId] = useState<string | null>(null);
   const todayIso = localTodayIso();
+  const compact = useCompactLayout();
+  const panelRef = useRef<HTMLDivElement>(null);
 
   const occupancy = useMemo((): Map<string, CalendarDayOccupancy> => {
     const map = new Map<string, CalendarDayOccupancy>();
@@ -85,6 +88,10 @@ export function OccupancyCalendar({ properties }: OccupancyCalendarProps): React
   const openDay = (date: string): void => {
     setSelectedDate(date);
     setOpenStayId(null);
+    if (compact) {
+      // The panel sits below a tall grid on a phone: bring it into view after a tap.
+      panelRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+    }
   };
 
   const goToMonth = (next: MonthBounds): void => {
@@ -110,7 +117,7 @@ export function OccupancyCalendar({ properties }: OccupancyCalendarProps): React
       <PageHeader
         icon={<CalendarMonthOutlinedIcon />}
         title="Who is staying"
-        description="Click a day to see who is in-house. Open a booking for the full details, check-in and actions."
+        description="Select a day to see who is in-house. Open a booking for the full details, check-in and actions."
       />
       <CalendarToolbar
         label={monthLabel(month.year, month.month)}
@@ -140,9 +147,12 @@ export function OccupancyCalendar({ properties }: OccupancyCalendarProps): React
           selectedDate={selectedDate}
           todayIso={todayIso}
           onSelect={openDay}
+          compact={compact}
         />
       )}
-      <CalendarDayPanel date={selectedDate} guests={dayGuests} loading={dayLoading} openStayId={openStayId} onOpen={setOpenStayId} />
+      <Box ref={panelRef} sx={{ scrollMarginTop: 'calc(72px + env(safe-area-inset-top))' }}>
+        <CalendarDayPanel date={selectedDate} guests={dayGuests} loading={dayLoading} openStayId={openStayId} onOpen={setOpenStayId} />
+      </Box>
       <StayDetailDialog
         stay={openStay}
         onClose={(): void => {

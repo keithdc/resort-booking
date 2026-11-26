@@ -19,6 +19,7 @@ import {
   Snackbar,
   Stack,
   Table,
+  TableContainer,
   TableBody,
   TableCell,
   TableHead,
@@ -30,6 +31,7 @@ import { useState } from 'react';
 import { formatCents } from '@/shared/utils/money';
 import { useHouseRatePeriods } from '../hooks/use-house-rate-periods';
 import { BulkRateWarningDialog } from './bulk-rate-warning-dialog';
+import { stickyFirstColumn } from '@/shared/utils/sticky-first-column';
 
 interface HouseRatePeriodsDialogProps {
   open: boolean;
@@ -72,7 +74,8 @@ export function HouseRatePeriodsDialog({
           {state.periods.length === 0 && !state.loading ? (
             <Typography>No seasonal rates yet. Every night uses the standard rate.</Typography>
           ) : (
-            <Table size="small" aria-label="Seasonal rates">
+            <TableContainer sx={stickyFirstColumn}>
+<Table size="small" aria-label="Seasonal rates">
               <TableHead>
                 <TableRow>
                   <TableCell>Name</TableCell>
@@ -101,6 +104,7 @@ export function HouseRatePeriodsDialog({
                 ))}
               </TableBody>
             </Table>
+</TableContainer>
           )}
           <Typography variant="h6" component="h3">
             {editing ? 'Edit seasonal rate' : 'Add a seasonal rate'}

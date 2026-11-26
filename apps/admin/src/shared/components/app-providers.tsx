@@ -7,11 +7,13 @@
 'use client';
 
 import { CssBaseline, ThemeProvider } from '@mui/material';
+import { createTheme } from '@mui/material/styles';
 import { AppRouterCacheProvider } from '@mui/material-nextjs/v15-appRouter';
 import { createAppTheme } from '@resort-booking/ui';
 import type { ReactNode } from 'react';
+import { mobileThemeOptions } from '@/shared/utils/mobile-theme';
 
-const theme = createAppTheme('admin');
+const theme = createTheme(createAppTheme('admin'), mobileThemeOptions());
 
 interface AppProvidersProps {
   children: ReactNode;

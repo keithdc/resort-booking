@@ -20,6 +20,8 @@ export interface EmailFieldProps {
   /** Shown under the field when there is no validation error. */
   helperText?: string;
   autoComplete?: string;
+  /** Keep the label floated above the text. Use on sign-in fields: a browser can fill them in without telling the page, and an unfloated label then sits on top of the saved value. */
+  shrinkLabel?: boolean;
 }
 
 /**
@@ -35,6 +37,7 @@ export function EmailField({
   fullWidth = true,
   helperText,
   autoComplete = 'email',
+  shrinkLabel = false,
 }: EmailFieldProps): React.JSX.Element {
   const [touched, setTouched] = useState(false);
   const message = touched ? emailError(value, required) : null;
@@ -50,7 +53,7 @@ export function EmailField({
       helperText={message ?? helperText}
       onChange={(event): void => onChange(event.target.value)}
       onBlur={(): void => setTouched(true)}
-      slotProps={{ htmlInput: { autoComplete, inputMode: 'email' } }}
+      slotProps={{ htmlInput: { autoComplete, inputMode: 'email' }, ...(shrinkLabel ? { inputLabel: { shrink: true } } : {}) }}
     />
   );
 }

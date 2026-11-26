@@ -41,15 +41,15 @@ export function EmptyState({ icon, title, hint, action }: EmptyStateProps): Reac
       <Box
         aria-hidden
         sx={{
-          width: 48,
-          height: 48,
+          width: { xs: 40, sm: 48 },
+          height: { xs: 40, sm: 48 },
           display: 'inline-flex',
           alignItems: 'center',
           justifyContent: 'center',
           borderRadius: '50%',
           bgcolor: (theme): string => alpha(theme.palette.primary.main, 0.1),
           color: 'primary.main',
-          '& svg': { fontSize: 24 },
+          '& svg': { fontSize: { xs: 20, sm: 24 } },
         }}
       >
         {icon}

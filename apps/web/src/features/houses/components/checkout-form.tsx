@@ -33,18 +33,21 @@ import {
 } from '@mui/material';
 import { BorderBeam, ShimmerButton } from '@resort-booking/ui';
 import { EmailField, isValidEmail, isValidPhone, PhoneField } from '@resort-booking/ui/contact';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StayDateField } from '@/shared/components/stay-date-field';
+import { useBelowDesktop } from '@/shared/hooks/use-compact-screen';
 import { useHouseAvailability } from '@/shared/hooks/use-availability';
 import { ApiRequestError } from '@/shared/services/api-client';
 import { maxNightsFor } from '@/shared/utils/disabled-dates';
 import { formatCents } from '@/shared/utils/money';
 import { nightsHint } from '@/shared/utils/offers';
+import { revealElement, scrollToElement } from '@/shared/utils/responsive';
 import { addDaysIsoDate, clampStayNights, todayIsoDate } from '@/shared/utils/today-iso';
 import { withDefaultStay, type StayQuery } from '@/shared/utils/stay-query';
 import { usePublishStayQuote } from '../context/stay-quote-context';
 import { createHold, fetchQuote } from '../services/inventory-api';
 import { isWarningReached, remainingSecondsUntil, secondsBetween } from '../utils/hold-countdown';
+import { checkoutBlockers, describeCheckoutBlockers } from '../utils/checkout-blockers';
 import { BookingConfirmed } from './booking-confirmed';
 import { HoldCountdown } from './hold-countdown';
 import { MockPaymentPanel } from './mock-payment-panel';
@@ -146,6 +149,19 @@ export function CheckoutForm({
   // Once the dates are held the form gives way to the payment step: one way forward.
   const paying = hold !== null && !expired;
 
+  // --- Phone behaviour: bring the next thing on screen ---
+  const belowDesktop = useBelowDesktop();
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const errorRef = useRef<HTMLDivElement | null>(null);
+  const confirmed = confirmation !== null;
+  // The payment step and the confirmation replace a long form; without this the guest is left
+  // looking at the middle of the page. The desktop panel is sticky and already in view.
+  useEffect((): void => {
+    if ((paying || confirmed) && belowDesktop) {
+      scrollToElement(panelRef.current);
+    }
+  }, [paying, confirmed, belowDesktop]);
+
   const loadQuote = useCallback(async (): Promise<void> => {
     if (fields.checkIn === '' || checkOut === '' || !Number.isInteger(guestCount) || guestCount < 1) {
       setQuote(null);
@@ -165,6 +181,14 @@ export function CheckoutForm({
     void loadQuote();
   }, [loadQuote]);
 
+  // A hold error, or "dates just taken", can appear far from the Pay button on a phone: show it.
+  const showsProblem = holdError !== null || datesTaken || quoteError !== null;
+  useEffect((): void => {
+    if (showsProblem) {
+      revealElement(errorRef.current);
+    }
+  }, [showsProblem, holdError, datesTaken, quoteError]);
+
   // The page header shows the nightly rate for these dates, so it needs the same quote.
   usePublishStayQuote(quote);
 
@@ -180,6 +204,18 @@ export function CheckoutForm({
       !isValidPhone(fields.bookerPhone)
     );
   }, [fields.bookerEmail, fields.bookerName, fields.bookerPhone, overMaxNights, pending, quote, termsAccepted]);
+
+  const blockers = describeCheckoutBlockers(
+    checkoutBlockers({
+      pending,
+      datesFree: quote !== null && quote.available,
+      overMaxNights,
+      nameFilled: fields.bookerName.trim() !== '',
+      emailValid: isValidEmail(fields.bookerEmail),
+      phoneValid: isValidPhone(fields.bookerPhone),
+      termsAccepted,
+    }),
+  );
 
   const onHold = async (): Promise<void> => {
     setPending(true);
@@ -217,14 +253,17 @@ export function CheckoutForm({
 
   if (confirmation !== null) {
     return (
-      <BorderBeam>
-        <BookingConfirmed confirmation={confirmation} houseName={house.name} />
-      </BorderBeam>
+      <Box ref={panelRef} sx={{ scrollMarginTop: 80 }}>
+        <BorderBeam>
+          <BookingConfirmed confirmation={confirmation} houseName={house.name} />
+        </BorderBeam>
+      </Box>
     );
   }
 
   if (paying && hold !== null) {
     return (
+      <Box ref={panelRef} sx={{ scrollMarginTop: 80 }}>
       <BorderBeam>
         <Box sx={{ p: 2 }}>
           <Stack spacing={2}>
@@ -258,6 +297,7 @@ export function CheckoutForm({
           </Stack>
         </Box>
       </BorderBeam>
+      </Box>
     );
   }
 
@@ -269,6 +309,7 @@ export function CheckoutForm({
         : `Pay ${formatCents(quote.totalCents, quote.currencyCode)}`;
 
   return (
+    <Box ref={panelRef} sx={{ scrollMarginTop: 80 }}>
     <BorderBeam>
     <Box sx={{ p: 2 }}>
       <Stack spacing={2} component="form" onSubmit={(event): void => event.preventDefault()}>
@@ -310,7 +351,11 @@ export function CheckoutForm({
           }
           slotProps={{
             inputLabel: { shrink: true },
-            htmlInput: { min: 1, max: maxNights !== null && maxNights >= 1 ? Math.min(30, maxNights) : 30 },
+            htmlInput: {
+              min: 1,
+              max: maxNights !== null && maxNights >= 1 ? Math.min(30, maxNights) : 30,
+              inputMode: 'numeric',
+            },
           }}
           required
         />
@@ -325,7 +370,7 @@ export function CheckoutForm({
           sx={{ '& .MuiInputBase-root': { height: 56 } }}
           slotProps={{
             inputLabel: { shrink: true },
-            htmlInput: { min: 1, max: house.capacity },
+            htmlInput: { min: 1, max: house.capacity, inputMode: 'numeric' },
           }}
           required
         />
@@ -341,6 +386,7 @@ export function CheckoutForm({
         </Typography>
         <TextField
           label="Name"
+          autoComplete="name"
           value={fields.bookerName}
           onChange={(event): void => {
             setFields((current): CheckoutFields => ({ ...current, bookerName: event.target.value }));
@@ -457,12 +503,16 @@ export function CheckoutForm({
             />
           </RadioGroup>
         </FormControl>
-        {quoteError !== null ? <Alert severity="error">{quoteError}</Alert> : null}
-        {holdError !== null ? <Alert severity="error">{holdError}</Alert> : null}
-        {datesTaken ? (
-          <Alert severity="warning" role="alert">
-            Sorry, those dates were just taken. Pick other dates.
-          </Alert>
+        {showsProblem ? (
+          <Stack ref={errorRef} spacing={2} sx={{ scrollMarginTop: 96 }}>
+            {quoteError !== null ? <Alert severity="error">{quoteError}</Alert> : null}
+            {holdError !== null ? <Alert severity="error">{holdError}</Alert> : null}
+            {datesTaken ? (
+              <Alert severity="warning" role="alert">
+                Sorry, those dates were just taken. Pick other dates.
+              </Alert>
+            ) : null}
+          </Stack>
         ) : null}
         <PromoCodeField
           value={promoInput}
@@ -486,8 +536,10 @@ export function CheckoutForm({
           </>
         )}
         <FormControlLabel
+          sx={{ alignItems: 'flex-start', mr: 0 }}
           control={
             <Checkbox
+              sx={{ pt: { xs: 1.25, md: 1 } }}
               checked={termsAccepted}
               onChange={(event): void => setTermsAccepted(event.target.checked)}
             />
@@ -500,9 +552,38 @@ export function CheckoutForm({
             </Typography>
           }
         />
-        <ShimmerButton disabled={checkoutDisabled} onClick={(): void => void onHold()}>
-          {pending ? 'Holding your dates…' : payLabel}
-        </ShimmerButton>
+        {/* Phones: the Pay button stays pinned to the bottom of the screen while the form scrolls past. */}
+        <Box
+          sx={{
+            position: { xs: 'sticky', md: 'static' },
+            bottom: 0,
+            zIndex: 2,
+            // Stack resets its children's margins, so the bleed to the card edges needs !important.
+            marginLeft: { xs: '-16px !important', md: 0 },
+            marginRight: { xs: '-16px !important', md: 0 },
+            px: { xs: 2, md: 0 },
+            pt: { xs: 1.5, md: 0 },
+            pb: { xs: 'calc(12px + env(safe-area-inset-bottom))', md: 0 },
+            bgcolor: { xs: 'background.paper', md: 'transparent' },
+            borderTop: { xs: '1px solid', md: 'none' },
+            borderTopColor: { xs: 'divider', md: 'divider' },
+          }}
+        >
+          <ShimmerButton
+            fullWidth
+            size="large"
+            sx={{ minHeight: 52 }}
+            disabled={checkoutDisabled}
+            onClick={(): void => void onHold()}
+          >
+            {pending ? 'Holding your dates…' : payLabel}
+          </ShimmerButton>
+        </Box>
+        {blockers !== '' && checkoutDisabled ? (
+          <Typography variant="body2" color="text.secondary" role="status" aria-live="polite">
+            {blockers}
+          </Typography>
+        ) : null}
         {hold !== null ? (
           <HoldCountdown
             totalSeconds={hold.holdTtlSeconds}
@@ -523,5 +604,6 @@ export function CheckoutForm({
       </Stack>
     </Box>
     </BorderBeam>
+    </Box>
   );
 }

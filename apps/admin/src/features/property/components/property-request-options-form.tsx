@@ -19,6 +19,7 @@ import {
   Stack,
   Switch,
   Table,
+  TableContainer,
   TableBody,
   TableCell,
   TableHead,
@@ -33,6 +34,7 @@ import {
   deleteRequestOption,
   updateRequestOption,
 } from '../services/staff-property-api';
+import { stickyFirstColumn } from '@/shared/utils/sticky-first-column';
 
 interface PropertyRequestOptionsFormProps {
   propertyId: string;
@@ -121,7 +123,8 @@ export function PropertyRequestOptionsForm({
       {error !== null ? <Alert severity="error">{error}</Alert> : null}
       {options.length === 0 ? <Typography>No request options yet.</Typography> : null}
       {options.length > 0 ? (
-        <Table size="small">
+        <TableContainer sx={stickyFirstColumn}>
+<Table size="small">
           <TableHead>
             <TableRow>
               <TableCell>Name</TableCell>
@@ -162,6 +165,7 @@ export function PropertyRequestOptionsForm({
             ))}
           </TableBody>
         </Table>
+</TableContainer>
       ) : null}
       <Button
         variant="outlined"

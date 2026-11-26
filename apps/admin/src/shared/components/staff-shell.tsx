@@ -19,6 +19,9 @@ import { clearStaffSession } from '@/shared/services/api-client';
 import { isBarePath } from '@/shared/utils/public-paths';
 import { SIDEBAR_RAIL_WIDTH, SIDEBAR_WIDTH, StaffSidebar } from './staff-sidebar';
 
+/** Height of the phone top bar, in px (the page area is pushed down by the same amount). */
+const MOBILE_BAR_HEIGHT = 56;
+
 interface StaffShellProps {
   children: ReactNode;
 }
@@ -62,10 +65,18 @@ export function StaffShell({ children }: StaffShellProps): React.JSX.Element {
       <AppBar
         position="fixed"
         elevation={0}
-        sx={{ display: { md: 'none' }, bgcolor: 'primary.dark', color: 'primary.contrastText' }}
+        sx={{
+          display: { md: 'none' },
+          bgcolor: 'primary.dark',
+          color: 'primary.contrastText',
+          // Notch / landscape cut-outs: keep the bar content out of the unsafe areas.
+          pt: 'env(safe-area-inset-top)',
+          pl: 'env(safe-area-inset-left)',
+          pr: 'env(safe-area-inset-right)',
+        }}
         data-print="hide"
       >
-        <Toolbar>
+        <Toolbar sx={{ minHeight: `${String(MOBILE_BAR_HEIGHT)}px` }}>
           <IconButton color="inherit" edge="start" aria-label="Open menu" onClick={(): void => setDrawerOpen(true)} sx={{ mr: 1 }}>
             <MenuIcon />
           </IconButton>
@@ -106,7 +117,17 @@ export function StaffShell({ children }: StaffShellProps): React.JSX.Element {
         open={drawerOpen}
         onClose={(): void => setDrawerOpen(false)}
         ModalProps={{ keepMounted: false }}
-        sx={{ display: { xs: 'block', md: 'none' }, '& .MuiDrawer-paper': { width: SIDEBAR_WIDTH, border: 0 } }}
+        sx={{
+          display: { xs: 'block', md: 'none' },
+          '& .MuiDrawer-paper': {
+            width: SIDEBAR_WIDTH,
+            maxWidth: '86vw',
+            border: 0,
+            // The sidebar's own padding plus the home-indicator / notch insets.
+            pt: 'env(safe-area-inset-top)',
+            pb: 'env(safe-area-inset-bottom)',
+          },
+        }}
       >
         <StaffSidebar
           pathname={pathname}
@@ -124,9 +145,15 @@ export function StaffShell({ children }: StaffShellProps): React.JSX.Element {
           flexGrow: 1,
           minWidth: 0,
           overflowX: 'auto',
-          px: { xs: 2, sm: 3, md: 6 },
-          py: { xs: 3, md: 5 },
-          mt: { xs: 7, md: 0 },
+          px: {
+            xs: 'max(16px, env(safe-area-inset-left))',
+            sm: 'max(24px, env(safe-area-inset-left))',
+            md: 6,
+          },
+          pr: { xs: 'max(16px, env(safe-area-inset-right))', sm: 'max(24px, env(safe-area-inset-right))' },
+          py: { xs: 2.5, md: 5 },
+          pb: { xs: 'calc(24px + env(safe-area-inset-bottom))', md: 5 },
+          mt: { xs: `calc(${String(MOBILE_BAR_HEIGHT)}px + env(safe-area-inset-top))`, md: 0 },
           maxWidth: 1360,
         }}
       >

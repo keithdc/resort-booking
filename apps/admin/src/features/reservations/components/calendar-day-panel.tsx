@@ -28,9 +28,9 @@ interface CalendarDayPanelProps {
 export function CalendarDayPanel({ date, guests, loading, openStayId, onOpen }: CalendarDayPanelProps): React.JSX.Element {
   return (
     <Paper component="section" aria-label="Day details" elevation={1} sx={{ mt: 3, borderRadius: 2, overflow: 'hidden' }}>
-      <Stack direction="row" spacing={2} alignItems="center" sx={{ px: 2.5, py: 1.5, borderBottom: 1, borderColor: 'divider', bgcolor: 'action.hover' }}>
+      <Stack direction="row" spacing={2} alignItems="center" sx={{ px: { xs: 2, sm: 2.5 }, py: 1.5, borderBottom: 1, borderColor: 'divider', bgcolor: 'action.hover' }}>
         <IconChip icon={<TodayOutlinedIcon />} tone="secondary" size={36} />
-        <Box>
+        <Box sx={{ minWidth: 0 }}>
           <Typography variant="h6" component="h2">
             Bookings on {date}
           </Typography>
@@ -40,7 +40,7 @@ export function CalendarDayPanel({ date, guests, loading, openStayId, onOpen }: 
           </Typography>
         </Box>
       </Stack>
-      <Box sx={{ p: 2 }}>
+      <Box sx={{ p: { xs: 1.5, sm: 2 } }}>
         {loading ? (
           <Stack spacing={1} aria-label="Loading bookings" aria-busy="true">
             <Skeleton variant="rounded" height={58} />

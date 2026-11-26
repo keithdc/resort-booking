@@ -1,13 +1,14 @@
 /**
  * @file apps/web/src/features/bookings/components/cancel-booking-dialog.tsx
  * @feature bookings
- * @dependencies money, cancellation-policy utils — shows the API's refund quote
+ * @dependencies money, use-compact-screen — shows the API's refund quote
  */
 
 'use client';
 
 import type { RefundQuote } from '@resort-booking/shared-types';
 import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, Typography } from '@mui/material';
+import { useCompactScreen } from '@/shared/hooks/use-compact-screen';
 import { formatCents } from '@/shared/utils/money';
 
 interface CancelBookingDialogProps {
@@ -26,8 +27,17 @@ interface CancelBookingDialogProps {
 export function CancelBookingDialog({ open, quote, reference, pending, onKeep, onConfirm }: CancelBookingDialogProps): React.JSX.Element {
   const refund = formatCents(quote.refundCents, quote.currencyCode);
   const noRefund = quote.refundCents === 0;
+  // A phone gets the whole screen: nothing behind the dialog to mis-tap, buttons stacked and full width.
+  const compact = useCompactScreen();
   return (
-    <Dialog open={open} onClose={pending ? undefined : onKeep} fullWidth maxWidth="xs" aria-labelledby="cancel-booking-title">
+    <Dialog
+      open={open}
+      onClose={pending ? undefined : onKeep}
+      fullWidth
+      maxWidth="xs"
+      fullScreen={compact}
+      aria-labelledby="cancel-booking-title"
+    >
       <DialogTitle id="cancel-booking-title">Cancel booking {reference}?</DialogTitle>
       <DialogContent>
         <Alert severity={noRefund ? 'error' : 'warning'} sx={{ mb: 2 }}>
@@ -40,7 +50,7 @@ export function CancelBookingDialog({ open, quote, reference, pending, onKeep, o
           this cannot be undone.
         </Typography>
       </DialogContent>
-      <DialogActions>
+      <DialogActions sx={{ pb: { xs: 'calc(16px + env(safe-area-inset-bottom))', sm: undefined } }}>
         <Button autoFocus onClick={onKeep} disabled={pending}>
           Keep my booking
         </Button>

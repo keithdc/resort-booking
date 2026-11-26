@@ -122,6 +122,8 @@ export function PhoneField({
               <Select
                 variant="standard"
                 disableUnderline
+                // Phones and small tablets: a 44px touch target for the country picker.
+                sx={{ '& .MuiSelect-select': { '@media (max-width:899.95px)': { minHeight: 44, boxSizing: 'border-box', display: 'flex', alignItems: 'center' } } }}
                 value={country}
                 disabled={disabled}
                 onChange={(event): void => {

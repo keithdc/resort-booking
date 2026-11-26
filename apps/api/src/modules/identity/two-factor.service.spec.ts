@@ -141,7 +141,7 @@ describe('TwoFactorService', () => {
     if (state === undefined) {
       throw new Error('no state');
     }
-    return new TwoFactorCipher({ get: (): string => 'ab'.repeat(32) } as unknown as ConfigService).decrypt(state.secretEncrypted, staffId);
+    return new TwoFactorCipher(new ConfigService({ TWO_FACTOR_ENCRYPTION_KEY: 'ab'.repeat(32) })).decrypt(state.secretEncrypted, staffId);
   }
 
   /** The code the phone shows `offsetSteps` steps from now. */
@@ -179,7 +179,7 @@ describe('TwoFactorService', () => {
       providers: [
         TwoFactorService,
         { provide: TwoFactorRepository, useValue: store },
-        { provide: TwoFactorCipher, useValue: new TwoFactorCipher({ get: (): string => 'ab'.repeat(32) } as unknown as ConfigService) },
+        { provide: TwoFactorCipher, useValue: new TwoFactorCipher(new ConfigService({ TWO_FACTOR_ENCRYPTION_KEY: 'ab'.repeat(32) })) },
         { provide: TwoFactorLimiter, useValue: { assertAllowed, recordFailure, recordSuccess } },
         { provide: IdentityRepository, useValue: { findStaffById } },
         {

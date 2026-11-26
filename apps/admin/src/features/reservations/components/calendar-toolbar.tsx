@@ -7,7 +7,7 @@
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import TodayOutlinedIcon from '@mui/icons-material/TodayOutlined';
-import { Button, FormControl, IconButton, InputLabel, MenuItem, Paper, Select, Stack, Typography } from '@mui/material';
+import { Box, Button, FormControl, IconButton, InputLabel, MenuItem, Paper, Select, Stack, Typography } from '@mui/material';
 import type { PropertySummary } from '@resort-booking/shared-types';
 import { VISUALLY_HIDDEN } from '@/shared/utils/visually-hidden';
 import { monthNames, yearOptions } from '../utils/calendar-cells';
@@ -49,16 +49,26 @@ export function CalendarToolbar({
   onPropertyChange,
 }: CalendarToolbarProps): React.JSX.Element {
   return (
-    <Paper elevation={1} sx={{ p: 2, mb: 2, borderRadius: 2 }}>
+    <Paper elevation={1} sx={{ p: { xs: 1.5, sm: 2 }, mb: 2, borderRadius: 2 }}>
       <Stack direction="row" spacing={2} alignItems="center" justifyContent="space-between" flexWrap="wrap" useFlexGap>
-        <Stack direction="row" spacing={1} alignItems="center">
-          <IconButton aria-label="Previous month" onClick={onPrevious} color="primary">
+        {/* Phone: months and year on one row, then previous / Today / next. Wider: one row. */}
+        <Box
+          sx={{
+            width: { xs: '100%', sm: 'auto' },
+            display: { xs: 'grid', sm: 'flex' },
+            gridTemplateColumns: '44px 1fr 1fr 44px',
+            gridTemplateAreas: { xs: '"month month year year" "prev today today next"', sm: 'none' },
+            gap: 1,
+            alignItems: 'center',
+          }}
+        >
+          <IconButton aria-label="Previous month" onClick={onPrevious} color="primary" sx={{ gridArea: 'prev' }}>
             <ChevronLeftIcon />
           </IconButton>
           <Typography variant="h6" component="h2" aria-live="polite" sx={VISUALLY_HIDDEN}>
             {label}
           </Typography>
-          <FormControl size="small" sx={{ minWidth: 140 }}>
+          <FormControl size="small" sx={{ minWidth: { sm: 140 }, gridArea: 'month' }}>
             <InputLabel id="calendar-month">Month</InputLabel>
             <Select
               labelId="calendar-month"
@@ -74,7 +84,7 @@ export function CalendarToolbar({
               ))}
             </Select>
           </FormControl>
-          <FormControl size="small" sx={{ minWidth: 100 }}>
+          <FormControl size="small" sx={{ minWidth: { sm: 100 }, gridArea: 'year' }}>
             <InputLabel id="calendar-year">Year</InputLabel>
             <Select
               labelId="calendar-year"
@@ -90,14 +100,14 @@ export function CalendarToolbar({
               ))}
             </Select>
           </FormControl>
-          <IconButton aria-label="Next month" onClick={onNext} color="primary">
+          <IconButton aria-label="Next month" onClick={onNext} color="primary" sx={{ gridArea: 'next' }}>
             <ChevronRightIcon />
           </IconButton>
-          <Button variant="outlined" startIcon={<TodayOutlinedIcon />} onClick={onToday}>
+          <Button variant="outlined" startIcon={<TodayOutlinedIcon />} onClick={onToday} sx={{ gridArea: 'today' }}>
             Today
           </Button>
-        </Stack>
-        <FormControl size="small" sx={{ minWidth: 240 }}>
+        </Box>
+        <FormControl size="small" sx={{ minWidth: { sm: 240 }, width: { xs: '100%', sm: 'auto' } }}>
           <InputLabel id="property-filter">Property</InputLabel>
           <Select
             labelId="property-filter"

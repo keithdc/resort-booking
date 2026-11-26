@@ -11,6 +11,8 @@ import { alpha } from '@mui/material/styles';
 import type { ReactNode } from 'react';
 import type { AvatarTone } from '@/shared/utils/avatar-color';
 
+const PHONE_SCALE = 0.78;
+
 interface IconChipProps {
   icon: ReactNode;
   tone?: AvatarTone;
@@ -27,8 +29,9 @@ export function IconChip({ icon, tone = 'primary', size = 40 }: IconChipProps): 
     <Box
       aria-hidden
       sx={{
-        width: size,
-        height: size,
+        // Phone: about three quarters of the desktop size (a 44px header chip becomes 33px).
+        width: { xs: Math.round(size * PHONE_SCALE), sm: size },
+        height: { xs: Math.round(size * PHONE_SCALE), sm: size },
         flexShrink: 0,
         display: 'inline-flex',
         alignItems: 'center',
@@ -36,7 +39,7 @@ export function IconChip({ icon, tone = 'primary', size = 40 }: IconChipProps): 
         borderRadius: 2,
         bgcolor: (theme): string => alpha(theme.palette[tone].main, 0.14),
         color: `${tone}.dark`,
-        '& svg': { fontSize: size * 0.55 },
+        '& svg': { fontSize: { xs: Math.round(size * PHONE_SCALE * 0.55), sm: size * 0.55 } },
       }}
     >
       {icon}

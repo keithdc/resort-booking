@@ -1,7 +1,7 @@
 /**
  * @file apps/web/src/shared/components/guest-anchor-link.tsx
  * @shared Smooth-scroll header/footer links
- * @dependencies next/navigation
+ * @dependencies next/navigation, responsive utils
  */
 
 'use client';
@@ -11,12 +11,15 @@ import { Link as MuiLink } from '@mui/material';
 import NextLink from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect } from 'react';
+import { scrollBehavior } from '../utils/responsive';
 
 interface GuestAnchorLinkProps {
   hash: 'search' | 'places' | 'contact';
   children: ReactNode;
   color?: 'text.secondary' | 'primary.main' | 'inherit';
   fontWeight?: number;
+  /** Called after the link is used, so a menu can close itself. */
+  onNavigate?: () => void;
 }
 
 /**
@@ -27,16 +30,18 @@ export function GuestAnchorLink({
   children,
   color = 'text.secondary',
   fontWeight,
+  onNavigate,
 }: GuestAnchorLinkProps): React.JSX.Element {
   const pathname = usePathname();
 
   const onClick = (event: MouseEvent<HTMLAnchorElement>): void => {
+    onNavigate?.();
     if (pathname !== '/') {
       return;
     }
     event.preventDefault();
     const node = document.getElementById(hash);
-    node?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    node?.scrollIntoView({ behavior: scrollBehavior(), block: 'start' });
     window.history.replaceState(null, '', `/#${hash}`);
   };
 
@@ -47,7 +52,7 @@ export function GuestAnchorLink({
       underline="hover"
       color={color}
       onClick={onClick}
-      sx={{ fontWeight, display: 'inline-flex', alignItems: 'center', gap: 0.75 }}
+      sx={{ fontWeight, display: 'inline-flex', alignItems: 'center', gap: 0.75, minHeight: { xs: 44, md: 'auto' } }}
     >
       {children}
     </MuiLink>
@@ -69,7 +74,7 @@ export function GuestHashScroller(): null {
       return undefined;
     }
     const timer = window.setTimeout((): void => {
-      document.getElementById(hash)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      document.getElementById(hash)?.scrollIntoView({ behavior: scrollBehavior(), block: 'start' });
     }, 80);
     return (): void => {
       window.clearTimeout(timer);

@@ -23,9 +23,9 @@ export function UserAvatar({ name, size = 40 }: UserAvatarProps): React.JSX.Elem
     <Avatar
       aria-hidden
       sx={{
-        width: size,
-        height: size,
-        fontSize: size * 0.4,
+        width: { xs: Math.round(size * 0.85), sm: size },
+        height: { xs: Math.round(size * 0.85), sm: size },
+        fontSize: { xs: size * 0.85 * 0.4, sm: size * 0.4 },
         fontWeight: 700,
         bgcolor: `${tone}.main`,
         color: `${tone}.contrastText`,

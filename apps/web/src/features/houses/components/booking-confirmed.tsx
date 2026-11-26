@@ -22,7 +22,7 @@ export function BookingConfirmed({ confirmation, houseName }: BookingConfirmedPr
     <Stack spacing={2} sx={{ p: 2 }} aria-label="Booking confirmed">
       <Alert severity="success">Your booking is confirmed.</Alert>
       <Typography color="text.secondary">Booking reference</Typography>
-      <Typography variant="h4" component="p" sx={{ letterSpacing: 1 }}>
+      <Typography variant="h4" component="p" sx={{ letterSpacing: 1, overflowWrap: 'anywhere' }}>
         {confirmation.reference}
       </Typography>
       <Typography>
@@ -33,7 +33,11 @@ export function BookingConfirmed({ confirmation, houseName }: BookingConfirmedPr
       <Typography variant="body2" color="text.secondary">
         Keep this reference. You need it, with your email, to manage or cancel your booking.
       </Typography>
-      <MuiLink component={NextLink} href={`/manage?reference=${encodeURIComponent(confirmation.reference)}`}>
+      <MuiLink
+        component={NextLink}
+        href={`/manage?reference=${encodeURIComponent(confirmation.reference)}`}
+        sx={{ display: 'inline-flex', alignItems: 'center', minHeight: 44 }}
+      >
         Manage or cancel this booking
       </MuiLink>
     </Stack>

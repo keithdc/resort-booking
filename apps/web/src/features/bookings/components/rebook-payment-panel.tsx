@@ -30,10 +30,10 @@ export function RebookPaymentPanel({ payment, working, onPay, onDecline }: Reboo
         <Alert severity="info">Test mode: no real money moves. Use the buttons below to simulate the payment.</Alert>
       ) : null}
       <Alert severity="warning">Your dates change only once this payment goes through.</Alert>
-      <Button variant="contained" size="large" disabled={working} onClick={onPay}>
+      <Button variant="contained" size="large" fullWidth sx={{ minHeight: 52 }} disabled={working} onClick={onPay}>
         {working ? 'Processing…' : `Pay ${amount}`}
       </Button>
-      <Button disabled={working} onClick={onDecline}>
+      <Button fullWidth disabled={working} onClick={onDecline}>
         Simulate a declined card
       </Button>
     </Stack>

@@ -15,6 +15,7 @@ import {
   DialogTitle,
   Link as MuiLink,
   Table,
+  TableContainer,
   TableBody,
   TableCell,
   TableHead,
@@ -24,6 +25,7 @@ import {
 import { formatCents } from '@/shared/utils/money';
 import { bookingStatusLabel, paymentMethodLabel } from '../utils/report-labels';
 import { useMoneyHidden } from './money-visibility';
+import { stickyFirstColumn } from '@/shared/utils/sticky-first-column';
 
 export interface ReportDetail {
   title: string;
@@ -55,6 +57,7 @@ export function ReportDetailDialog({ detail, onClose }: ReportDetailDialogProps)
             {detail.stays.length === 0 ? (
               <Typography color="text.secondary">No bookings here. Try a longer period.</Typography>
             ) : (
+              <TableContainer sx={stickyFirstColumn}>
               <Table size="small">
                 <TableHead>
                   <TableRow>
@@ -73,7 +76,7 @@ export function ReportDetailDialog({ detail, onClose }: ReportDetailDialogProps)
                     <TableRow key={stay.id} hover>
                       <TableCell>
                         <Typography>{stay.bookerName}</Typography>
-                        <MuiLink href={`mailto:${stay.bookerEmail}`}>{stay.bookerEmail}</MuiLink>
+                        <MuiLink href={`mailto:${stay.bookerEmail}`} sx={{ overflowWrap: 'anywhere' }}>{stay.bookerEmail}</MuiLink>
                       </TableCell>
                       <TableCell>{stay.propertyName}</TableCell>
                       <TableCell>{stay.houseName}</TableCell>
@@ -88,6 +91,7 @@ export function ReportDetailDialog({ detail, onClose }: ReportDetailDialogProps)
                   ))}
                 </TableBody>
               </Table>
+              </TableContainer>
             )}
           </DialogContent>
           <DialogActions>

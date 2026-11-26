@@ -70,10 +70,10 @@ export function MockPaymentPanel({ holdId, onConfirmed, onDeclined }: MockPaymen
       {state.error !== null ? <Alert severity="error">{state.error}</Alert> : null}
       {payment !== null && phase !== 'error' ? (
         <>
-          <Button variant="contained" size="large" disabled={busy} onClick={(): void => void state.pay()}>
+          <Button variant="contained" size="large" fullWidth sx={{ minHeight: 52 }} disabled={busy} onClick={(): void => void state.pay()}>
             {busy ? 'Processing…' : `Pay ${amount}`}
           </Button>
-          <Button disabled={busy} onClick={(): void => void state.decline()}>
+          <Button fullWidth disabled={busy} onClick={(): void => void state.decline()}>
             Simulate a declined card
           </Button>
         </>

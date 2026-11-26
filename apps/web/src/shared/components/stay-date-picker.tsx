@@ -1,18 +1,20 @@
 /**
  * @file apps/web/src/shared/components/stay-date-picker.tsx
  * @shared Guest check-in picker that disables past and booked days
- * @dependencies @mui/x-date-pickers, dayjs, disabled-dates
+ * @dependencies @mui/x-date-pickers, dayjs, disabled-dates, responsive utils
  */
 
 'use client';
 
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
-import { DesktopDatePicker } from '@mui/x-date-pickers/DesktopDatePicker';
+import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import type { DateRange } from '@resort-booking/shared-types';
 import dayjs, { type Dayjs } from 'dayjs';
 import { useMemo } from 'react';
+import { useCompactScreen } from '../hooks/use-compact-screen';
 import { isCheckInDisabled, isDayUnavailable } from '../utils/disabled-dates';
+import { DESKTOP_PICKER_MEDIA_QUERY } from '../utils/responsive';
 
 const ISO_FORMAT = 'YYYY-MM-DD';
 
@@ -31,6 +33,25 @@ const BOOKED_DAY_SX = {
     pointerEvents: 'none',
     background:
       'linear-gradient(to top right, transparent calc(50% - 1px), currentColor calc(50% - 1px), currentColor calc(50% + 1px), transparent calc(50% + 1px))',
+  },
+} as const;
+
+// Phone calendar: stretch to the screen and give every day a 44px target.
+const COMPACT_CALENDAR_SX = {
+  '& .MuiDateCalendar-root': { width: '100%', maxWidth: 420, height: 'auto', mx: 'auto' },
+  '& .MuiPickersDay-root': { width: 44, height: 44, fontSize: '1rem' },
+  '& .MuiDayCalendar-weekDayLabel': { width: 44, height: 44, fontSize: '0.875rem' },
+  '& .MuiDayCalendar-header, & .MuiDayCalendar-weekContainer': { justifyContent: 'space-around' },
+  // OK / Cancel stay in a row at the bottom of the screen (the shared dialog rule would stack them).
+  '& .MuiPickersLayout-actionBar': {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    padding: '8px 16px calc(8px + env(safe-area-inset-bottom))',
+  },
+  '@media (max-width:599.95px)': {
+    flex: 1,
+    height: 'auto',
+    gridTemplateRows: 'auto 1fr auto',
   },
 } as const;
 
@@ -64,10 +85,13 @@ export function StayDatePicker({
   // Stable object per date string. A new Dayjs on every render (the checkout form ticks each
   // second) makes the open calendar snap back to the selected month.
   const selected = useMemo((): Dayjs | null => (value === '' ? null : dayjs(value)), [value]);
+  const compact = useCompactScreen();
   const minDate = useMemo((): Dayjs => dayjs(todayIso), [todayIso]);
   return (
     <LocalizationProvider dateAdapter={AdapterDayjs}>
-    <DesktopDatePicker
+    <DatePicker
+      // Popup calendar only on a wide screen with a mouse; touch screens get a dialog (full-screen on a phone).
+      desktopModeMediaQuery={DESKTOP_PICKER_MEDIA_QUERY}
       label={label}
       value={selected}
       format="DD/MM/YYYY"
@@ -87,6 +111,9 @@ export function StayDatePicker({
       }}
       {...(onOpen === undefined ? {} : { onOpen })}
       slotProps={{
+        // Touch dialog: a phone gets the whole screen so the month grid has room for 44px days.
+        dialog: { fullScreen: compact, sx: compact ? { '& .MuiDialogContent-root': { display: 'flex', flexDirection: 'column' } } : {} },
+        layout: compact ? { sx: COMPACT_CALENDAR_SX } : {},
         textField: {
           fullWidth: true,
           required: true,

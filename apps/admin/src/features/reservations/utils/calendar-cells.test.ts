@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { monthBounds } from '@/shared/utils/month-bounds';
-import { buildMonthCells, dayAriaLabel, dayHasActivity, dominantTone, isWeekendIso, longDateLabel, monthLabel, monthNames, selectedDateInMonth, yearOptions } from './calendar-cells';
+import { buildMonthCells, dayAriaLabel, dayHasActivity, dayLanes, dominantTone, isWeekendIso, longDateLabel, monthLabel, monthNames, selectedDateInMonth, yearOptions } from './calendar-cells';
 
 describe('buildMonthCells', () => {
   it('pads to Monday and lists every day (November 2026 starts on a Sunday)', () => {
@@ -106,5 +106,17 @@ describe('monthNames and yearOptions', () => {
     expect(yearOptions(2035, 2026)).toEqual([2023, 2024, 2025, 2026, 2027, 2028, 2029, 2030, 2031, 2032, 2033, 2034, 2035]);
     expect(yearOptions(2015, 2026)).toContain(2015);
     expect(yearOptions(2015, 2026)[0]).toBe(2015);
+  });
+});
+
+describe('dayLanes', () => {
+  it('lists only the busy lanes in display order', () => {
+    const day = { date: '2026-11-25', bookingCount: 2, rebookCount: 0, cancelledCount: 1, pendingCount: 3 };
+    expect(dayLanes(day).map((lane) => `${lane.label}:${String(lane.count)}`)).toEqual(['Booked:2', 'Hold:3', 'Cancelled:1']);
+  });
+
+  it('is empty for a quiet or unknown day', () => {
+    expect(dayLanes(undefined)).toEqual([]);
+    expect(dayLanes({ date: '2026-11-25', bookingCount: 0, rebookCount: 0, cancelledCount: 0, pendingCount: 0 })).toEqual([]);
   });
 });

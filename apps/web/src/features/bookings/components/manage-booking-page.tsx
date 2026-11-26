@@ -9,8 +9,9 @@
 import type { GuestBooking, RefundSummary } from '@resort-booking/shared-types';
 import { Alert, Box, Button, Chip, Container, Snackbar, Stack, TextField, Typography } from '@mui/material';
 import { EmailField, isValidEmail } from '@resort-booking/ui/contact';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { formatCents } from '@/shared/utils/money';
+import { revealElement } from '@/shared/utils/responsive';
 import { useManageBooking, type BookingCredentials } from '../hooks/use-manage-booking';
 import { CancelBookingDialog } from './cancel-booking-dialog';
 import { ChangeDatesPanel } from './change-dates-panel';
@@ -33,9 +34,17 @@ export function ManageBookingPage({ initialReference = '' }: ManageBookingPagePr
   const [changeNotice, setChangeNotice] = useState<{ previousReference: string; refund: RefundSummary | null } | null>(null);
   const { booking } = state;
   const canSubmit = reference.trim() !== '' && isValidEmail(email) && !state.finding;
+  // A failed lookup shows its message above the form; on a phone the keyboard may have scrolled it away.
+  const errorRef = useRef<HTMLDivElement | null>(null);
+  const lookupError = booking === null ? state.error : null;
+  useEffect((): void => {
+    if (lookupError !== null) {
+      revealElement(errorRef.current);
+    }
+  }, [lookupError]);
 
   return (
-    <Container maxWidth="sm" sx={{ py: { xs: 5, md: 8 } }}>
+    <Container maxWidth="sm" sx={{ py: { xs: 3, md: 8 } }}>
       <Typography variant="h3" component="h1" gutterBottom>
         Manage your booking
       </Typography>
@@ -53,16 +62,22 @@ export function ManageBookingPage({ initialReference = '' }: ManageBookingPagePr
           <Typography color="text.secondary">
             Enter the booking reference from your confirmation (it looks like BK-1A2B3C4D5E) and the email you booked with.
           </Typography>
-          {state.error !== null ? <Alert severity="error">{state.error}</Alert> : null}
+          {state.error !== null ? (
+            <Alert ref={errorRef} severity="error" role="alert" sx={{ scrollMarginTop: 96 }}>
+              {state.error}
+            </Alert>
+          ) : null}
           <TextField
             label="Booking reference"
             value={reference}
             required
             onChange={(event): void => setReference(event.target.value)}
-            slotProps={{ htmlInput: { autoCapitalize: 'characters', autoComplete: 'off' } }}
+            slotProps={{
+              htmlInput: { autoCapitalize: 'characters', autoComplete: 'off', autoCorrect: 'off', spellCheck: false, enterKeyHint: 'next' },
+            }}
           />
           <EmailField label="Email" required value={email} onChange={setEmail} />
-          <Button type="submit" variant="contained" size="large" disabled={!canSubmit}>
+          <Button type="submit" variant="contained" size="large" sx={{ minHeight: 52 }} disabled={!canSubmit}>
             {state.finding ? 'Looking…' : 'Find my booking'}
           </Button>
         </Stack>
@@ -137,12 +152,12 @@ function BookingView({
       {error !== null ? <Alert severity="error">{error}</Alert> : null}
       {changeNotice !== null ? <ChangedNotice notice={changeNotice} newReference={booking.reference} /> : null}
       <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap" useFlexGap>
-        <Typography variant="h5" component="h2">
+        <Typography variant="h5" component="h2" sx={{ overflowWrap: 'anywhere' }}>
           {booking.reference}
         </Typography>
         <Chip size="small" color={cancelled ? 'default' : 'success'} label={cancelled ? 'Cancelled' : 'Confirmed'} />
       </Stack>
-      <Box component="dl" sx={{ m: 0, display: 'grid', gridTemplateColumns: 'auto 1fr', columnGap: 3, rowGap: 0.5 }}>
+      <Box component="dl" sx={{ m: 0, display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr)', columnGap: 3, rowGap: 0.5 }}>
         <Detail term="Stay" value={`${booking.stayName}, ${booking.propertyName}`} />
         <Detail term="Check-in" value={booking.checkIn} />
         <Detail term="Check-out" value={booking.checkOut} />
@@ -209,7 +224,7 @@ function Detail({ term, value }: { term: string; value: string }): React.JSX.Ele
       <Typography component="dt" color="text.secondary">
         {term}
       </Typography>
-      <Typography component="dd" sx={{ m: 0 }}>
+      <Typography component="dd" sx={{ m: 0, overflowWrap: 'anywhere' }}>
         {value}
       </Typography>
     </>

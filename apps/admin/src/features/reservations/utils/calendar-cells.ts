@@ -144,3 +144,28 @@ export function dayAriaLabel(isoDate: string, day: CalendarDayOccupancy | undefi
     : new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(date);
   return `${label}, ${parts.length === 0 ? 'open' : parts.join(', ')}`;
 }
+
+export interface DayLane {
+  tone: 'success' | 'info' | 'warning' | 'error';
+  icon: 'booked' | 'rebook' | 'hold' | 'cancelled';
+  count: number;
+  /** Short word shown on the grid and read out ("Booked"). */
+  label: string;
+}
+
+/**
+ * The non-empty status lanes of a day in display order (booked, rebook, hold, cancelled). Shared by the
+ * full cell and the compact phone cell so both show the same numbers.
+ */
+export function dayLanes(day: CalendarDayOccupancy | undefined): DayLane[] {
+  if (day === undefined) {
+    return [];
+  }
+  const lanes: DayLane[] = [
+    { tone: 'success', icon: 'booked', count: day.bookingCount, label: 'Booked' },
+    { tone: 'info', icon: 'rebook', count: day.rebookCount, label: 'Rebook' },
+    { tone: 'warning', icon: 'hold', count: day.pendingCount, label: 'Hold' },
+    { tone: 'error', icon: 'cancelled', count: day.cancelledCount, label: 'Cancelled' },
+  ];
+  return lanes.filter((lane): boolean => lane.count > 0);
+}

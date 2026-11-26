@@ -17,11 +17,14 @@ interface ErrorPageProps {
  */
 export default function ErrorPage({ reset }: ErrorPageProps): React.JSX.Element {
   return (
-    <Container sx={{ py: 8 }}>
-      <Typography variant="h5" gutterBottom>
+    <Container maxWidth="sm" sx={{ py: { xs: 6, md: 8 } }} role="alert">
+      <Typography variant="h5" component="h1" gutterBottom>
         Something went wrong
       </Typography>
-      <Button variant="contained" onClick={reset}>
+      <Typography color="text.secondary" sx={{ mb: 3 }}>
+        Nothing was charged. Try again, and if it keeps happening contact the property.
+      </Typography>
+      <Button variant="contained" size="large" onClick={reset} sx={{ width: { xs: '100%', sm: 'auto' } }}>
         Try again
       </Button>
     </Container>

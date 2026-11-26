@@ -7,6 +7,8 @@
 'use client';
 
 import type { HouseSearchResult } from '@resort-booking/shared-types';
+import FormatListBulletedIcon from '@mui/icons-material/FormatListBulleted';
+import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
 import { alpha, Box, Button, Typography } from '@mui/material';
 import { BlurFade } from '@resort-booking/ui';
 import { useMemo, useState } from 'react';
@@ -38,9 +40,21 @@ export function SearchResultsView({ results, stay }: SearchResultsViewProps): Re
   return (
     <Box data-mobile-view={mobileView}>
       {hasMap ? (
+        // Phones: a floating pill (thumb reach, clear of the home bar) flips between the list and the map.
         <Button
-          variant="outlined"
-          sx={{ display: { xs: 'inline-flex', md: 'none' }, mb: 2 }}
+          variant="contained"
+          startIcon={mobileView === 'list' ? <MapOutlinedIcon /> : <FormatListBulletedIcon />}
+          sx={{
+            display: { xs: 'inline-flex', md: 'none' },
+            position: 'fixed',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            bottom: 'calc(16px + env(safe-area-inset-bottom))',
+            zIndex: (theme): number => theme.zIndex.fab,
+            minHeight: 48,
+            px: 3,
+            boxShadow: 6,
+          }}
           onClick={(): void => setMobileView(mobileView === 'list' ? 'map' : 'list')}
         >
           {mobileView === 'list' ? 'Show map' : 'Show list'}
@@ -54,7 +68,13 @@ export function SearchResultsView({ results, stay }: SearchResultsViewProps): Re
           alignItems: 'start',
         }}
       >
-        <Box sx={{ display: { xs: mobileView === 'list' || !hasMap ? 'block' : 'none', md: 'block' } }}>
+        <Box
+          sx={{
+            display: { xs: mobileView === 'list' || !hasMap ? 'block' : 'none', md: 'block' },
+            // Room under the last card for the floating map button.
+            pb: { xs: hasMap ? 10 : 0, md: 0 },
+          }}
+        >
           <Box
             sx={{
               display: 'grid',
@@ -97,8 +117,9 @@ export function SearchResultsView({ results, stay }: SearchResultsViewProps): Re
               display: { xs: mobileView === 'map' ? 'block' : 'none', md: 'block' },
               position: { md: 'sticky' },
               top: { md: 96 },
-              height: { xs: 'calc(100vh - 220px)', md: 'calc(100vh - 140px)' },
-              minHeight: 380,
+              height: { xs: 'calc(100dvh - 180px)', md: 'calc(100vh - 140px)' },
+              minHeight: { xs: 360, md: 380 },
+              mb: { xs: 10, md: 0 },
             }}
           >
             <SearchResultsMap pins={views} activeHouseId={activeHouseId} onHoverHouse={setActiveHouseId} />

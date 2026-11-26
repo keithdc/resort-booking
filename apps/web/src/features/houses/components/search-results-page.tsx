@@ -7,7 +7,9 @@
 import { Box, Container, Typography } from '@mui/material';
 import { StaySearchBar } from '@/features/property/components/stay-search-bar';
 import { fetchStaySearch } from '../services/inventory-api';
+import { summarizeStaySearch } from '@/shared/utils/date-display';
 import type { StayQuery } from '@/shared/utils/stay-query';
+import { SearchEditSheet } from './search-edit-sheet';
 import { SearchResultsView } from './search-results-view';
 
 interface SearchResultsPageProps {
@@ -26,7 +28,7 @@ export async function SearchResultsPage({ stay }: SearchResultsPageProps): Promi
     : [];
 
   return (
-    <Container maxWidth="xl" sx={{ py: 6 }}>
+    <Container maxWidth="xl" sx={{ py: { xs: 3, md: 6 } }}>
       <Typography variant="h3" component="h1" gutterBottom>
         Available stays
       </Typography>
@@ -34,8 +36,10 @@ export async function SearchResultsPage({ stay }: SearchResultsPageProps): Promi
         {stay.checkIn} · {stay.nights} night{stay.nights === '1' ? '' : 's'} (leave {stay.checkOut}) ·{' '}
         {stay.guestCount} guests. Open a stay to hold and pay.
       </Typography>
-      <Box sx={{ mb: 4 }}>
-        <StaySearchBar initial={stay} />
+      <Box sx={{ mb: { xs: 3, md: 4 } }}>
+        <SearchEditSheet summary={summarizeStaySearch(stay.checkIn, stay.checkOut, stay.guestCount)}>
+          <StaySearchBar initial={stay} />
+        </SearchEditSheet>
       </Box>
       {!canSearch ? (
         <Typography>Enter check-in, check-out, and guests to search.</Typography>

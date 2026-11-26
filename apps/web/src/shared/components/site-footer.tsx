@@ -29,7 +29,7 @@ export async function SiteFooter(): Promise<React.JSX.Element> {
       sx={{
         mt: 8,
         pt: { xs: 6, md: 8 },
-        pb: 4,
+        pb: 'calc(32px + env(safe-area-inset-bottom))',
         bgcolor: 'primary.main',
         color: 'primary.contrastText',
         scrollMarginTop: 96,
@@ -57,7 +57,7 @@ export async function SiteFooter(): Promise<React.JSX.Element> {
             <Typography variant="overline" sx={{ opacity: 0.8 }}>
               Stay
             </Typography>
-            <Stack spacing={1.25} sx={{ mt: 1.5 }}>
+            <Stack spacing={{ xs: 0, md: 1.25 }} sx={{ mt: 1.5 }}>
               <GuestAnchorLink hash="search" color="inherit">
                 <SearchOutlinedIcon fontSize="small" />
                 Search dates
@@ -67,7 +67,7 @@ export async function SiteFooter(): Promise<React.JSX.Element> {
                 href="/properties"
                 underline="hover"
                 color="inherit"
-                sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75 }}
+                sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75, minHeight: { xs: 44, md: 'auto' } }}
               >
                 <PlaceOutlinedIcon fontSize="small" />
                 Our properties
@@ -75,9 +75,10 @@ export async function SiteFooter(): Promise<React.JSX.Element> {
             </Stack>
           </Box>
           <Box>
-            <Typography variant="overline" sx={{ opacity: 0.8 }}>              Destinations
+            <Typography variant="overline" sx={{ opacity: 0.8 }}>
+              Destinations
             </Typography>
-            <Stack spacing={1.25} sx={{ mt: 1.5 }}>
+            <Stack spacing={{ xs: 0, md: 1.25 }} sx={{ mt: 1.5 }}>
               {properties.length === 0 ? (
                 <Typography variant="body2" sx={{ opacity: 0.8 }}>
                   Listings go live when a property is published.
@@ -90,7 +91,7 @@ export async function SiteFooter(): Promise<React.JSX.Element> {
                     href={`/properties/${property.slug}`}
                     underline="hover"
                     color="inherit"
-                    sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75 }}
+                    sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75, minHeight: { xs: 44, md: 'auto' } }}
                   >
                     <PlaceOutlinedIcon fontSize="small" />
                     {property.name}
@@ -108,7 +109,7 @@ export async function SiteFooter(): Promise<React.JSX.Element> {
                 Phone and email appear on each property.
               </Typography>
             ) : (
-              <Stack spacing={1.25} sx={{ mt: 1.5 }}>
+              <Stack spacing={{ xs: 0, md: 1.25 }} sx={{ mt: 1.5 }}>
                 <Typography variant="body2" sx={{ opacity: 0.9 }}>
                   {formatAddress(contact.addressLine, contact.postalCode, contact.city, contact.countryCode)}
                 </Typography>
@@ -116,7 +117,7 @@ export async function SiteFooter(): Promise<React.JSX.Element> {
                   href={`tel:${contact.phone}`}
                   underline="hover"
                   color="inherit"
-                  sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75 }}
+                  sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75, minHeight: { xs: 44, md: 'auto' } }}
                 >
                   <PhoneOutlinedIcon fontSize="small" />
                   {contact.phone}
@@ -125,7 +126,7 @@ export async function SiteFooter(): Promise<React.JSX.Element> {
                   href={`mailto:${contact.email}`}
                   underline="hover"
                   color="inherit"
-                  sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75 }}
+                  sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75, minHeight: { xs: 44, md: 'auto' } }}
                 >
                   <EmailOutlinedIcon fontSize="small" />
                   {contact.email}

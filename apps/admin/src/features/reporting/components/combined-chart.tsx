@@ -7,11 +7,14 @@
 'use client';
 
 import { Box, Typography, useTheme } from '@mui/material';
+import { usePhoneLayout } from '@/shared/hooks/use-compact-layout';
 import { formatCents } from '@/shared/utils/money';
 import { chartGeometry, polylinePoints } from '../utils/chart-geometry';
 import type { ChartBucket } from '../utils/report-chart';
 
 const AREA = { width: 800, height: 280, left: 64, right: 44, top: 16, bottom: 34 };
+/** Phone: drawn at about the screen's own width so the text stays readable and nothing scrolls sideways. */
+const PHONE_AREA = { width: 330, height: 250, left: 50, right: 34, top: 14, bottom: 30 };
 
 const VISUALLY_HIDDEN = {
   border: 0,
@@ -38,21 +41,23 @@ interface CombinedChartProps {
  */
 export function CombinedChart({ buckets, currencyCode, onSelect }: CombinedChartProps): React.JSX.Element {
   const theme = useTheme();
-  const geometry = chartGeometry(buckets, AREA);
+  const phone = usePhoneLayout();
+  const area = phone ? PHONE_AREA : AREA;
+  const geometry = chartGeometry(buckets, area);
   const barColor = theme.palette.secondary.main;
   const lineColor = theme.palette.success.dark;
   const axisColor = theme.palette.divider;
   const textColor = theme.palette.text.secondary;
-  const labelEvery = Math.max(1, Math.ceil(buckets.length / 16));
+  const labelEvery = Math.max(1, Math.ceil(buckets.length / (phone ? 7 : 16)));
   const summary = `Revenue as bars and occupancy as a line, ${buckets.length} ${buckets.length === 1 ? 'bar' : 'bars'}.`;
 
   return (
     <Box sx={{ width: '100%', overflowX: 'auto' }}>
-      <Box sx={{ display: 'flex', gap: 3, mb: 1, flexWrap: 'wrap' }}>
+      <Box sx={{ display: 'flex', columnGap: 3, rowGap: 0.5, mb: 1, flexWrap: 'wrap' }}>
         <Legend color={barColor} label="Revenue (left scale)" shape="bar" />
         <Legend color={lineColor} label="Occupancy (right scale)" shape="line" />
       </Box>
-      <svg viewBox={`0 0 ${AREA.width} ${AREA.height}`} role="img" aria-label={summary} style={{ width: '100%', minWidth: 520, height: 'auto' }}>
+      <svg viewBox={`0 0 ${String(area.width)} ${String(area.height)}`} role="img" aria-label={summary} style={{ width: '100%', minWidth: phone ? 0 : 520, height: 'auto' }}>
         {[0, 0.5, 1].map((fraction: number): React.JSX.Element => {
           const y = geometry.plotBottom - fraction * (geometry.plotBottom - geometry.plotTop);
           return (
@@ -93,7 +98,7 @@ export function CombinedChart({ buckets, currencyCode, onSelect }: CombinedChart
               <rect x={bar.columnX} y={geometry.plotTop} width={bar.columnWidth} height={geometry.plotBottom - geometry.plotTop} fill="transparent" />
               <rect x={bar.x} y={bar.y} width={bar.width} height={bar.height} rx={2} fill={barColor} />
               {index % labelEvery === 0 ? (
-                <text x={bar.columnX + bar.columnWidth / 2} y={AREA.height - 12} textAnchor="middle" fontSize={11} fill={textColor}>
+                <text x={bar.columnX + bar.columnWidth / 2} y={area.height - 10} textAnchor="middle" fontSize={11} fill={textColor}>
                   {bucket.label}
                 </text>
               ) : null}

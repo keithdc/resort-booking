@@ -51,7 +51,7 @@ export function ChangeDatesPanel({ booking, credentials, onChanged, onClose }: C
             type="number"
             value={state.nights}
             onChange={(event): void => state.setNights(event.target.value)}
-            slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: 1, max: 30 } }}
+            slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: 1, max: 30, inputMode: 'numeric' } }}
             required
           />
           <Typography variant="body2" color="text.secondary">

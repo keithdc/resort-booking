@@ -91,41 +91,50 @@ export function StaySearchBar({
               }));
             }}
           />
-          <TextField
-            label="Nights"
-            type="number"
-            fullWidth
-            value={query.nights}
-            onChange={(event): void => {
-              const nights = clampStayNights(Number.parseInt(event.target.value, 10));
-              setQuery((current): StayQuery => ({
-                ...current,
-                nights: String(nights),
-                checkOut: addDaysIsoDate(current.checkIn, nights),
-              }));
+          {/* Phones: Nights and Guests share a row. From md this wrapper disappears (display: contents). */}
+          <Box
+            sx={{
+              display: { xs: 'grid', md: 'contents' },
+              gridTemplateColumns: '1fr 1fr',
+              gap: 1.5,
             }}
-            sx={FIELD_SX}
-            slotProps={{
-              inputLabel: { shrink: true },
-              htmlInput: { min: 1, max: 30 },
-            }}
-            required
-          />
-          <TextField
-            label="Guests"
-            type="number"
-            fullWidth
-            value={query.guestCount}
-            onChange={(event): void => {
-              setQuery((current): StayQuery => ({ ...current, guestCount: event.target.value }));
-            }}
-            sx={FIELD_SX}
-            slotProps={{
-              inputLabel: { shrink: true },
-              htmlInput: { min: 1, max: 50 },
-            }}
-            required
-          />
+          >
+            <TextField
+              label="Nights"
+              type="number"
+              fullWidth
+              value={query.nights}
+              onChange={(event): void => {
+                const nights = clampStayNights(Number.parseInt(event.target.value, 10));
+                setQuery((current): StayQuery => ({
+                  ...current,
+                  nights: String(nights),
+                  checkOut: addDaysIsoDate(current.checkIn, nights),
+                }));
+              }}
+              sx={FIELD_SX}
+              slotProps={{
+                inputLabel: { shrink: true },
+                htmlInput: { min: 1, max: 30, inputMode: 'numeric' },
+              }}
+              required
+            />
+            <TextField
+              label="Guests"
+              type="number"
+              fullWidth
+              value={query.guestCount}
+              onChange={(event): void => {
+                setQuery((current): StayQuery => ({ ...current, guestCount: event.target.value }));
+              }}
+              sx={FIELD_SX}
+              slotProps={{
+                inputLabel: { shrink: true },
+                htmlInput: { min: 1, max: 50, inputMode: 'numeric' },
+              }}
+              required
+            />
+          </Box>
           <ShimmerButton
             type="submit"
             sx={{

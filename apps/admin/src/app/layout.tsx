@@ -4,7 +4,7 @@
  * @dependencies AppProviders, StaffShell
  */
 
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { headers } from 'next/headers';
 import type { ReactNode } from 'react';
 import { AppProviders } from '@/shared/components/app-providers';
@@ -13,6 +13,9 @@ import { StaffShell } from '@/shared/components/staff-shell';
 export const metadata: Metadata = {
   title: 'Resort booking admin',
 };
+
+// viewport-fit=cover lets the layout use env(safe-area-inset-*) on notched phones.
+export const viewport: Viewport = { width: 'device-width', initialScale: 1, viewportFit: 'cover' };
 
 interface RootLayoutProps {
   children: ReactNode;

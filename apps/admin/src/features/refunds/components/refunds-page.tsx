@@ -30,10 +30,12 @@ import {
   TableHead,
   TableRow,
   TextField,
+  Typography,
 } from '@mui/material';
 import { useEffect, useState } from 'react';
 import { fetchStaffProperties } from '@/features/property/services/staff-property-api';
 import { EmptyState } from '@/shared/components/empty-state';
+import { useCompactLayout } from '@/shared/hooks/use-compact-layout';
 import { PageHeader } from '@/shared/components/page-header';
 import { StatusChip } from '@/shared/components/status-chip';
 import { reasonLabel, refundKindLabel } from '@/shared/utils/booking-labels';
@@ -52,6 +54,7 @@ const ALL_PROPERTIES = 'all';
  */
 export function RefundsPage(): React.JSX.Element {
   const state = useRefunds();
+  const compact = useCompactLayout();
   const [properties, setProperties] = useState<PropertySummary[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
   const [markingId, setMarkingId] = useState<string | null>(null);
@@ -95,7 +98,7 @@ export function RefundsPage(): React.JSX.Element {
           value={state.propertyId === '' ? ALL_PROPERTIES : state.propertyId}
           onChange={(event): void => state.setPropertyId(event.target.value === ALL_PROPERTIES ? '' : event.target.value)}
           inputProps={{ 'aria-label': 'Property' }}
-          sx={{ minWidth: 200 }}
+          sx={{ minWidth: { md: 200 } }}
         >
           <MenuItem value={ALL_PROPERTIES}>All properties</MenuItem>
           {properties.map((property): React.JSX.Element => (
@@ -147,6 +150,46 @@ export function RefundsPage(): React.JSX.Element {
         )
       ) : null}
       {!state.loading && state.visible.length > 0 ? (
+        compact ? (
+          <Box component="ul" aria-label="Refunds" sx={{ listStyle: 'none', m: 0, p: 0, display: 'grid', gap: 1.5 }}>
+            {state.visible.map((refund: StaffRefund): React.JSX.Element => (
+              <Box
+                component="li"
+                key={refund.id}
+                sx={{ bgcolor: 'background.paper', border: 1, borderColor: 'divider', borderRadius: 2, overflow: 'hidden' }}
+              >
+                <Box
+                  component="button"
+                  type="button"
+                  aria-label={`Open refund ${refund.reference}`}
+                  onClick={(): void => setOpenId(refund.id)}
+                  sx={{ display: 'block', width: '100%', p: 1.5, textAlign: 'left', font: 'inherit', color: 'text.primary', bgcolor: 'transparent', border: 0, cursor: 'pointer' }}
+                >
+                  <Stack direction="row" justifyContent="space-between" spacing={1} alignItems="flex-start">
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography sx={{ fontWeight: 700 }}>{refund.reference}</Typography>
+                      <Typography variant="body2">{refund.bookerName}</Typography>
+                    </Box>
+                    <Typography sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
+                      {formatCents(refund.amountCents, refund.currencyCode)} ({String(refund.percent)}%)
+                    </Typography>
+                  </Stack>
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                    {refund.stayName}, {refund.propertyName}
+                  </Typography>
+                  <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" alignItems="center" sx={{ mt: 1 }}>
+                    <StatusChip status={refundStyle(refund.status)} />
+                    <Chip size="small" variant="outlined" label={refundKindLabel(refund.kind)} />
+                    <Chip size="small" variant="outlined" label={refund.provider === 'manual' ? 'By hand' : refund.provider} />
+                  </Stack>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+                    {refund.failureReason ?? reasonLabel(refund.reason)} · {refund.createdAt.slice(0, 10)}
+                  </Typography>
+                </Box>
+              </Box>
+            ))}
+          </Box>
+        ) : (
         <Paper elevation={1} sx={{ borderRadius: 2, overflow: 'hidden' }}>
         <TableContainer>
         <Table size="small" aria-label="Refunds">
@@ -187,6 +230,7 @@ export function RefundsPage(): React.JSX.Element {
         </Table>
         </TableContainer>
         </Paper>
+        )
       ) : null}
       <RefundDetailDialog
         refund={open}

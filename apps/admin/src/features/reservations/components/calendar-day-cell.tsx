@@ -9,7 +9,7 @@ import { alpha } from '@mui/material/styles';
 import type { CalendarDayOccupancy } from '@resort-booking/shared-types';
 import { statusIcon } from '@/shared/components/status-chip';
 import type { StatusIconKey } from '@/shared/utils/status-style';
-import { dayAriaLabel, dayHasActivity, dominantTone } from '../utils/calendar-cells';
+import { dayAriaLabel, dayHasActivity, dayLanes, dominantTone } from '../utils/calendar-cells';
 
 interface CalendarDayCellProps {
   date: string;
@@ -120,10 +120,9 @@ export function CalendarDayCell({ date, day, selected, today, weekend, onSelect 
         </Typography>
       ) : (
         <Stack spacing={0.5} alignItems="flex-start">
-          {day.bookingCount > 0 ? <LanePill tone="success" icon="booked" count={day.bookingCount} label="Booked" /> : null}
-          {day.rebookCount > 0 ? <LanePill tone="info" icon="rebook" count={day.rebookCount} label="Rebook" /> : null}
-          {day.pendingCount > 0 ? <LanePill tone="warning" icon="hold" count={day.pendingCount} label="Hold" /> : null}
-          {day.cancelledCount > 0 ? <LanePill tone="error" icon="cancelled" count={day.cancelledCount} label="Cancelled" /> : null}
+          {dayLanes(day).map((lane): React.JSX.Element => (
+            <LanePill key={lane.icon} tone={lane.tone} icon={lane.icon} count={lane.count} label={lane.label} />
+          ))}
         </Stack>
       )}
     </Box>

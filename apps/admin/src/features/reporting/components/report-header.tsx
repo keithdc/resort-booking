@@ -80,7 +80,7 @@ export function ReportHeader({
   const periodMenu = useMemo((): PeriodMenuEntry[] => buildPeriodMenu(new Date()), []);
   const rangeLabel = period.range === null ? '' : describePeriod(period.range.from, period.range.to);
   return (
-    <Box data-print="hide" sx={{ mb: 6 }}>
+    <Box data-print="hide" sx={{ mb: { xs: 4, md: 6 } }}>
       <PageHeader
         icon={<AssessmentOutlinedIcon />}
         tone="info"
@@ -88,10 +88,10 @@ export function ReportHeader({
         description="How your properties are doing. Choose a period and a property; everything below follows."
       />
 
-      <Paper elevation={1} sx={{ p: 2.5, borderRadius: 2 }}>
+      <Paper elevation={1} sx={{ p: { xs: 1.5, sm: 2.5 }, borderRadius: 2 }}>
       <Stack direction={{ xs: 'column', lg: 'row' }} spacing={3} alignItems={{ lg: 'center' }} useFlexGap flexWrap="wrap">
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
-          <FormControl size="small" sx={{ minWidth: 220 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', width: { xs: '100%', lg: 'auto' } }}>
+          <FormControl size="small" sx={{ minWidth: { sm: 220 }, width: { xs: '100%', sm: 'auto' } }}>
             <InputLabel id="report-period">Period</InputLabel>
             <Select
               labelId="report-period"
@@ -122,11 +122,11 @@ export function ReportHeader({
             variant="outlined"
             label={rangeLabel === '' ? 'Choose the first and last day' : rangeLabel}
             aria-label={`Dates covered: ${rangeLabel === '' ? 'not chosen yet' : rangeLabel}`}
-            sx={{ fontWeight: 600 }}
+            sx={{ fontWeight: 600, maxWidth: '100%' }}
           />
         </Box>
 
-        <FormControl size="small" sx={{ minWidth: 220 }}>
+        <FormControl size="small" sx={{ minWidth: { sm: 220 }, width: { xs: '100%', sm: 'auto' } }}>
           <InputLabel id="report-property">Property</InputLabel>
           <Select
             labelId="report-property"
@@ -143,7 +143,7 @@ export function ReportHeader({
           </Select>
         </FormControl>
 
-        <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ ml: { lg: 'auto' } }}>
+        <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ ml: { lg: 'auto' }, '& > button': { flex: { xs: '1 1 140px', lg: '0 0 auto' } } }}>
           <Button variant="outlined" startIcon={<RefreshIcon />} onClick={onRefresh} disabled={loading}>
             Refresh
           </Button>

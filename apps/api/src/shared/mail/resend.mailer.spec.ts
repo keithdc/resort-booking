@@ -13,7 +13,7 @@ describe('ResendMailer', () => {
   const fetchFn = jest.fn<Promise<Response>, [string, RequestInit]>();
   const logged: string[] = [];
   const mailer = (timeoutMs?: number): ResendMailer =>
-    new ResendMailer({ apiKey: KEY, from: 'Humphreys <staff@example.com>', fetchFn: fetchFn as unknown as typeof fetch, ...(timeoutMs === undefined ? {} : { timeoutMs }) });
+    new ResendMailer({ apiKey: KEY, from: 'Humphreys <staff@example.com>', fetchFn: (input, init): Promise<Response> => fetchFn(String(input), init ?? {}), ...(timeoutMs === undefined ? {} : { timeoutMs }) });
 
   beforeEach(() => {
     jest.resetAllMocks();

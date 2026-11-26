@@ -4,7 +4,7 @@
  * @dependencies AppProviders
  */
 
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { headers } from 'next/headers';
 import type { ReactNode } from 'react';
 import { Box } from '@mui/material';
@@ -15,6 +15,16 @@ import { SiteHeader } from '@/shared/components/site-header';
 export const metadata: Metadata = {
   title: 'Humphreys — properties, booked directly',
   description: 'Direct booking for properties across our destinations',
+};
+
+/**
+ * Phones: render at device width and reach under the notch (`viewport-fit=cover`; sticky bars add the
+ * safe-area insets). Pinch zoom stays on: it is never disabled.
+ */
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
 };
 
 interface RootLayoutProps {
@@ -39,7 +49,7 @@ export default async function RootLayout({ children }: RootLayoutProps): Promise
       </head>
       <body>
         <AppProviders>
-          <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: ['100vh', '100dvh'] }}>
             <SiteHeader />
             <Box sx={{ flexGrow: 1 }}>{children}</Box>
             <SiteFooter />

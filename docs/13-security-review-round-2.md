@@ -1,0 +1,378 @@
+# Security and guardrail review, round 2
+
+Fresh, adversarial, read-only second pass over the API, the application guardrails (API and both Next apps) and the database
+guardrails. Question asked: "what else are we missing?". Round 1 is `docs/10-security-review.md` (S-01 to S-27); this file does
+not repeat what that file fixed. Findings here are numbered R2-01 onwards. Anything round 1 left open and still open is listed
+as a carry-over, with fresh evidence.
+
+Method: read every controller, guard, DTO, service and repository touched since round 1 (registration, invites, team, roles,
+audit log, TOTP 2FA, Resend mail, DB roles, tenancy guard) plus migrations 001-029, `roles.ts`, the Next apps' middleware,
+session route and CSP builder, the compose file, CI workflow, gitleaks config and env examples. Ran `npm audit` (full and
+`--omit=dev`) and the API unit tests (`npx jest --testPathIgnorePatterns integration`: 116 suites, 2074 tests, all pass; the
+integration suite was skipped on purpose because it connects to Postgres). No server was started, no database was touched,
+nothing was exploited. "Confirmed" below means the code path was read end to end.
+
+Labels: **Defect** (the code does not do what the docs or the obvious intent say), **Hardening** (works as designed, design is
+weaker than it should be), **Owner decision** (needs a business call before code), **Carry-over** (round 1 item, still open).
+Effort: S (under a day), M (days), L (weeks).
+
+## 1. Summary
+
+Counts: 0 critical, 4 high, 10 medium, 11 low, 3 info (28 findings).
+
+Top findings, in order of risk:
+
+1. **R2-01 (High, defect):** an `employee` can cancel any booking with reason `property_cancelled` (100 percent refund) or `goodwill` (any amount up to what was paid) and the money goes out through the provider. The docs and the isolation test say no money-out route is open to employees.
+2. **R2-02 (High, latent defect):** public property and stay pages are resolved by slug alone, but slugs are only unique per organization. A second workspace can create the same slug and shadow or collide with another operator's public page.
+3. **R2-03 (High, defect):** `GET /staff/calendar` and `/staff/reports` accept any date range. `from=0001-01-01&to=9999-12-31` builds millions of day objects in the single Node thread (any staff role, including employee).
+4. **R2-04 (High, hardening of the guard design):** every production safeguard is `NODE_ENV === 'production'`. An unset or different value (`staging`, `prod`) leaves the mock payment "pay" endpoint open to anyone, registration open, and the fixed development 2FA key in use.
+5. **R2-05 (Medium):** `resort_app` can UPDATE and DELETE `audit_log`, `payments` and `refunds`; the app never needs to.
+6. **R2-06 (Medium, defect):** the org settings audit entry always lists all 12 field names (the DTO requires all of them), so an IBAN change is invisible in the log, and nobody is told.
+7. **R2-07 (Medium, defect):** 2FA setup and enable need only a session, not the password; enabling does not end other sessions. A stolen session can lock the owner out or plant its own authenticator.
+8. **R2-08 / R2-09 (Medium):** sessions are a fixed 7 days with no server-side idle limit, no last-used data, no device list; the admin cookie has no `Secure` flag and `/api/session` stores any string.
+9. **R2-10 (Medium):** an admin receives the reset link of another account and can sign in as that person; the audit log then attributes the actions to the victim.
+10. **R2-11 / R2-13 (Medium, defects):** `IP_HASH_SALT` is optional, so IP and email hashes are reversible; IPv6 clients rotate inside a /64 and defeat every per-IP limit.
+11. **R2-12 (Medium, readiness):** refund retry can fire while the first provider call is still in flight and the provider call carries no idempotency key; a crash after commit leaves a refund `pending` forever with no reconciler.
+
+## 2. Findings table
+
+| ID | Sev | Type | Area | Evidence | Effort |
+| --- | --- | --- | --- | --- | --- |
+| R2-01 | High | Defect | Authorization | `staff-bookings.controller.ts:52-55`, `staff-bookings.service.ts:136-147`, `staff-actions.dto.ts` | S |
+| R2-02 | High | Defect (latent) | Multi-tenancy | `property.repository.ts:127,199`, `001_init.sql:29` | M |
+| R2-03 | High | Defect | Availability (DoS) | `reservations.service.ts:81-88,115-136,388-395`, `reservations.rules.ts:86-97` | S |
+| R2-04 | High | Hardening | Config | `environment.ts:23-25`, `payment-provider.factory.ts:25`, `team.service.ts:60`, `two-factor.cipher.ts` (constructor) | S |
+| R2-05 | Medium | Hardening | Database | `roles.ts:202-214`, `028_staff_roles_invites_audit.sql:51` | S |
+| R2-06 | Medium | Defect | Audit | `update-organization.dto.ts:20-60`, `audit.interceptor.ts:52`, `identity.controller.ts:168-175` | S |
+| R2-07 | Medium | Defect | 2FA | `two-factor.service.ts:83-124`, `two-factor.controller.ts:45-65`, `two-factor.dto.ts` | S |
+| R2-08 | Medium | Hardening | Sessions | `identity.service.ts:43`, `identity.repository.ts:204`, `010_staff_accounts.sql:25-31` | M |
+| R2-09 | Medium | Defect + carry-over S-11 | Admin app | `app/api/session/route.ts:15-33`, `staff-session.ts:6,17` | S |
+| R2-10 | Medium | Owner decision | Team | `team.service.ts:173-200,282`, `team.repository.ts:395-405` | M |
+| R2-11 | Medium | Defect | Privacy | `audit.service.ts:27`, `login-limiter.ts:47`, `hold-rate-limiter.ts:42`, `identity.service.ts:338-340` | S |
+| R2-12 | Medium | Readiness | Payments | `staff-refunds.repository.ts:87`, `refund-issuer.ts:102-122`, `payment-provider.ts` | M |
+| R2-13 | Medium | Defect | Abuse limits | `client-ip.ts:19-21`, `hold-rate-limiter.ts:85`, `rate-limit.ts:79` | S |
+| R2-14 | Low | Hardening | Rate limits | `payments.controller.ts:19,27`, `inventory.controller.ts:101`, property/offers/extras GETs | S |
+| R2-15 | Low | Carry-over S-10 | API headers | `main.ts` (no helmet, no `x-powered-by` off, no Cache-Control) | S |
+| R2-16 | Low | Defect | Validation | `validation-exception.factory.ts:19`, `upsert-property.dto.ts:85-90` and 6 more DTOs | S |
+| R2-17 | Low | Hardening | Step-up | `identity.service.ts:236-275` | S |
+| R2-18 | Low | Hardening / owner decision | Login | `identity.password.ts:21`, `login-limiter.ts:80-93` | S |
+| R2-19 | Low | Hardening | 2FA | `two-factor.cipher.ts:119-121` | S |
+| R2-20 | Low | Carry-over S-19 | Outbound | `geocode.service.ts:88,115,140,164` | S |
+| R2-21 | Low | Hardening | Database | `001_init.sql`, `018_payments.sql`, `019_cancellation_and_refunds.sql` | M |
+| R2-22 | Low | Hardening | Migrations | `migration-files.ts:87-121` | S |
+| R2-23 | Medium | Owner decision (carry-over S-24) | Compliance | `audit_log`, `staff_invites`, `inventory_blocks` | L |
+| R2-24 | Low | Hardening | Observability | `main.ts`, `role.guard.ts`, `tenant.guard.ts` | M |
+| R2-25 | Low | Hardening | Mail | `team-mail.ts`, `team.service.ts:300-325` | S |
+| R2-26 | Info | Note | Dependencies, CI | `npm audit`, `.github/workflows/security.yml` | S |
+| R2-27 | Info | Owner decision | Passwords | `identity.password.ts:33-41` | S |
+| R2-28 | Info | Carry-over S-27 | Payments | `main.ts:32-34`, `payments.service.ts:162` | M |
+
+## 3. Detailed findings
+
+### R2-01 Employees can move money out through staff cancel (High, defect, confirmed)
+
+`POST /staff/reservations/:id/cancel` is `@AllowRoles('admin', 'employee')` (`staff-bookings.controller.ts:52-55`). The body
+carries `reason` (`guest_request`, `property_cancelled`, `goodwill`) and, for goodwill, `refundCents` (`staff-actions.dto.ts`).
+`StaffBookingsService.cancelInput` has no role check: `property_cancelled` refunds everything paid
+(`staff-bookings.service.ts:136-138`), `goodwill` refunds any integer from 0 to what was paid (`:139-147`). `BookingsService.cancelRow`
+then records the refund and `RefundIssuer.settle` asks the provider to pay it out immediately. Docs claim the opposite:
+`docs/10` ("Everything that moves money out ... is admin only") and the test title at `tenant-isolation.spec.ts:344`
+("no route is open to employees that moves money out"). The test passes because it only inspects routes it classifies as
+money-out (refund retry, mark-paid); cancel is classed as day-to-day (`:98`).
+
+Exploit: a compromised or disgruntled employee account cancels every future confirmed booking as `property_cancelled`. Each
+guest is refunded 100 percent, the stays are released, the revenue is gone. One audit row per booking, no alert, no cap.
+`change-dates` has the same shape: `waiveFee: true` and `balanceSettledOutside: true` (employee reachable) let staff write off a
+fee or declare a balance paid with nothing but a free-text note.
+
+Fix (S): in `StaffBookingsService`, an employee may cancel only with `guest_request` (policy refund, as computed); `property_cancelled`,
+`goodwill`, `waiveFee` and `balanceSettledOutside` need `admin`. Add the case to `tenant-isolation.spec.ts` by testing the service
+with an employee. **Owner decision:** whether employees should have an amount cap instead (for example goodwill up to X, or any
+refund over X needs an admin).
+
+### R2-02 Public slug lookup is global, uniqueness is per organization (High, latent defect, confirmed)
+
+`properties` has `UNIQUE (organization_id, slug)` (`001_init.sql:29`) and `houses` `UNIQUE (property_id, slug)` (`:46`), and the
+staff check `slugTaken` is per organization (`property.repository.ts:304-315`). The guest routes resolve by slug only:
+`WHERE p.slug = $1` (`:127`), `WHERE p.slug = $1 AND h.slug = $2` (`:199`), house lists and availability
+(`:167`). Two workspaces can both own `beach-house`.
+
+Scenario (needs registration open or a second organization, both supported by round 1's work): workspace B creates a published
+property with the slug of workspace A's published property. `GET /properties/beach-house` and its houses, quotes and
+availability return whichever row Postgres returns first (no `ORDER BY`); the guest site may show B's content, or A's guests may
+be shown B's stays. A hostile tenant can deliberately squat the slug of a competitor or of a known brand. Holds use house ids,
+so a guest on a confusing page books the wrong operator.
+
+Fix (M): one globally unique public slug (unique index on `lower(slug)` for published properties, or on all) or resolve the
+public site by organization (host name or `organization` path segment). Also make `GET /identity/organization` (first organization,
+`identity.repository.ts:getSettings(null)`) follow the same decision. **Owner decision:** one operator forever, or several (round 1
+decision 3).
+
+### R2-03 Unbounded date range on staff calendar and reports (High, defect, confirmed by reading; not run)
+
+`StaffRangeQueryDto` validates only the shape of `from` and `to`. `assertRange` only requires `to` after `from`
+(`reservations.service.ts:388-395`). `getCalendar` then runs `eachIsoDate(from, to).map(...)` (`:85`) and `getReport` calls
+`eachIsoDate` again and loops over it (`:136`). `eachIsoDate` pushes one string per night (`reservations.rules.ts:86-97`). A range of
+`0001-01-01` to `9999-12-31` is about 3.65 million nights, then an object per night, per request, on the single event loop; a few
+parallel requests exhaust memory. Both routes are open to `employee`. (The guest availability endpoints do cap the window at 24 months,
+`availability.rules.ts:11`; the staff ones forgot.)
+
+Fix (S): in `assertRange` refuse more than 731 nights (calendar) and 1096 (reports); add the cap to the `previousRange` too. Add a test with the extreme dates.
+
+### R2-04 Production guards depend on `NODE_ENV` being exactly `production` (High, hardening, confirmed)
+
+`isProduction(env)` is `env.NODE_ENV === 'production'` (`environment.ts:23-25`). Round 1's S-26 added a startup check, but it
+warns (not stops) when `NODE_ENV` is unset (`environment.ts` last warning) and treats anything other than `production` as "not
+production". Consequences when a deploy has no `NODE_ENV` (the `start` script sets none, `apps/api/package.json`), or uses
+`staging`, `prod` or `Production`:
+
+- `createPaymentProvider` allows the mock (`payment-provider.factory.ts:25`) and `PAYMENT_PROVIDER` defaults to `mock`. `POST /payments/:paymentId/mock/complete` has no auth and no rate limit (`payments.controller.ts:27`, `payments.service.ts:162`): anyone holding a card hold can confirm a stay without paying. The payment id is returned by `POST /holds/:holdId/payment`, which is also public.
+- Registration is open (`team.service.ts:60`): anyone creates a workspace and an admin (R2-02, R2-10).
+- `TWO_FACTOR_ENCRYPTION_KEY` falls back to the fixed key whose seed is in the repo (`DEV_KEY_SEED` and the constructor fallback in `two-factor.cipher.ts`), so enrolled secrets can be decrypted by anyone with a database dump.
+- Localhost CORS, the database-role and TLS checks, and the Redis/CORS errors become warnings.
+
+Fix (S): invert the default. Refuse to start unless `NODE_ENV` is one of `development`, `test`, `production`; treat everything that is
+not `development` or `test` as strict. Require an explicit `ALLOW_MOCK_PAYMENTS=true` (refused when strict) for the mock. Make
+`mock/complete` return 404 unless that flag is on.
+
+### R2-05 The app role can rewrite the audit log and financial history (Medium, hardening, confirmed)
+
+`buildRoleStatements` grants `SELECT, INSERT, UPDATE, DELETE` on all tables to `resort_app` and the same by default privilege for every
+future table (`roles.ts:202,213-214`). That includes `audit_log`, `payments`, `refunds`, `booking_changes`, `discount_redemptions` and
+`inventory_blocks`. A SQL injection or a bug (or a compromised API process) can rewrite who did what, delete refunds, or edit a
+payment. The application code never issues UPDATE or DELETE against `audit_log` and never deletes `payments`, `refunds` or
+reservations (only `discount_redemptions`, rates, discounts, extras, sessions, challenges and similar; grep of `DELETE FROM`).
+Also, `audit_log.staff_user_id` is `ON DELETE SET NULL` and the audit write is fire and forget
+(`audit.interceptor.ts:39-55`, `audit.service.ts:34-43`): if the insert fails the action stands unlogged and only a log line says so.
+
+Fix (S): in `buildRoleStatements` after the broad grant: `REVOKE UPDATE, DELETE, TRUNCATE ON audit_log FROM resort_app` (and DELETE on `payments`, `refunds`,
+`booking_changes`), plus a `BEFORE UPDATE OR DELETE` trigger on `audit_log` that raises, owned by the owner role. Add the probes to
+`role-probes.ts`. For actions that move money or change bank details, write the audit row in the same transaction as the change.
+
+### R2-06 The organization settings audit entry cannot show an IBAN change (Medium, defect, confirmed)
+
+`PATCH /staff/organization` is `@Audited({ fieldNames: true })` (`identity.controller.ts:168-175`): the metadata is the sorted list of
+body keys (`audit.interceptor.ts:52`, `bodyFieldNames`). `UpdateOrganizationDto` has all 12 fields required (`update-organization.dto.ts:20-60`) and
+`updateSettings` writes every column. So every settings save records the same 12 names. Changing the IBAN, the BIC or the booking
+email (which decides where guest payments and replies go) looks identical to changing the phone number. No before/after, no notice
+to other admins or to the previous booking address, no step-up. Bank-detail redirection is the highest-yield fraud on a booking site that
+shows an IBAN for bank transfers.
+
+Fix (S/M): compare the stored row to the new values in the service and record the names of fields that actually changed; for `iban`,
+`bic`, `bankAccountName`, `bookingEmail` record a masked old and new value (last four characters plus a hash). Email all other active
+admins and the old `bookingEmail` when mail is configured. Consider re-asking the password (R2-17).
+
+### R2-07 2FA setup and enable need no password; other sessions survive (Medium, defect, confirmed)
+
+`POST /staff/me/two-factor/setup` and `/enable` take no credentials beyond the session (`EnableTwoFactorDto` is only `code`;
+`two-factor.service.ts:83-124`). `disable` and `recovery-codes/regenerate` do ask for password and code (good). Enabling does not end the
+other sessions (`enable` only calls `store.activate`).
+
+Scenario: an attacker with a stolen session token (XSS, shared computer, `localStorage` read, R2-09) calls `setup`, scans the secret into their
+own authenticator, calls `enable`, and saves the ten recovery codes. The legitimate owner's next login now demands a second factor they do not
+have; only another admin can reset it (and if the owner was the only admin, nobody can). The attacker keeps a path in even after the owner changes
+the password, because the password change ends other sessions but the attacker has the second factor (and the new password through any later phishing).
+
+Fix (S): require the current password on `setup` and `enable`; on `enable` and `disable` delete every other session of that person (`deleteSessionsExcept`).
+Email the account owner when 2FA changes.
+
+### R2-08 Session lifecycle is thin (Medium, hardening, confirmed)
+
+Sessions are 7 days from login with no sliding or idle expiry (`identity.service.ts:43`, lookup `identity.repository.ts:204`). The 30 minute idle
+logout exists only in the browser (`idle.ts`, `use-idle-logout.ts`); a copied token ignores it for a week. `staff_sessions` stores no last-used time,
+IP hash or user agent (`010_staff_accounts.sql:25-31`), so there is no "your active sessions" list, no way to spot a stolen one and no per-user cap
+(every login adds a row; the hourly purge only removes expired ones). Good: tokens are 256 bits and stored hashed, a password change, deactivation,
+reset and "sign out everywhere" all delete sessions, and a role change applies on the very next request because the role is joined live.
+
+Fix (M): add `last_used_at` (updated at most once a minute), idle timeout (for example 8 hours) and absolute timeout (for example 24 hours to 7 days by owner choice);
+store `ip_hash` and a short user-agent label; cap sessions per user (for example 10, oldest dropped); expose the list and "revoke" in Account.
+**Owner decision:** the idle and absolute limits.
+
+### R2-09 Admin session cookie and token storage (Medium, defect, carry-over S-11)
+
+New evidence on the half-done S-11:
+
+- The `staff_token` cookie is set without `secure` (`app/api/session/route.ts:24-31`), so in production it can travel over plain http on a first visit or a downgraded link.
+- `POST /api/session` accepts any non-empty string as the token and never checks it with the API (`:15-22`), and checks no `Origin`. Anyone can make a victim's browser set or clear the cookie (`DELETE` too) with a cross-site form POST (`text/plain` body is enough because `request.json()` ignores the content type). Impact today is limited (the API calls use the `localStorage` copy), but it is login-CSRF style fixation. A malformed body throws an unhandled 500.
+- The same bearer token is kept twice: in `localStorage` (readable by any script that runs in the origin, `staff-session.ts:17`) and in the cookie. The httpOnly cookie therefore adds no protection while the `localStorage` copy exists.
+- The proxy-only check in `middleware.ts` is cookie presence, not validity: any value opens the admin shell (the API still enforces everything, so this is a UX issue, not an authorization hole).
+
+Fix (S): set `secure: process.env.NODE_ENV === 'production'`, check `Origin` equals the admin origin, verify the token with `GET /staff/me` before setting the cookie, wrap `request.json()`.
+Fix (M, the real one): the BFF design from round 1 (browser never holds the token; route handlers add `x-staff-token` server side).
+
+### R2-10 An admin can sign in as another account; no owner tier (Medium, owner decision, confirmed)
+
+`resetAccess` returns the one-time token to the calling admin (`team.service.ts:173-200`, `InviteIssued.inviteToken` at `:282`). Whoever opens that
+link sets a new password for the target and is signed in as the target (`team.repository.ts:395-405`, `acceptInvite` then `startSession(used.account)`).
+The `auth.access_reset_completed` audit row carries the target's staff id as the actor (`TeamService.accept`, `this.actorOf(used.account, context)`). Result: admin B resets admin or employee A,
+accepts the link themselves, and every later action is logged as A. The target is not emailed. There is also no owner above `admin`: any admin can demote or
+switch off any other admin, including the founder, as long as one admin remains (`LAST_ADMIN`). `reset-two-factor` removes the second factor of any member with no
+extra proof.
+
+Fix (M): when mail is configured, deliver reset links only by email to the account's own address and do not return the token; add `metadata.resetBy` to the
+completion row; email the target ("your access was reset by X"); keep the link-handover path only when mail is off. **Owner decision:** is a distinct `owner`
+role wanted (cannot be demoted, switched off or reset by other admins)?
+
+### R2-11 `IP_HASH_SALT` is optional, so the hashes are not protective (Medium, defect, confirmed)
+
+Every limiter and the audit log read `IP_HASH_SALT` with `?? ''` (`audit.service.ts:27`, `login-limiter.ts:47`, `team-limiter.ts:52`, `hold-rate-limiter.ts:42`); the
+environment check never requires it. Without the salt, `fingerprint()` is plain SHA-256 of the address (`client-ip.ts:36-40`). The IPv4 space is 4.3 billion
+values: a table is built in minutes, so `audit_log.ip_hash` and `inventory_blocks.creator_ip_hash` (migrations 026, 028) are reversible to IPs, which weakens the
+pseudonymisation claim. `describe()` in the login log also writes the raw IP and an unsalted 12-hex email fingerprint on every attempt (`identity.service.ts:338-340`).
+
+Fix (S): require a 32+ character salt in strict mode (R2-04); use `HMAC-SHA256(salt, value)`; log the hashed IP, not the raw one, or document raw IPs in logs with a 30-day retention.
+
+### R2-12 Refund retry and the missing reconciler (Medium, readiness, confirmed)
+
+(a) `claimForRetry` lets a `pending` online refund be claimed again 60 seconds after its last update (`staff-refunds.repository.ts:87`). The first provider call
+(`RefundIssuer.settle`, `refund-issuer.ts:102-122`) has no timeout of its own and the provider interface has no idempotency key (round 1 S-27, still true). If the first call is slow or its
+answer is lost after the provider paid, a retry pays again. Also `markPaid` (admin) can mark a refund done manually while a provider call for it is still in flight.
+(b) The refund row is committed as `pending` before the provider is called (`bookings.service.ts` `cancelRow`). A crash or deploy between commit and `settle` leaves it
+`pending`; nothing sweeps those, and the admin queue only shows them if somebody looks (`needs_attention` does include pending).
+
+Fix (M, do it before the real provider): pass the refund id as the provider idempotency key; set a provider timeout; have a scheduled job that retries
+or alerts on refunds `pending` for more than 10 minutes; refuse `markPaid` on a refund claimed in the last 5 minutes.
+
+### R2-13 Per-IP limits ignore IPv6 prefixes; guest limiters fail open (Medium, defect, confirmed)
+
+`clientIp` returns `request.ip` untouched (`client-ip.ts:19-21`). The hold cap per IP (5 open holds, migration 026 hash) and the 10-per-10-minutes hold limit, the booking
+lookup limit, the browse limit and registration limits are all keyed by that single address. An IPv6 client controls a /64 (2^64 addresses): it can rotate source addresses,
+so S-06's inventory-denial fix is only effective against IPv4 and single-address abusers. Per-email limits are bypassed with `+tag` addresses, which are different strings.
+Separately, all guest and team limiters skip the check when Redis is down (`rate-limit.ts:74-80`, documented trade-off); login and 2FA fail closed. That includes the per-booking-reference limiter (also a Redis counter): during an outage nothing slows guessing of booking references (still 40 bits plus the email).
+
+Fix (S): normalise IPv6 to a /64 prefix (and IPv4-mapped to IPv4) before keying. **Owner decision:** keep guest limiters fail-open, or fail closed for `POST /holds` only (an outage then stops new bookings but stops flooding).
+
+### R2-14 Public and staff routes with no rate limit (Low, hardening, confirmed)
+
+No limiter and no global throttle on: `POST /holds/:holdId/payment` and `POST /payments/:paymentId/mock/complete` (`payments.controller.ts:19,27`), `GET /holds/:id`,
+`GET /properties`, `/properties/:slug`, `/houses`, `/request-options`, `/extras`, `/offers`, `/cancellation-policy`, `GET /identity/organization`, `GET /staff/register/status`,
+`POST /staff/logout`. These are cheap reads, but each hits Postgres; there is nothing in front of them in the repo. Authenticated staff routes are unthrottled too, including
+`/staff/geocode` and `/staff/geocode/reverse`, which forward to Photon and Nominatim (a loop can get the server IP banned by Nominatim's policy).
+
+Fix (S): `@nestjs/throttler` globally (generous default, for example 300 per minute per IP) and a tighter bucket for geocode; or enforce at the proxy.
+
+### R2-15 API still has no security headers and no `Cache-Control` (Low, carry-over S-10, confirmed)
+
+`main.ts` has no helmet: no `X-Content-Type-Options`, no `Cache-Control: no-store` on staff and booking JSON, and Express still sends `X-Powered-By: Express`. With a CDN or caching
+proxy in front, a `GET /staff/...` or `POST /bookings/lookup` answer could be stored (the custom `x-staff-token` header is rarely part of a cache key). Browsers also
+keep authenticated JSON in the back/forward cache after sign-out.
+
+Fix (S): `app.disable('x-powered-by')`, small middleware setting `X-Content-Type-Options: nosniff`, `Cache-Control: no-store` on `/staff/*`, `/bookings/*`, `/holds/*`, `/payments/*`, `Referrer-Policy: no-referrer`.
+
+### R2-16 Implicit type conversion turns wrong types into valid values (Low, defect, confirmed)
+
+The global pipe uses `enableImplicitConversion: true` (`validation-exception.factory.ts:19`). Round 1 knew this for legal acceptance and added `@KeepRawValue()` on some fields, but the
+remaining `@IsBoolean()` fields do not have it: `published` in `upsert-property.dto.ts:85-90`, the same in `upsert-house.dto.ts`, `upsert-extra.dto.ts`, `upsert-request-option.dto.ts`, `save-booking-config.dto.ts`, and
+three in `discount-write.dto.ts`. A body `{"published":"false"}` becomes `true` and publishes a draft. Strings fields also accept objects and arrays, which become `"[object Object]"` or `"a,b"` (a password `{}` is
+the password `[object Object]`). Admin-only and low impact.
+
+Fix (S/M): turn `enableImplicitConversion` off and add `@Type(() => Number)` only on query numbers; or add `@KeepRawValue()` to the remaining booleans and a `@IsString()` check on raw value.
+
+### R2-17 No step-up for sensitive self-service changes (Low, hardening, confirmed)
+
+`changePassword` has no attempt limiter (`identity.service.ts:260-275`): a stolen session can try current passwords at the cost of one scrypt each, throttled only by the global semaphore.
+`updateProfile` changes the sign-in email with no password and no ownership check of the new address (`:236-257`) and keeps all sessions. Together with R2-06 (IBAN) and R2-10 (reset), the account-takeover surface of a single stolen session is large.
+
+Fix (S): reuse the login failure limiter for the current-password check; require the password to change email and to change IBAN or booking email; send a notice to the old address.
+
+### R2-18 Login capacity and lock-out as denial of service (Low, hardening / owner decision, confirmed)
+
+Password hashing runs through one process-wide `Semaphore(3, 50)` (`identity.password.ts:21`): about 53 concurrent login attempts fill it and everyone else (staff included) gets
+`503 LOGIN_BUSY`. The per-IP limit counts failures only (20 per 15 minutes) so an attacker with many addresses, or one address with the right password, keeps it full.
+The per-email lock (5 failures, 15 minutes) lets anyone lock a known staff address out by submitting wrong passwords (`login-limiter.ts:80-93`).
+
+Fix (S): accept as a known trade-off and alert on `LOGIN_BUSY` and lock-out counts; optionally run hashing for each IP in its own small queue so one source cannot fill the shared one. **Owner decision.**
+
+### R2-19 Recovery codes use plain SHA-256; the 2FA key cannot rotate (Low, hardening, confirmed)
+
+Ten random characters from a 31-symbol alphabet (about 49.5 bits) are stored as `sha256(staffId:code)` (`two-factor.cipher.ts:119-121`). With a leaked database an offline attack is feasible per account (a GPU does 10^10 or more SHA-256 per second;
+2^49.5 is hours). The ciphertext has a version tag (`v1`) but only one key slot, so rotating `TWO_FACTOR_ENCRYPTION_KEY` makes every enrolled secret unreadable (documented, and a decrypt error is a 500 in login for that user).
+
+Fix (S): store `HMAC-SHA256(TWO_FACTOR_ENCRYPTION_KEY, staffId:code)`; support `TWO_FACTOR_ENCRYPTION_KEY_PREVIOUS` for rotation; map decrypt failure to a controlled 401 plus an admin notice.
+
+### R2-20 Geocode calls still have no timeout or size cap (Low, carry-over S-19, confirmed)
+
+The four `fetch` calls (`geocode.service.ts:88,115,140,164`) have no `signal` and call `response.json()` on an unbounded body. Round 1 listed it (S-19) but only S-18 and others were closed. A slow upstream pins admin requests (and, with R2-14, a loop pins many).
+Hosts are fixed, so no SSRF.
+
+Fix (S): `AbortSignal.timeout(5000)`, read at most 256 kB, cache by normalised query for a few minutes, limit per staff id.
+
+### R2-21 Database integrity gaps beyond round 1 (Low, hardening, confirmed)
+
+- `organization_id` is copied onto almost every table but nothing ties it to the parent's organization (no composite foreign keys). A bug that inserts a house with a property of another organization is accepted by the database. Round 1 deliberately postponed row-level security; composite FKs (`(property_id, organization_id) REFERENCES properties (id, organization_id)`) are the cheap alternative.
+- No CHECK that a refund is at most what was paid, or that the sum of refunds is at most the sum of succeeded payments (`019_cancellation_and_refunds.sql`; only the app enforces it). `discount_redemptions.amount_cents` has no CHECK. `currency_code` is unconstrained text on houses, payments and inventory (`001_init.sql:42`, `018_payments.sql:12`); a payments sum across currencies is possible.
+- Money is correctly integer cents (`integer`, so a cap of about 21 million major units per row) with non-negative CHECKs from 018, 019 and 027.
+- `staff_two_factor_challenges` are purged only when the same person logs in again or by `createChallenge` of anybody (expired rows swept in passing), not on a schedule; fine in practice.
+
+Fix (M): add `CHECK (currency_code ~ '^[A-Z]{3}$')`, a trigger or constraint for refund totals, composite FKs on the three or four tables that hold money or stays.
+
+### R2-22 Migration runner details (Low, hardening, confirmed)
+
+`applyPendingMigrations` takes no advisory lock (`migration-files.ts:87-121`): two API instances started with `RUN_MIGRATIONS_ON_START=true` race; the loser's transaction fails on the ledger insert and rolls back (safe, but noisy and a failed start).
+There is no checksum of applied files, so an edited, already applied migration goes unnoticed. `CREATE EXTENSION btree_gist` in `001` needs rights the owner role may lack on managed Postgres (trusted extension on PG 13+ is fine). Seed data still ships in
+migrations (round 1 S-25, still open).
+
+Fix (S): `pg_advisory_lock` around the loop; store `sha256` per file and fail on mismatch; move seed rows behind a dev-only command.
+
+### R2-23 Retention, erasure and backups (Medium, owner decision, carry-over S-24, confirmed)
+
+Nothing deletes personal data. New since round 1: `audit_log` grows forever and writes one row per failed sign-in, including unknown emails with `organization_id NULL` that no admin can ever see (`login()` records them; the log query filters by organization); `staff_invites` keeps names and emails after use; failed holds keep names, emails, phones and free-text `guest_note` indefinitely; there is no export or erasure endpoint and
+no restore drill. `docs/11` documents a `pg_dump` and says "test regularly" but there is no PITR plan, no encryption statement for backups, no owner for restores.
+
+Fix (L): retention job (expired holds 90 days, invites 30 days after use, orphan audit rows 90 days, audit 24 months), anonymise-by-reference tool, managed Postgres with PITR and a quarterly restore test. **Owner decision:** RPO/RTO and retention periods (round 1 decisions 7 and 8).
+
+### R2-24 Observability gaps (Low, hardening, confirmed)
+
+No HTTP access log, no metrics, no alerts. `RoleGuard` and `TenantGuard` refusals (403 `FORBIDDEN_ROLE`, tenant 404) are not logged or counted, so probing across tenants or roles is invisible. Nothing watches failed or `pending` refunds, login or 2FA failure spikes, Redis being down (limiters silently skip), or `audit.record` failures (only a log line). There is no CSP `report-to`, so a policy violation or XSS attempt is never reported. Reading bank details, the team list and the audit log is not itself audited.
+
+Fix (M): structured request log (method, route template, status, request id, hashed IP; never query strings), counters for 401/403/404-from-guard/429/5xx, alerts on: refund failed or pending over 10 minutes, `auth.login_failed` spikes, `audit.record` errors, Redis down; `report-uri` or `report-to` on the CSP.
+
+### R2-25 Invitation mail as a branded phishing relay; token in URL path (Low, hardening, confirmed)
+
+`renderInviteMail` escapes every value (good), but the subject and body contain attacker-chosen text (`organizationName`, `inviterName`, `recipientName`) sent from the product's verified domain to any address
+(`team-mail.ts`). Limits are 4 per recipient and 30 per workspace per hour. Where registration is open anyone can create a workspace and use it. The link always points at the fixed `ADMIN_APP_URL`, so the link itself cannot be redirected. The invitation token travels in the URL path (`/staff/invites/:token/preview`, `/invite/<token>`), so it lands in proxy access logs and browser history (Referrer-Policy is `strict-origin-when-cross-origin`, so no leak to third parties).
+
+Fix (S): keep registration closed in production (default), put a fixed template wording around the free text, send the token in a POST body or URL fragment.
+
+### R2-26 Dependencies, CI, containers (Info)
+
+`npm audit --omit=dev`: 0 vulnerabilities. Full `npm audit`: 31 (3 critical, 1 high, 27 moderate), all in dev tooling: `vitest`/`@vitest/mocker`/`tinypool` (critical), `handlebars` (critical, via test tooling), `vite` (high), `jest`/`glob`/`minimatch`/`@nestjs/cli`/`typescript-eslint` (moderate). Not shipped; noted, not fixed. CI (`.github/workflows/security.yml`) runs audit, gitleaks and `security-check.sh` only: no lint, typecheck or unit-test job on pull requests, and actions are pinned by tag
+(`actions/checkout@v4`, `gitleaks-action@v2`), not by commit SHA. There is no Dockerfile or production compose to review; the dev compose binds Postgres and Redis to 127.0.0.1. Secrets: `.env` files are untracked; history contains only the three `.env.example` files; no key-like strings found.
+
+### R2-27 Password hashing parameters and recovery path (Info, owner decision)
+
+scrypt runs with Node defaults (N=16384, r=8, p=1; `identity.password.ts:33-41`), below the current OWASP guidance (N=2^17), and the stored format (`salt:key`) carries no parameters, so cost can only be raised by a format change (store `scrypt$N$r$p$salt$key` and re-hash on login).
+There is no self-service "forgot password": the only path is another admin's reset link, so a workspace whose only admin forgot the password needs a database edit. **Owner decision:** add an emailed reset for admins (with 2FA step), or document the operator procedure.
+
+### R2-28 Payment webhook and idempotency readiness (Info, carry-over S-27)
+
+Still true: no webhook route and no processed-event table; `NestFactory.create(AppModule, { bodyParser: false })` plus `useBodyParser('json')` does not keep the raw body that signature verification needs (`rawBody: true` is not set, `main.ts:32-34`);
+`createIntent` and `refund` take no idempotency key; late success after hold expiry has no automatic refund. Payments already have strong DB guards (`UNIQUE (provider, provider_ref)`, one open and one succeeded payment per stay, `markSucceeded` is conditional), so the design is ready to receive a webhook handler that: verifies signature on the raw body, inserts the provider event id into a unique table first, settles inside one transaction, and refunds on late success.
+
+## 4. Checked and clean (no finding)
+
+Authorization and tenancy: every controller route has `StaffGuard`, `RoleGuard` (fail closed when a route declares no role) and either `@TenantScoped` or a justified `@TenantExempt`; the justifications read correctly (list filtered by `organization_id` in SQL, or session-derived id). Foreign rows answer 404 not 403. `TenantGuard` ids come from params, query and body, and a body list is checked as a set.
+Mass assignment: the global pipe has `whitelist` and `forbidNonWhitelisted`; role and `organizationId` never come from a body (taken from the session). JSON limit 100 kB, URL 2048, `x-request-id` sanitised, error filter hides stack and SQL. Guest availability windows (24 months), stay length (120 nights), advance (800 days), hold lists (20 options), staff lists (200 refunds).
+Enumeration: login uses a dummy hash and one message; the inactive-account path costs the same; invite preview and accept answer one 404 for unknown, used, revoked and expired; 2FA codes and challenge errors are uniform. Registration returns `EMAIL_TAKEN` by design and is closed in production.
+Token handling: session, invite and challenge tokens are 256-bit random, stored as SHA-256, compared by indexed equality; recovery codes are single use; TOTP compares in constant time and refuses replay; challenges die after 5 failures and are single use.
+Abuse and money: booking lookup needs a 40-bit reference and the email, limited per IP and per reference; cancel locks the booking row and `refunds` has `UNIQUE (inventory_block_id, kind)`, so double cancel and double refund cannot both win; `exclusion constraint inventory_blocks_no_overlap` blocks double booking; payment confirm is `expires_at > now()` inside the transaction; a staff retry is claimed atomically.
+CORS: explicit origins, no credentials; the API accepts the token only in a custom header, so classic CSRF does not apply. CSP: nonce plus `strict-dynamic`, `object-src none`, `frame-ancestors none`, `base-uri self`; no `dangerouslySetInnerHTML` anywhere; mail HTML is escaped; open redirect on login fixed; no file upload; no Swagger; the only outbound fetches go to fixed hosts (Resend, Photon, Nominatim); health is minimal.
+Frontend: password and one-time-code fields use `new-password`, `current-password`, `one-time-code`; role gating in the UI is mirrored by `RoleGuard`; tokens are never put in a URL.
+
+## 5. Phased plan
+
+**Phase A, before any public deploy (days):** R2-04 (strict mode, explicit mock flag), R2-01 (employee cancel limits), R2-03 (range cap), R2-07 (password at 2FA setup, revoke sessions), R2-09 quick part (`Secure`, Origin check, verify token), R2-11 (require salt), R2-02 decision plus the unique-slug fix if more than one operator is possible, R2-16 booleans.
+
+**Phase B, with the payment provider (1-2 weeks):** R2-05 (revoke UPDATE/DELETE and audit trigger), R2-06 (real diff audit, notices), R2-12 (idempotency keys, reconciler, alerts), R2-28 (webhook table, raw body), R2-13 (IPv6 prefix), R2-15 (API headers), R2-10 (reset delivery, owner role decision), R2-17 (step-up), R2-20 (geocode timeout).
+
+**Phase C, operations and compliance (ongoing):** R2-08 (server-side session limits and device list), R2-23 (retention, erasure, PITR, restore drill), R2-24 (access log, metrics, alerts, CSP reports), R2-14 (global throttle), R2-21 (composite FKs, checks), R2-19, R2-22, R2-25, R2-26 (CI tests job, pin actions), R2-27.
+
+## 6. Owner decisions raised or sharpened
+
+1. May employees refund at all, and up to what amount (R2-01)?
+2. One operator or several on one deployment, and who owns the public slug namespace (R2-02)?
+3. Is a distinct `owner` role above `admin` wanted (R2-10)?
+4. Session idle and absolute limits (R2-08).
+5. Should `POST /holds` fail closed when Redis is down (R2-13)?
+6. Retention periods, RPO/RTO, and an emailed admin password reset (R2-23, R2-27).
+7. Who receives alerts for failed or stuck refunds and login floods (R2-12, R2-24)?

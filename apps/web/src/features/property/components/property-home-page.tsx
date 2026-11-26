@@ -16,6 +16,7 @@ import {
   SparklesText,
 } from '@resort-booking/ui';
 import Link from 'next/link';
+import { photoSrcSet } from '@/shared/utils/responsive';
 import { withDefaultStay } from '@/shared/utils/stay-query';
 import { fetchProperties } from '../services/property-api';
 import { PropertyCardGrid } from './property-card-grid';
@@ -90,12 +91,16 @@ export async function PropertyHomePage(): Promise<React.JSX.Element> {
                 key={property.id}
                 component={Link}
                 href={`/properties/${property.slug}`}
-                sx={{ display: 'block', width: 300, textDecoration: 'none' }}
+                sx={{ display: 'block', width: { xs: 240, sm: 300 }, flexShrink: 0, textDecoration: 'none' }}
               >
                 <CardMedia
                   component="img"
                   height="180"
                   image={property.coverPhotoUrl}
+                  srcSet={photoSrcSet(property.coverPhotoUrl)}
+                  sizes="300px"
+                  loading="lazy"
+                  decoding="async"
                   alt={property.name}
                   sx={{ borderRadius: 1, objectFit: 'cover' }}
                 />

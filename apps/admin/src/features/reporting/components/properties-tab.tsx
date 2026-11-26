@@ -37,6 +37,7 @@ import { MetricInfo } from './metric-info';
 import { useMoneyHidden } from './money-visibility';
 import { EmptyNote, ReportSection } from './report-section';
 import type { ReportDetail } from './report-detail-dialog';
+import { stickyFirstColumn } from '@/shared/utils/sticky-first-column';
 
 interface PropertiesTabProps {
   report: StaffReport;
@@ -102,7 +103,7 @@ export function PropertiesTab({ report, onOpenDetail }: PropertiesTabProps): Rea
 
   return (
     <ReportSection section="propertiesTable">
-      <TableContainer>
+      <TableContainer sx={stickyFirstColumn}>
         <Table size="small" aria-label="Properties and stays">
           <TableHead>
             <TableRow>

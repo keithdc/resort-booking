@@ -66,7 +66,7 @@ export function SidebarLink({ item, active, collapsed, badgeCount = 0, onNavigat
         }}
       >
         <Badge badgeContent={badgeCount} max={99} color="secondary" overlap="circular">
-          <Box component="span" sx={{ display: 'inline-flex', '& svg': { fontSize: 24 } }}>
+          <Box component="span" sx={{ display: 'inline-flex', '& svg': { fontSize: { xs: 20, md: 24 } } }}>
             {active ? item.activeIcon : item.idleIcon}
           </Box>
         </Badge>

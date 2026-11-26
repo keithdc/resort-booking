@@ -15,6 +15,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { RegistrationLink } from '@/features/registration';
 import { loginStaff, loginStaffTwoFactor, needsTwoFactor } from '../services/staff-identity-api';
+import { AuthBackdrop } from '@/shared/components/auth-backdrop';
 import { ApiRequestError, clearStaffSession, persistStaffSession } from '@/shared/services/api-client';
 import { safeRedirectTarget } from '@/shared/utils/safe-redirect';
 
@@ -105,7 +106,7 @@ export function StaffLoginPage(): React.JSX.Element {
   };
 
   return (
-    <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', p: 2, bgcolor: 'primary.dark' }}>
+    <AuthBackdrop>
       <Paper elevation={6} sx={{ width: '100%', maxWidth: 440, borderRadius: 2, p: 4 }}>
         <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 3 }}>
           <Box
@@ -159,7 +160,7 @@ export function StaffLoginPage(): React.JSX.Element {
         ) : null}
         {challenge === null ? (
           <Stack component="form" spacing={2} onSubmit={(event): void => void onSubmit(event)}>
-            <EmailField label="Email" required value={email} onChange={setEmail} autoComplete="username" />
+            <EmailField label="Email" required value={email} onChange={setEmail} autoComplete="username" shrinkLabel />
             <TextField
               label="Password"
               type="password"
@@ -169,6 +170,7 @@ export function StaffLoginPage(): React.JSX.Element {
               }}
               required
               autoComplete="current-password"
+              slotProps={{ inputLabel: { shrink: true } }}
             />
             <Button type="submit" variant="contained" disabled={pending || !isValidEmail(email)}>
               {pending ? 'Signing in…' : 'Sign in'}
@@ -211,6 +213,6 @@ export function StaffLoginPage(): React.JSX.Element {
         )}
         {challenge === null ? <RegistrationLink /> : null}
       </Paper>
-    </Box>
+    </AuthBackdrop>
   );
 }

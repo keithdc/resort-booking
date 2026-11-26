@@ -9,6 +9,7 @@
 import type { HouseSummary } from '@resort-booking/shared-types';
 import {
   Alert,
+  Box,
   Button,
   Chip,
   Dialog,
@@ -31,6 +32,7 @@ import EventBusyOutlinedIcon from '@mui/icons-material/EventBusyOutlined';
 import PowerSettingsNewIcon from '@mui/icons-material/PowerSettingsNew';
 import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
 import { useState } from 'react';
+import { useCompactLayout } from '@/shared/hooks/use-compact-layout';
 import { localTodayIso } from '@/shared/utils/month-bounds';
 import { usePropertyDiscounts } from '../hooks/use-property-discounts';
 import {
@@ -75,6 +77,7 @@ export function PropertyDiscountsPanel({ propertyId, houses, today }: PropertyDi
   const [clockToday] = useState<string>(() => localTodayIso());
   const todayIso = today ?? clockToday;
   const state = usePropertyDiscounts(propertyId);
+  const compact = useCompactLayout();
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const currencyCode = houses[0]?.currencyCode ?? 'EUR';
 
@@ -94,7 +97,38 @@ export function PropertyDiscountsPanel({ propertyId, houses, today }: PropertyDi
       {!state.loading && state.discounts.length === 0 ? (
         <Typography>No discounts yet. Add one, for example 10% off bookings of 7 nights or more.</Typography>
       ) : null}
-      {state.discounts.length > 0 ? (
+      {state.discounts.length > 0 && compact ? (
+        <Box component="ul" aria-label="Discounts" sx={{ listStyle: 'none', m: 0, p: 0, display: 'grid', gap: 1.5 }}>
+          {state.discounts.map((discount): React.JSX.Element => (
+            <Box component="li" key={discount.id} sx={{ p: 1.5, border: 1, borderColor: 'divider', borderRadius: 2, bgcolor: 'background.paper' }}>
+              <Typography sx={{ fontWeight: 600 }}>{discount.label}</Typography>
+              <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" alignItems="center" sx={{ mt: 0.75 }}>
+                <StatusChip discount={discount} today={todayIso} />
+                {discount.promoted ? <Chip size="small" variant="outlined" color="primary" label="Promoted" /> : null}
+              </Stack>
+              <Typography sx={{ mt: 1, fontWeight: 600 }}>{summarizeEffect(discount.effect, currencyCode)}</Typography>
+              <Typography variant="body2" color="text.secondary">
+                {summarizeConditions(discount)}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Applies to: {summarizeScope(discount.houseIds, houses)}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {summarizeStacking(discount)} · Uses: {summarizeUses(discount.redemptions, discount.maxRedemptions)}
+              </Typography>
+              <Stack direction="row" spacing={1} sx={{ mt: 1.5, '& > button': { flex: 1 } }}>
+                <Button variant="outlined" size="small" onClick={(): void => state.openEdit(discount)}>
+                  Edit
+                </Button>
+                <Button variant="outlined" size="small" color="error" onClick={(): void => setDeleteId(discount.id)}>
+                  Delete
+                </Button>
+              </Stack>
+            </Box>
+          ))}
+        </Box>
+      ) : null}
+      {state.discounts.length > 0 && !compact ? (
         <Table size="small" aria-label="Discounts">
           <TableHead>
             <TableRow>

@@ -19,6 +19,7 @@ import {
   Stack,
   Switch,
   Table,
+  TableContainer,
   TableBody,
   TableCell,
   TableHead,
@@ -34,6 +35,7 @@ import { createStaffHouse, fetchStaffHouse, updateStaffHouse } from '../services
 import { usePropertyRatePeriods } from '../hooks/use-property-rate-periods';
 import { HouseRatePeriodsDialog } from './house-rate-periods-dialog';
 import { HouseSeasonalRatesList } from './house-seasonal-rates-list';
+import { stickyFirstColumn } from '@/shared/utils/sticky-first-column';
 
 interface PropertyHousesFormProps {
   propertyId: string;
@@ -143,7 +145,8 @@ export function PropertyHousesForm({ propertyId, initial }: PropertyHousesFormPr
       {error !== null ? <Alert severity="error">{error}</Alert> : null}
       {houses.length === 0 ? <Typography>No stays yet. Add the first one to take bookings.</Typography> : null}
       {houses.length > 0 ? (
-        <Table size="small">
+        <TableContainer sx={stickyFirstColumn}>
+<Table size="small">
           <TableHead>
             <TableRow>
               <TableCell>Stay</TableCell>
@@ -189,6 +192,7 @@ export function PropertyHousesForm({ propertyId, initial }: PropertyHousesFormPr
             ))}
           </TableBody>
         </Table>
+</TableContainer>
       ) : null}
       <Button variant="contained" onClick={openCreate}>
         Add a stay

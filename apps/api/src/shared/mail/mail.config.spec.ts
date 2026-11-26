@@ -76,7 +76,7 @@ describe('mailEnvironmentProblems', () => {
 });
 
 describe('createMailService', () => {
-  const config = (env: Record<string, string>): ConfigService => ({ get: (name: string): string | undefined => env[name] }) as unknown as ConfigService;
+  const config = (env: Record<string, string>): ConfigService => new ConfigService(env);
 
   it('is Resend only with a key and a sender', () => {
     const real = createMailService(config(GOOD));

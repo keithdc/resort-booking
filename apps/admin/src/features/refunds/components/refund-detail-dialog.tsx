@@ -64,7 +64,7 @@ export function RefundDetailDialog({ refund, busy, error, onClose, onRetry, onMa
                 This refund has to be sent by hand. Send the money, then mark it as refunded.
               </Alert>
             ) : null}
-            <Box component="dl" sx={{ m: 0, display: 'grid', gridTemplateColumns: 'auto 1fr', columnGap: 3, rowGap: 0.75 }}>
+            <Box component="dl" sx={{ m: 0, display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr)', columnGap: 3, rowGap: 0.75 }}>
               <Fact term="Guest" value={`${refund.bookerName} (${refund.bookerEmail})`} />
               <Fact term="Stay" value={`${refund.stayName}, ${refund.propertyName}`} />
               <Fact term="Kind" value={refundKindLabel(refund.kind)} />
@@ -103,7 +103,7 @@ function Fact({ term, value }: { term: string; value: string }): React.JSX.Eleme
       <Typography component="dt" color="text.secondary">
         {term}
       </Typography>
-      <Typography component="dd" sx={{ m: 0 }}>
+      <Typography component="dd" sx={{ m: 0, overflowWrap: 'anywhere' }}>
         {value}
       </Typography>
     </>

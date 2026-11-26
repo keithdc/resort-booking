@@ -24,11 +24,13 @@ export function QuoteBreakdown({ quote }: QuoteBreakdownProps): React.JSX.Elemen
     <Stack spacing={0.5} aria-label="Price breakdown">
       {quote.lines.map((line): React.JSX.Element => (
         <Stack key={`${line.label}-${String(line.nightlyRateCents)}`} direction="row" justifyContent="space-between" spacing={2}>
-          <Typography variant="body2" color="text.secondary">
+          <Typography variant="body2" color="text.secondary" sx={{ minWidth: 0 }}>
             {line.nights} night{line.nights === 1 ? '' : 's'} × {formatCents(line.nightlyRateCents, quote.currencyCode)}
             {seasonal ? ` · ${line.label}` : ''}
           </Typography>
-          <Typography variant="body2">{formatCents(line.subtotalCents, quote.currencyCode)}</Typography>
+          <Typography variant="body2" sx={{ whiteSpace: 'nowrap' }}>
+            {formatCents(line.subtotalCents, quote.currencyCode)}
+          </Typography>
         </Stack>
       ))}
       {quote.discounts.length > 0 ? (
@@ -41,10 +43,10 @@ export function QuoteBreakdown({ quote }: QuoteBreakdownProps): React.JSX.Elemen
           </Stack>
           {quote.discounts.map((discount): React.JSX.Element => (
             <Stack key={discount.discountId} direction="row" justifyContent="space-between" spacing={2}>
-              <Typography variant="body2" color="success.main">
+              <Typography variant="body2" color="success.main" sx={{ minWidth: 0 }}>
                 {discountLineLabel(discount)}
               </Typography>
-              <Typography variant="body2" color="success.main">
+              <Typography variant="body2" color="success.main" sx={{ whiteSpace: 'nowrap' }}>
                 −{formatCents(discount.amountCents, quote.currencyCode)}
               </Typography>
             </Stack>
@@ -58,7 +60,7 @@ export function QuoteBreakdown({ quote }: QuoteBreakdownProps): React.JSX.Elemen
       ) : null}
       <Stack direction="row" justifyContent="space-between" spacing={2}>
         <Typography sx={{ fontWeight: 600 }}>Total</Typography>
-        <Typography sx={{ fontWeight: 600 }}>{formatCents(quote.totalCents, quote.currencyCode)}</Typography>
+        <Typography sx={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{formatCents(quote.totalCents, quote.currencyCode)}</Typography>
       </Stack>
     </Stack>
   );

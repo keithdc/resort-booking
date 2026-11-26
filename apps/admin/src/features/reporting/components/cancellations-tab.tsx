@@ -17,6 +17,7 @@ import type { MetricKey } from '../utils/metric-definitions';
 import { MetricInfo } from './metric-info';
 import { useMoneyHidden } from './money-visibility';
 import { EmptyNote, ReportSection } from './report-section';
+import { stickyFirstColumn } from '@/shared/utils/sticky-first-column';
 
 interface CancellationsTabProps {
   report: StaffReport;
@@ -95,7 +96,7 @@ export function CancellationsTab({ report }: CancellationsTabProps): React.JSX.E
           {report.refunds.length === 0 ? (
             <EmptyNote state="noRefunds" />
           ) : (
-            <TableContainer>
+            <TableContainer sx={stickyFirstColumn}>
               <Table size="small" aria-label="Refunds for cancelled bookings">
                 <TableHead>
                   <TableRow>

@@ -10,6 +10,7 @@ import { formatCents } from '@/shared/utils/money';
 import { buildPaymentShares, type PaymentShare } from '../utils/payment-shares';
 import { MetricInfo } from './metric-info';
 import { EmptyNote, ReportSection } from './report-section';
+import { stickyFirstColumn } from '@/shared/utils/sticky-first-column';
 
 interface PaymentsTabProps {
   report: StaffReport;
@@ -48,7 +49,7 @@ export function PaymentsTab({ report }: PaymentsTabProps): React.JSX.Element {
         {report.discountUsage.length === 0 ? (
           <EmptyNote state="noDiscounts" />
         ) : (
-          <TableContainer>
+          <TableContainer sx={stickyFirstColumn}>
             <Table size="small" aria-label="Discounts used in this period">
               <TableHead>
                 <TableRow>

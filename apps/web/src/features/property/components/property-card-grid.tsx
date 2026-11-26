@@ -9,6 +9,7 @@ import { Box, CardActionArea, CardContent, CardMedia, Typography } from '@mui/ma
 import { BlurFade, MagicCard } from '@resort-booking/ui';
 import Link from 'next/link';
 import { formatAddress } from '@/shared/utils/format-address';
+import { photoSrcSet } from '@/shared/utils/responsive';
 
 interface PropertyCardGridProps {
   properties: readonly PropertySummary[];
@@ -34,6 +35,10 @@ export function PropertyCardGrid({ properties }: PropertyCardGridProps): React.J
                     component="img"
                     height="280"
                     image={property.coverPhotoUrl}
+                    srcSet={photoSrcSet(property.coverPhotoUrl)}
+                    sizes="(max-width: 899px) 100vw, 600px"
+                    loading="lazy"
+                    decoding="async"
                     alt={property.name}
                     sx={{ objectFit: 'cover' }}
                   />

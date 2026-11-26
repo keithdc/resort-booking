@@ -90,4 +90,12 @@ describe('EmailField', () => {
     expect(input().type).toBe('email');
     expect(input().getAttribute('autocomplete')).toBe('email');
   });
+
+  it('floats the label when asked, even while empty (browser-filled sign-in fields)', () => {
+    const { container, rerender } = render(<EmailField label="Email" value="" onChange={vi.fn()} shrinkLabel />);
+    expect(container.querySelector('label.MuiInputLabel-shrink')).not.toBeNull();
+
+    rerender(<EmailField label="Email" value="" onChange={vi.fn()} />);
+    expect(container.querySelector('label.MuiInputLabel-shrink')).toBeNull();
+  });
 });

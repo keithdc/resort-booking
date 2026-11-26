@@ -52,6 +52,7 @@ export function DayBookingCard({ stay, selected, onOpen }: DayBookingCardProps):
         gap: 1.25,
         px: 1.5,
         py: 1,
+        minHeight: 56,
         textAlign: 'left',
         font: 'inherit',
         color: 'text.primary',
@@ -82,11 +83,11 @@ export function DayBookingCard({ stay, selected, onOpen }: DayBookingCardProps):
           {details}
         </Typography>
       </Box>
-      <Box sx={{ textAlign: 'right', flexShrink: 0 }}>
+      <Box sx={{ textAlign: 'right', flexShrink: 0, maxWidth: { xs: '34%', sm: 'none' } }}>
         <Typography variant="body2" sx={{ fontWeight: 700, lineHeight: 1.3 }}>
           {formatCents(stay.totalCents, stay.currencyCode)}
         </Typography>
-        <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace', lineHeight: 1.3 }}>
+        <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace', lineHeight: 1.3, display: 'block', overflowWrap: 'anywhere' }}>
           {stay.reference}
         </Typography>
       </Box>

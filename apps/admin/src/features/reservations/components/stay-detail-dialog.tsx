@@ -47,6 +47,9 @@ import { StaffCancelDialog } from './staff-cancel-dialog';
 import { StaffChangeDatesDialog } from './staff-change-dates-dialog';
 import { StayBlock, StayFact } from './stay-block';
 
+/** On a phone each action group takes the full width and its buttons share the row. */
+const STACKED_ACTIONS = { width: { xs: '100%', sm: 'auto' }, '& > button': { flex: { xs: '1 1 140px', sm: '0 0 auto' } } } as const;
+
 interface StayDetailDialogProps {
   stay: StaffReservation | null;
   onClose: () => void;
@@ -106,12 +109,12 @@ export function StayDetailDialog({ stay, onClose, onUpdated, onChanged }: StayDe
       <Dialog open={stay !== null} onClose={onClose} fullWidth maxWidth="md">
         {stay !== null ? (
           <>
-            <DialogTitle sx={{ pb: 1.5, pr: 7 }}>
-              <Stack direction="row" spacing={2} alignItems="center">
+            <DialogTitle sx={{ pb: 1.5, pr: 7, pl: { xs: 2, sm: 3 } }}>
+              <Stack direction="row" spacing={{ xs: 1.5, sm: 2 }} alignItems="center">
                 <UserAvatar name={stay.bookerName} size={52} />
                 <Box sx={{ minWidth: 0 }}>
                   <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-                    <Typography variant="h5" component="span">
+                    <Typography variant="h5" component="span" sx={{ fontSize: { xs: '1.25rem', sm: undefined } }}>
                       {stay.bookerName}
                     </Typography>
                     <StatusChip status={stayStatusStyle(stay)} label={statusLabel(stay)} />
@@ -137,7 +140,7 @@ export function StayDetailDialog({ stay, onClose, onUpdated, onChanged }: StayDe
                 sx={{
                   display: 'grid',
                   gap: 2,
-                  gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
+                  gridTemplateColumns: { xs: 'minmax(0, 1fr)', md: '1fr 1fr' },
                   pt: 2,
                 }}
               >
@@ -147,7 +150,7 @@ export function StayDetailDialog({ stay, onClose, onUpdated, onChanged }: StayDe
                     <Typography variant="caption" color="text.secondary" display="block" sx={{ textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
                       Email
                     </Typography>
-                    <MuiLink href={`mailto:${stay.bookerEmail}`}>{stay.bookerEmail}</MuiLink>
+                    <MuiLink href={`mailto:${stay.bookerEmail}`} sx={{ overflowWrap: 'anywhere' }}>{stay.bookerEmail}</MuiLink>
                   </Box>
                   <Box>
                     <Typography variant="caption" color="text.secondary" display="block" sx={{ textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
@@ -207,8 +210,8 @@ export function StayDetailDialog({ stay, onClose, onUpdated, onChanged }: StayDe
                 {stay.kind === 'reservation' ? <HistoryBlock stay={stay} /> : null}
               </Box>
             </DialogContent>
-            <DialogActions sx={{ px: 3, py: 2, justifyContent: 'space-between', flexWrap: 'wrap', gap: 1, borderTop: 1, borderColor: 'divider' }}>
-              <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+            <DialogActions sx={{ px: { xs: 2, sm: 3 }, py: 2, justifyContent: 'space-between', flexWrap: 'wrap', gap: 1, borderTop: 1, borderColor: 'divider' }}>
+              <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={STACKED_ACTIONS}>
                 {canCancel ? (
                   <Button color="error" variant="outlined" startIcon={<CancelOutlinedIcon />} disabled={pending !== null} onClick={(): void => setCancelOpen(true)}>
                     Cancel booking
@@ -220,7 +223,7 @@ export function StayDetailDialog({ stay, onClose, onUpdated, onChanged }: StayDe
                   </Button>
                 ) : null}
               </Stack>
-              <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+              <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={STACKED_ACTIONS}>
                 {canCheckIn ? (
                   <Button
                     variant="contained"

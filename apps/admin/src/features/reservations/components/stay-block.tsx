@@ -21,7 +21,7 @@ interface StayBlockProps {
  */
 export function StayBlock({ title, icon, tone = 'primary', children }: StayBlockProps): React.JSX.Element {
   return (
-    <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 2, bgcolor: 'background.paper', overflow: 'hidden' }}>
+    <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 2, bgcolor: 'background.paper', overflow: 'hidden', minWidth: 0 }}>
       <Stack direction="row" spacing={1.5} alignItems="center" sx={{ px: 2, py: 1.5, bgcolor: 'action.hover', borderBottom: 1, borderColor: 'divider' }}>
         {icon !== undefined ? <IconChip icon={icon} tone={tone} size={32} /> : null}
         <Typography variant="subtitle2">{title}</Typography>

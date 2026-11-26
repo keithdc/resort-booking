@@ -26,7 +26,9 @@ export function BorderBeam({ children }: BorderBeamProps): React.JSX.Element {
     <Box
       sx={{
         position: 'relative',
-        overflow: 'hidden',
+        // `clip` (not `hidden`) trims the beam to the rounded border without making this a scroll
+        // container, so a `position: sticky` child (a checkout's Pay bar) still sticks to the screen.
+        overflow: 'clip',
         borderRadius: 1,
         p: '1px',
         bgcolor: 'divider',
@@ -50,7 +52,7 @@ export function BorderBeam({ children }: BorderBeamProps): React.JSX.Element {
           position: 'relative',
           borderRadius: 1,
           bgcolor: 'background.paper',
-          overflow: 'hidden',
+          overflow: 'clip',
         }}
       >
         {children}

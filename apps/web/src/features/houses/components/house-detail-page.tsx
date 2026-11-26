@@ -24,6 +24,10 @@ import { StayQuoteProvider } from '../context/stay-quote-context';
 import { CheckoutForm } from './checkout-form';
 import { ListingHighlights } from './listing-highlights';
 import { StayCancellationPolicy } from './stay-cancellation-policy';
+import { BOOKING_PANEL_ID, StickyReserveBar } from './sticky-reserve-bar';
+
+// Contact links are 44px tall on a phone and wrap long emails instead of overflowing.
+const LINK_ROW_SX = { display: 'inline-flex', alignItems: 'center', minHeight: { xs: 44, md: 'auto' }, overflowWrap: 'anywhere' } as const;
 
 interface HouseDetailPageProps {
   propertySlug: string;
@@ -56,8 +60,8 @@ export async function HouseDetailPage({
 
   return (
     <StayQuoteProvider>
-    <Container sx={{ py: 6 }} maxWidth="lg">
-      <MuiLink component={NextLink} href={`/properties/${house.propertySlug}`}>
+    <Container sx={{ py: { xs: 3, md: 6 } }} maxWidth="lg">
+      <MuiLink component={NextLink} href={`/properties/${house.propertySlug}`} sx={LINK_ROW_SX}>
         {house.propertyName}
       </MuiLink>
       <Typography variant="h3" component="h1" sx={{ mt: 1 }}>
@@ -75,8 +79,8 @@ export async function HouseDetailPage({
       <Box
         sx={{
           display: 'grid',
-          gap: 4,
-          gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1.3fr) minmax(280px, 0.7fr)' },
+          gap: { xs: 3, md: 4 },
+          gridTemplateColumns: { xs: 'minmax(0, 1fr)', md: 'minmax(0, 1.3fr) minmax(280px, 0.7fr)' },
           alignItems: 'start',
         }}
       >
@@ -151,13 +155,13 @@ export async function HouseDetailPage({
               house.propertyCountryCode,
             )}
           </Typography>
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mb: 2 }}>
-            <MuiLink href={`tel:${house.propertyPhone}`}>{house.propertyPhone}</MuiLink>
-            <MuiLink href={`mailto:${house.propertyEmail}`}>{house.propertyEmail}</MuiLink>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={{ xs: 0, sm: 2 }} sx={{ mb: 2 }}>
+            <MuiLink href={`tel:${house.propertyPhone}`} sx={LINK_ROW_SX}>{house.propertyPhone}</MuiLink>
+            <MuiLink href={`mailto:${house.propertyEmail}`} sx={LINK_ROW_SX}>{house.propertyEmail}</MuiLink>
           </Stack>
           <PropertyMap latitude={lat} longitude={lng} label={house.name} />
         </Box>
-        <Box sx={{ position: { md: 'sticky' }, top: 96 }}>
+        <Box id={BOOKING_PANEL_ID} sx={{ position: { md: 'sticky' }, top: 96, scrollMarginTop: { xs: 80, md: 0 } }}>
           <CheckoutForm
             house={house}
             initialStay={stay}
@@ -170,6 +174,7 @@ export async function HouseDetailPage({
         </Box>
       </Box>
     </Container>
+    <StickyReserveBar standardRateCents={house.nightlyRateCents} currencyCode={house.currencyCode} />
     </StayQuoteProvider>
   );
 }

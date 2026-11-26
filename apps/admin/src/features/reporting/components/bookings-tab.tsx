@@ -42,6 +42,8 @@ import {
 } from '../utils/report-labels';
 import { useMoneyHidden } from './money-visibility';
 import { EmptyNote, ReportSection } from './report-section';
+import { useCompactLayout } from '@/shared/hooks/use-compact-layout';
+import { stickyFirstColumn } from '@/shared/utils/sticky-first-column';
 
 const PAGE_SIZE = 50;
 
@@ -58,6 +60,7 @@ interface BookingsTabProps {
  */
 export function BookingsTab({ report, status, onStatusChange, onChanged }: BookingsTabProps): React.JSX.Element {
   const moneyHidden = useMoneyHidden();
+  const compact = useCompactLayout();
   const [search, setSearch] = useState('');
   const [shown, setShown] = useState(PAGE_SIZE);
   const [selected, setSelected] = useState<StaffReservation | null>(null);
@@ -138,7 +141,46 @@ export function BookingsTab({ report, status, onStatusChange, onChanged }: Booki
           <Typography variant="body2" color="text.secondary" aria-live="polite" sx={{ mb: 1 }}>
             {rows.length} {rows.length === 1 ? 'booking' : 'bookings'}
           </Typography>
-          <TableContainer>
+          {compact ? (
+            <Box component="ul" aria-label="Bookings in this period" sx={{ listStyle: 'none', m: 0, p: 0, display: 'grid', gap: 1.5 }}>
+              {visible.map((row: StaffReservation): React.JSX.Element => (
+                <Box component="li" key={row.id} sx={{ p: 1.5, border: 1, borderColor: 'divider', borderRadius: 2, bgcolor: 'background.paper' }}>
+                  <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1}>
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography sx={{ fontWeight: 600 }}>{row.bookerName}</Typography>
+                      <Typography variant="body2" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
+                        {row.bookerEmail}
+                      </Typography>
+                    </Box>
+                    {moneyHidden ? null : (
+                      <Typography sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{formatCents(row.totalCents, row.currencyCode)}</Typography>
+                    )}
+                  </Stack>
+                  <Typography variant="body2" sx={{ mt: 0.75 }}>
+                    {row.houseName} · {row.propertyName}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {formatIsoDate(row.checkIn)} → {formatIsoDate(row.checkOut)} · {bookingNights(row)} nights · {row.guestCount} guests
+                  </Typography>
+                  <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" alignItems="center" sx={{ mt: 1 }}>
+                    <StatusChip status={bookingFilterStyle(bookingStatusKey(row))} label={bookingStatusLabel(row)} />
+                    <Chip size="small" variant="outlined" label={paymentMethodLabel(row.paymentMethod)} />
+                  </Stack>
+                  <Button
+                    fullWidth
+                    variant="outlined"
+                    size="small"
+                    onClick={(): void => open(row)}
+                    aria-label={`Open booking ${row.reference === '' ? row.bookerName : row.reference}`}
+                    sx={{ mt: 1.5, textTransform: 'none' }}
+                  >
+                    Open {row.reference === '' ? 'booking' : row.reference}
+                  </Button>
+                </Box>
+              ))}
+            </Box>
+          ) : (
+          <TableContainer sx={stickyFirstColumn}>
             <Table size="small" aria-label="Bookings in this period">
               <TableHead>
                 <TableRow>
@@ -188,6 +230,7 @@ export function BookingsTab({ report, status, onStatusChange, onChanged }: Booki
               </TableBody>
             </Table>
           </TableContainer>
+          )}
           {rows.length > visible.length ? (
             <Box sx={{ mt: 2, textAlign: 'center' }} data-print="hide">
               <Button onClick={(): void => setShown(shown + PAGE_SIZE)}>Show {Math.min(PAGE_SIZE, rows.length - visible.length)} more</Button>

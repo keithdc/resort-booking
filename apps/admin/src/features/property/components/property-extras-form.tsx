@@ -23,6 +23,7 @@ import {
   Stack,
   Switch,
   Table,
+  TableContainer,
   TableBody,
   TableCell,
   TableHead,
@@ -38,6 +39,7 @@ import {
   deletePropertyExtra,
   updatePropertyExtra,
 } from '../services/staff-property-api';
+import { stickyFirstColumn } from '@/shared/utils/sticky-first-column';
 
 interface PropertyExtrasFormProps {
   propertyId: string;
@@ -130,7 +132,8 @@ export function PropertyExtrasForm({ propertyId, initial }: PropertyExtrasFormPr
       {error !== null ? <Alert severity="error">{error}</Alert> : null}
       {extras.length === 0 ? <Typography>No extras on this property yet.</Typography> : null}
       {extras.length > 0 ? (
-        <Table size="small">
+        <TableContainer sx={stickyFirstColumn}>
+<Table size="small">
           <TableHead>
             <TableRow>
               <TableCell>Name</TableCell>
@@ -174,6 +177,7 @@ export function PropertyExtrasForm({ propertyId, initial }: PropertyExtrasFormPr
             ))}
           </TableBody>
         </Table>
+</TableContainer>
       ) : null}
       <Button
         variant="contained"

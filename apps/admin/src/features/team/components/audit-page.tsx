@@ -9,6 +9,7 @@
 import FactCheckOutlinedIcon from '@mui/icons-material/FactCheckOutlined';
 import { Alert, Box, Button, MenuItem, Skeleton, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Typography } from '@mui/material';
 import { useState } from 'react';
+import { useCompactLayout } from '@/shared/hooks/use-compact-layout';
 import { EmptyState } from '@/shared/components/empty-state';
 import { PageHeader } from '@/shared/components/page-header';
 import { SectionCard } from '@/shared/components/section-card';
@@ -25,6 +26,7 @@ export function AuditPage(): React.JSX.Element {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const audit = useAudit({ category, from, to });
+  const compact = useCompactLayout();
   const filtered = category !== '' || from !== '' || to !== '';
 
   return (
@@ -37,7 +39,7 @@ export function AuditPage(): React.JSX.Element {
       />
       <SectionCard icon={<FactCheckOutlinedIcon />} title="Activity" description="Newest first">
         <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ mb: 3 }}>
-          <TextField select size="small" label="What happened" value={category} onChange={(event): void => setCategory(event.target.value)} sx={{ minWidth: 240 }}>
+          <TextField select size="small" label="What happened" value={category} onChange={(event): void => setCategory(event.target.value)} sx={{ minWidth: { md: 240 } }}>
             {AUDIT_CATEGORIES.map((option): React.JSX.Element => (
               <MenuItem key={option.prefix} value={option.prefix}>
                 {option.label}
@@ -79,6 +81,27 @@ export function AuditPage(): React.JSX.Element {
           />
         ) : (
           <>
+            {compact ? (
+              <Box component="ul" aria-label="Audit log" sx={{ listStyle: 'none', m: 0, p: 0, display: 'grid', gap: 1.5 }}>
+                {audit.records.map((record): React.JSX.Element => (
+                  <Box component="li" key={record.id} sx={{ p: 1.5, border: 1, borderColor: 'divider', borderRadius: 2 }}>
+                    <Typography variant="caption" color="text.secondary">
+                      {formatDateTime(record.createdAt)}
+                    </Typography>
+                    <Typography sx={{ fontWeight: 600 }}>{actionLabel(record.action)}</Typography>
+                    <Typography variant="body2">{actorLabel(record)}</Typography>
+                    {detailsLine(record.metadata) === '' ? null : (
+                      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, overflowWrap: 'anywhere' }}>
+                        {detailsLine(record.metadata)}
+                      </Typography>
+                    )}
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, overflowWrap: 'anywhere' }}>
+                      {record.action}
+                    </Typography>
+                  </Box>
+                ))}
+              </Box>
+            ) : (
             <TableContainer>
               <Table size="small" aria-label="Audit log">
                 <TableHead>
@@ -108,6 +131,7 @@ export function AuditPage(): React.JSX.Element {
                 </TableBody>
               </Table>
             </TableContainer>
+            )}
             {audit.hasMore ? (
               <Box sx={{ mt: 2, textAlign: 'center' }}>
                 <Button variant="outlined" onClick={audit.loadMore} disabled={audit.loadingMore}>

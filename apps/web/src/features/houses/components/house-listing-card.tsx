@@ -1,7 +1,7 @@
 /**
  * @file apps/web/src/features/houses/components/house-listing-card.tsx
  * @feature houses
- * @dependencies MUI
+ * @dependencies MUI, responsive utils
  */
 
 import type { HouseSummary, PromotedOffer, Quote } from '@resort-booking/shared-types';
@@ -10,6 +10,7 @@ import { Highlighter, MagicCard } from '@resort-booking/ui';
 import NextLink from 'next/link';
 import { OfferChips } from '@/shared/components/offer-chips';
 import { formatCents } from '@/shared/utils/money';
+import { photoSrcSet } from '@/shared/utils/responsive';
 import { houseHref, type StayQuery } from '@/shared/utils/stay-query';
 import { ImageScrim } from './image-scrim';
 
@@ -51,6 +52,10 @@ export function HouseListingCard({
               component="img"
               height="260"
               image={house.coverPhotoUrl}
+              srcSet={photoSrcSet(house.coverPhotoUrl)}
+              sizes="(max-width: 599px) 100vw, (max-width: 899px) 50vw, 600px"
+              loading="lazy"
+              decoding="async"
               alt={house.name}
               sx={{ objectFit: 'cover' }}
             />
