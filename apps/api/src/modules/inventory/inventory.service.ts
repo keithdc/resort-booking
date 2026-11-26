@@ -44,8 +44,10 @@ import {
   maskEmail,
   maskPhone,
   nightsBetween,
+  daysFromToday,
+  isPgUniqueViolation,
   referenceFor,
-  type PriceSnapshot,
+  snapshotOf,
 } from './inventory.rules';
 
 /** A hold that can be paid right now: still active, not timed out, with the price it was quoted. */
@@ -496,21 +498,6 @@ function toConfirmation(stay: StayRow): ReservationConfirmation {
 }
 
 /**
- * The price fields of a quote, as saved with the hold.
- */
-function snapshotOf(quote: Quote): PriceSnapshot {
-  return {
-    lines: quote.lines,
-    subtotalCents: quote.subtotalCents,
-    discounts: quote.discounts,
-    discountCents: quote.discountCents,
-    totalCents: quote.totalCents,
-    currencyCode: quote.currencyCode,
-    promoCode: quote.promoCode,
-  };
-}
-
-/**
  * A hold shows the price the guest was quoted, not today's. Availability stays live (it tells the
  * guest whether the dates are still free). Holds saved before snapshots existed keep the live price.
  */
@@ -530,21 +517,3 @@ function withSnapshotPrice(live: Quote, stored: unknown): Quote {
   };
 }
 
-interface PgErrorLike {
-  code?: string;
-}
-
-function isPgUniqueViolation(error: unknown): boolean {
-  if (typeof error !== 'object' || error === null) {
-    return false;
-  }
-  const candidate = error as PgErrorLike;
-  return candidate.code === '23P01' || candidate.code === '23505';
-}
-
-/**
- * Whole days from `today` to `date` (both YYYY-MM-DD, calendar arithmetic in UTC so no daylight-saving drift).
- */
-function daysFromToday(today: string, date: string): number {
-  return Math.round((Date.parse(`${date}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86_400_000);
-}

@@ -10,6 +10,9 @@ import type { PropertyReportRow, StaffReport, StaffReservation } from '@resort-b
 type NewerFields =
   | 'reference'
   | 'paidCents'
+  | 'paymentStatus'
+  | 'paidAt'
+  | 'createdByName'
   | 'termsAcceptedAt'
   | 'cancellation'
   | 'replacedByReference'
@@ -29,6 +32,9 @@ export function withReservationDefaults(raw: RawStaffReservation): StaffReservat
     ...raw,
     reference: raw.reference ?? '',
     paidCents: raw.paidCents ?? 0,
+    paymentStatus: raw.paymentStatus ?? 'paid',
+    paidAt: raw.paidAt ?? null,
+    createdByName: raw.createdByName ?? null,
     termsAcceptedAt: raw.termsAcceptedAt ?? null,
     cancellation: raw.cancellation ?? null,
     replacedByReference: raw.replacedByReference ?? null,

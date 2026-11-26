@@ -88,3 +88,45 @@ describe('InventoryRepository.countActiveHolds', () => {
     expect(query.mock.calls[0]?.[1]).toEqual(['a@b.co', null]);
   });
 });
+
+describe('InventoryRepository.insertStaffBooking', () => {
+  const INPUT = {
+    organizationId: 'org', propertyId: 'prop', houseId: 'house', checkIn: '2027-08-01', checkOut: '2027-08-04', guestCount: 2,
+    bookerName: 'Ada', bookerEmail: 'ada@example.com', bookerPhone: '', guestNote: '', totalCents: 96000, currencyCode: 'EUR',
+    priceSnapshot: '{}', policySnapshot: '{}', createdByStaffId: 'staff-1',
+  };
+
+  async function repositoryWith(clientQuery: jest.Mock): Promise<InventoryRepository> {
+    const moduleRef = await Test.createTestingModule({
+      providers: [InventoryRepository, { provide: DatabaseService, useValue: { query: jest.fn() } }],
+    }).compile();
+    void clientQuery;
+    return moduleRef.get(InventoryRepository);
+  }
+
+  it('writes a confirmed reservation that is pending, unpaid, never expires and was made by that staff member', async () => {
+    const clientQuery = jest.fn().mockResolvedValue({ rows: [{ id: 'new-1' }] });
+    const repository = await repositoryWith(clientQuery);
+
+    const id = await repository.insertStaffBooking({ query: clientQuery } as never, INPUT);
+
+    expect(id).toBe('new-1');
+    const [sql, params] = clientQuery.mock.calls[0] as [string, unknown[]];
+    expect(sql).toContain("'reservation', 'confirmed'");
+    expect(sql).toContain("'pay_at_hotel', 'pending', NULL");
+    expect(sql).toMatch(/total_cents, paid_cents/);
+    expect(sql).toContain('$11, 0, $12');
+    expect(sql).not.toContain('terms_accepted_at');
+    expect(params).toHaveLength(15);
+    expect(params[14]).toBe('staff-1');
+    // The guest's text only ever travels as a parameter.
+    expect(sql).not.toContain('ada@example.com');
+  });
+
+  it('fails loudly if nothing came back', async () => {
+    const clientQuery = jest.fn().mockResolvedValue({ rows: [] });
+    const repository = await repositoryWith(clientQuery);
+
+    await expect(repository.insertStaffBooking({ query: clientQuery } as never, INPUT)).rejects.toThrow('no row');
+  });
+});

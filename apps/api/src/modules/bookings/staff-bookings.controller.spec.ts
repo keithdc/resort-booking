@@ -10,6 +10,7 @@ import { Test } from '@nestjs/testing';
 import type { StaffAccount } from '../../shared/roles/staff-role';
 import { TenantGuard } from '../../shared/tenancy/tenant.guard';
 import { StaffGuard, type StaffRequest } from '../identity/staff.guard';
+import { StaffBookingCreator } from '../inventory/staff-booking-creator';
 import { StaffBookingsController } from './staff-bookings.controller';
 import { StaffBookingsService } from './staff-bookings.service';
 import { StaffRefundsService } from './staff-refunds.service';
@@ -23,7 +24,9 @@ describe('StaffBookingsController', () => {
     cancel: jest.fn(),
     changeQuote: jest.fn(),
     changeDates: jest.fn(),
+    markPaid: jest.fn(),
   };
+  const creator = { quote: jest.fn(), create: jest.fn() };
   const refunds = { list: jest.fn(), retry: jest.fn(), markPaid: jest.fn() };
   let controller: StaffBookingsController;
 
@@ -34,6 +37,7 @@ describe('StaffBookingsController', () => {
       providers: [
         { provide: StaffBookingsService, useValue: bookings },
         { provide: StaffRefundsService, useValue: refunds },
+        { provide: StaffBookingCreator, useValue: creator },
       ],
     })
       // Only the wiring is under test here; the real guard is checked through its metadata below.
@@ -75,6 +79,23 @@ describe('StaffBookingsController', () => {
     expect(await controller.cancelPreview('id', REQUEST)).toEqual({ status: 'ok', data: { a: 1 } });
     expect(await controller.changeQuote('id', dates, REQUEST)).toEqual({ status: 'ok', data: { b: 2 } });
     expect(await controller.changeDates('id', { ...dates, note: 'abc', balanceSettledOutside: false }, REQUEST)).toEqual({ status: 'ok', data: { c: 3 } });
+  });
+
+  it('routes a new booking, its quote and the paid tick to the right service with the signed-in staff member', async () => {
+    const body = {
+      houseId: 'house', checkIn: '2027-08-01', checkOut: '2027-08-04', guestCount: 2, paymentMethod: 'pay_at_hotel' as const,
+      bookerName: 'Ada', bookerEmail: 'ada@example.com', bookerPhone: '', guestNote: '',
+    };
+    creator.quote.mockResolvedValue({ q: 1 });
+    creator.create.mockResolvedValue({ id: 'new' });
+    bookings.markPaid.mockResolvedValue({ id: 'id', paymentStatus: 'paid' });
+
+    expect(await controller.quote(body, REQUEST)).toEqual({ status: 'ok', data: { q: 1 } });
+    expect(creator.quote).toHaveBeenCalledWith(STAFF, body);
+    expect(await controller.create(body, REQUEST)).toEqual({ status: 'ok', data: { id: 'new' } });
+    expect(creator.create).toHaveBeenCalledWith(STAFF, body);
+    expect(await controller.markBookingPaid('id', REQUEST)).toEqual({ status: 'ok', data: { id: 'id', paymentStatus: 'paid' } });
+    expect(bookings.markPaid).toHaveBeenCalledWith(STAFF, 'id');
   });
 
   it('lists refunds that need attention by default and passes the property filter', async () => {

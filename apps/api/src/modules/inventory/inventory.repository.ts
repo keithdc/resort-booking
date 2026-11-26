@@ -74,6 +74,27 @@ interface InsertHoldInput {
   creatorIpHash?: string | null;
 }
 
+/** A booking staff made for a guest who pays at the property: confirmed at once, nothing paid yet. */
+export interface InsertStaffBookingInput {
+  organizationId: string;
+  propertyId: string;
+  houseId: string;
+  checkIn: string;
+  checkOut: string;
+  guestCount: number;
+  bookerName: string;
+  bookerEmail: string;
+  bookerPhone: string;
+  guestNote: string;
+  totalCents: number;
+  currencyCode: string;
+  /** JSON text of the quoted price. */
+  priceSnapshot: string;
+  /** JSON text of the cancellation policy in force when staff made the booking. */
+  policySnapshot: string;
+  createdByStaffId: string;
+}
+
 /** How many unpaid holds a caller keeps open right now. */
 export interface ActiveHoldCounts {
   byEmail: number;
@@ -316,6 +337,52 @@ export class InventoryRepository {
       [stayId],
     );
     return result.rows[0] ?? null;
+  }
+
+  /**
+   * Inserts a confirmed pay-at-hotel booking: no hold, no expiry, payment pending, nothing paid. The no-overlap
+   * constraint is the last word on the dates (a clash raises 23P01). The cancellation terms were not accepted by
+   * the guest online, so `terms_accepted_at` stays null.
+   */
+  public async insertStaffBooking(client: PoolClient, input: InsertStaffBookingInput): Promise<string> {
+    const result = await client.query<{ id: string }>(
+      `
+      INSERT INTO inventory_blocks (
+        organization_id, property_id, house_id, kind, status,
+        check_in, check_out, guest_count, payment_method, payment_status, expires_at,
+        booker_name, booker_email, booker_phone, guest_note,
+        total_cents, paid_cents, currency_code, price_snapshot, policy_snapshot, created_by_staff_id
+      ) VALUES (
+        $1, $2, $3, 'reservation', 'confirmed',
+        $4, $5, $6, 'pay_at_hotel', 'pending', NULL,
+        $7, $8, $9, $10,
+        $11, 0, $12, $13::jsonb, $14::jsonb, $15
+      )
+      RETURNING id
+      `,
+      [
+        input.organizationId,
+        input.propertyId,
+        input.houseId,
+        input.checkIn,
+        input.checkOut,
+        input.guestCount,
+        input.bookerName,
+        input.bookerEmail,
+        input.bookerPhone,
+        input.guestNote,
+        input.totalCents,
+        input.currencyCode,
+        input.priceSnapshot,
+        input.policySnapshot,
+        input.createdByStaffId,
+      ],
+    );
+    const row = result.rows[0];
+    if (row === undefined) {
+      throw new Error('Staff booking insert returned no row');
+    }
+    return row.id;
   }
 
   /**

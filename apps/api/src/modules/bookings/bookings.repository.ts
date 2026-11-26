@@ -5,7 +5,7 @@
  */
 
 import { Injectable } from '@nestjs/common';
-import type { ActionInitiator, RefundStatus, StaffCancelReason } from '@resort-booking/shared-types';
+import type { ActionInitiator, BookingPaymentStatus, RefundStatus, StaffCancelReason } from '@resort-booking/shared-types';
 import type { PoolClient } from 'pg';
 import { DatabaseService } from '../../shared/database/database.service';
 import { parseRefundablePayments, type RefundablePayment, type UuidRange } from './bookings.rules';
@@ -28,6 +28,8 @@ export interface BookingRow {
   booker_phone: string | null;
   guest_note: string | null;
   payment_method: string | null;
+  /** `pending`: a pay-at-hotel booking nobody has marked paid yet. */
+  payment_status: BookingPaymentStatus;
   total_cents: number | null;
   currency_code: string | null;
   /** What has been paid for this booking so far (the booking's own column, kept up to date). */
@@ -132,7 +134,7 @@ const SELECT_BOOKING = `
   SELECT ib.id, ib.organization_id, ib.property_id, ib.house_id, p.name AS property_name,
     p.timezone AS property_timezone, h.name AS stay_name, ib.status,
     ib.check_in::text AS check_in, ib.check_out::text AS check_out, ib.guest_count,
-    ib.booker_name, ib.booker_email, ib.booker_phone, ib.guest_note, ib.payment_method,
+    ib.booker_name, ib.booker_email, ib.booker_phone, ib.guest_note, ib.payment_method, ib.payment_status,
     ib.total_cents, ib.currency_code, ib.paid_cents, ib.policy_snapshot, ib.price_snapshot, ib.rebook_of_id,
     (
       SELECT nb.id FROM inventory_blocks nb
@@ -216,6 +218,27 @@ export class BookingsRepository {
       `,
       [bookingId, meta?.reason ?? 'guest_request', meta?.staffId ?? null, meta?.note ?? null],
     );
+  }
+
+  /**
+   * Marks a pay-at-hotel booking as paid, once: pending -> paid, with the time, who did it, and everything paid.
+   * Returns false when no row matched (not pending, not confirmed, or not a pay-at-hotel booking), so a second
+   * tick, or a tick after a cancel, changes nothing.
+   */
+  public async markPaid(bookingId: string, staffId: string): Promise<boolean> {
+    const result = await this.database.query(
+      `
+      UPDATE inventory_blocks
+      SET payment_status = 'paid', paid_at = now(), paid_cents = COALESCE(total_cents, 0), marked_paid_by_staff_id = $2
+      WHERE id = $1
+        AND kind = 'reservation'
+        AND status = 'confirmed'
+        AND payment_status = 'pending'
+        AND payment_method = 'pay_at_hotel'
+      `,
+      [bookingId, staffId],
+    );
+    return (result.rowCount ?? 0) === 1;
   }
 
   /**

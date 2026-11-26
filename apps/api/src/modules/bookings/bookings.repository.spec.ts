@@ -189,6 +189,20 @@ describe('BookingsRepository', () => {
     expect(await repository.completeRefund('refund-1', 'succeeded', 're', null)).toBe(false);
   });
 
+  it('marks a booking paid only from pending, only for a confirmed pay-at-hotel booking, and counts the whole total as paid', async () => {
+    query.mockResolvedValueOnce({ rows: [], rowCount: 1 }).mockResolvedValueOnce({ rows: [], rowCount: 0 });
+
+    expect(await repository.markPaid('booking-1', 'staff-1')).toBe(true);
+    expect(await repository.markPaid('booking-1', 'staff-1')).toBe(false);
+
+    const [sql, params] = query.mock.calls[0] as [string, unknown[]];
+    expect(params).toEqual(['booking-1', 'staff-1']);
+    expect(sql).toContain("payment_status = 'paid', paid_at = now(), paid_cents = COALESCE(total_cents, 0), marked_paid_by_staff_id = $2");
+    expect(sql).toContain("payment_status = 'pending'");
+    expect(sql).toContain("payment_method = 'pay_at_hotel'");
+    expect(sql).toContain("status = 'confirmed'");
+  });
+
   it('notes an unknown outcome on a pending refund only', async () => {
     await repository.noteRefundOutcomeUnknown('refund-1', 'x'.repeat(900));
 

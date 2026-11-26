@@ -18,6 +18,7 @@ import type {
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ApiRequestError } from '@/shared/services/api-client';
 import { rebookQuote, staffCancellation, staffChange, staffRefund, staffReservation } from '@/test/fixtures';
 import { StayDetailDialog } from './stay-detail-dialog';
 
@@ -27,6 +28,7 @@ const api = vi.hoisted(() => ({
   cancelStaffReservation: vi.fn<(id: string, body: StaffCancelRequest) => Promise<StaffCancelResult>>(),
   quoteStaffChangeDates: vi.fn<(id: string, body: StaffChangeQuoteRequest) => Promise<RebookQuote>>(),
   changeStaffReservationDates: vi.fn<(id: string, body: StaffChangeDatesRequest) => Promise<StaffChangeResult>>(),
+  markStaffReservationPaid: vi.fn<(id: string) => Promise<StaffReservation>>(),
 }));
 
 const role = vi.hoisted(() => ({ canManageRefunds: true }));
@@ -300,6 +302,68 @@ describe('StayDetailDialog', () => {
 
       await waitFor(() => expect(onUpdated).toHaveBeenCalledWith(updated));
       expect(await screen.findByText('Arrival updated')).toBeTruthy();
+    });
+  });
+  describe('pay at hotel: payment pending', () => {
+    const PENDING = { ...FUTURE, paymentMethod: 'pay_at_hotel', paymentStatus: 'pending', paidCents: 0, totalCents: 96000, createdByName: 'Eve Employee', bookerPhone: '', termsAcceptedAt: null } as const;
+
+    it('shows the pending chip, "not paid yet", who made the booking, and no phone link when none was given', () => {
+      renderDialog(staffReservation(PENDING));
+
+      const dialog = screen.getByRole('dialog');
+      expect(within(dialog).getAllByText('Pay at hotel · Pending').length).toBeGreaterThan(0);
+      expect(plain(dialog.textContent)).toContain('Not paid yet: pay at hotel');
+      expect(plain(dialog.textContent)).toContain('Eve Employee (staff)');
+      expect(plain(dialog.textContent)).toContain('Booked by staff: the guest did not accept terms online');
+      expect(within(dialog).getByText('Not given')).toBeTruthy();
+    });
+
+    it('marks it paid after a confirmation that says it is audited, then reports the new state', async () => {
+      const paid = staffReservation({ ...PENDING, paymentStatus: 'paid', paidCents: 96000, paidAt: '2999-07-10T10:00:00.000Z' });
+      api.markStaffReservationPaid.mockResolvedValue(paid);
+      const { onUpdated, onChanged } = renderDialog(staffReservation(PENDING));
+
+      await userEvent.click(screen.getByRole('button', { name: 'Mark as paid' }));
+      const confirm = await screen.findByRole('dialog', { name: /Mark BK-ABC1234567 as paid\?/ });
+      expect(plain(confirm.textContent)).toContain('Use this once the guest has paid you at the hotel. It is recorded in the audit log with your name.');
+      expect(api.markStaffReservationPaid).not.toHaveBeenCalled();
+      await userEvent.click(within(confirm).getByRole('button', { name: 'Mark as paid' }));
+
+      await waitFor(() => expect(api.markStaffReservationPaid).toHaveBeenCalledWith('r1'));
+      await waitFor(() => expect(onUpdated).toHaveBeenCalledWith(paid));
+      expect(onChanged).toHaveBeenCalled();
+    });
+
+    it('keeps the confirmation open and shows the API\'s words when marking fails (already paid, say)', async () => {
+      api.markStaffReservationPaid.mockRejectedValue(new ApiRequestError('This booking is already marked as paid.', 409, { code: 'ALREADY_PAID' }));
+      const { onUpdated } = renderDialog(staffReservation(PENDING));
+
+      await userEvent.click(screen.getByRole('button', { name: 'Mark as paid' }));
+      const confirm = await screen.findByRole('dialog', { name: /Mark BK-ABC1234567 as paid\?/ });
+      await userEvent.click(within(confirm).getByRole('button', { name: 'Mark as paid' }));
+
+      expect(await within(confirm).findByText('This booking is already marked as paid.')).toBeTruthy();
+      expect(onUpdated).not.toHaveBeenCalled();
+    });
+
+    it('has nothing to mark for a paid, online or cancelled booking, and an employee can still mark a pending one', () => {
+      role.canManageRefunds = false;
+      renderDialog(staffReservation({ ...PENDING, paymentStatus: 'paid', paidCents: 96000, paidAt: '2999-07-10T10:00:00.000Z' }));
+      expect(screen.queryByRole('button', { name: 'Mark as paid' })).toBeNull();
+      expect(screen.getAllByText('Paid at hotel').length).toBeGreaterThan(0);
+      cleanup();
+
+      renderDialog(staffReservation({ ...FUTURE }));
+      expect(screen.queryByRole('button', { name: 'Mark as paid' })).toBeNull();
+      expect(screen.getAllByText('Paid').length).toBeGreaterThan(0);
+      cleanup();
+
+      renderDialog(staffReservation({ ...PENDING, status: 'cancelled' }));
+      expect(screen.queryByRole('button', { name: 'Mark as paid' })).toBeNull();
+      cleanup();
+
+      renderDialog(staffReservation(PENDING));
+      expect(screen.getByRole('button', { name: 'Mark as paid' })).toBeTruthy();
     });
   });
 });

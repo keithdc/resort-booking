@@ -23,7 +23,7 @@ import {
   Typography,
 } from '@mui/material';
 import { formatCents } from '@/shared/utils/money';
-import { bookingStatusLabel, paymentMethodLabel } from '../utils/report-labels';
+import { bookingStatusLabel, bookingPaymentLabel } from '../utils/report-labels';
 import { useMoneyHidden } from './money-visibility';
 import { stickyFirstColumn } from '@/shared/utils/sticky-first-column';
 
@@ -85,7 +85,7 @@ export function ReportDetailDialog({ detail, onClose }: ReportDetailDialogProps)
                       </TableCell>
                       <TableCell>{stay.guestCount}</TableCell>
                       <TableCell>{bookingStatusLabel(stay)}</TableCell>
-                      <TableCell>{paymentMethodLabel(stay.paymentMethod)}</TableCell>
+                      <TableCell>{bookingPaymentLabel(stay)}</TableCell>
                       {moneyHidden ? null : <TableCell>{formatCents(stay.totalCents, stay.currencyCode)}</TableCell>}
                     </TableRow>
                   ))}

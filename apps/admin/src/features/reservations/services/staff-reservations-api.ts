@@ -7,7 +7,9 @@
 import type {
   ArrivalStatus,
   PropertyBookingConfig,
+  Quote,
   RebookQuote,
+  StaffBookingQuoteRequest,
   StaffCalendar,
   StaffCancelPreview,
   StaffCancelRequest,
@@ -15,6 +17,7 @@ import type {
   StaffChangeDatesRequest,
   StaffChangeQuoteRequest,
   StaffChangeResult,
+  StaffCreateBookingRequest,
   StaffReport,
   StaffReservation,
 } from '@resort-booking/shared-types';
@@ -124,5 +127,28 @@ export function changeStaffReservationDates(
 ): Promise<StaffChangeResult> {
   return mutateStaffApiOk<RawStaffChangeResult>(`/staff/reservations/${reservationId}/change-dates`, 'POST', body).then(
     (result): StaffChangeResult => ({ ...result, reservation: withReservationDefaults(result.reservation) }),
+  );
+}
+
+/**
+ * Prices a new booking for a guest and says whether the dates are free. Changes nothing.
+ */
+export function quoteStaffBooking(body: StaffBookingQuoteRequest): Promise<Quote> {
+  return mutateStaffApiOk<Quote>('/staff/reservations/quote', 'POST', body);
+}
+
+/**
+ * Makes a booking for a guest who pays at the property. Confirmed at once, payment pending.
+ */
+export function createStaffBooking(body: StaffCreateBookingRequest): Promise<StaffReservation> {
+  return mutateStaffApiOk<RawStaffReservation>('/staff/reservations', 'POST', body).then(withReservationDefaults);
+}
+
+/**
+ * The guest paid at the property: marks the booking paid (once). Recorded with the staff member's name.
+ */
+export function markStaffReservationPaid(reservationId: string): Promise<StaffReservation> {
+  return mutateStaffApiOk<RawStaffReservation>(`/staff/reservations/${reservationId}/mark-paid`, 'POST', {}).then(
+    withReservationDefaults,
   );
 }

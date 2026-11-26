@@ -93,3 +93,32 @@ export function refundActionAuditDetails(input: AuditDetailsInput): AuditMetadat
     refundCurrency: text(refund?.currencyCode),
   };
 }
+
+/** Staff made a booking for a guest: its reference, stay, dates, party size, price and how it will be paid. No guest details. */
+export function createBookingAuditDetails(input: AuditDetailsInput): AuditMetadata {
+  const booking = dataOf(input.result);
+  return {
+    ...actor(input),
+    bookingReference: text(booking?.reference),
+    houseId: text(booking?.houseId),
+    checkIn: text(booking?.checkIn),
+    checkOut: text(booking?.checkOut),
+    guestCount: whole(booking?.guestCount),
+    totalCents: whole(booking?.totalCents),
+    currency: text(booking?.currencyCode),
+    paymentMethod: text(booking?.paymentMethod),
+    paymentStatus: text(booking?.paymentStatus),
+  };
+}
+
+/** Staff ticked a pay-at-hotel booking as paid: the booking reference and the amount recorded as received. */
+export function markBookingPaidAuditDetails(input: AuditDetailsInput): AuditMetadata {
+  const booking = dataOf(input.result);
+  return {
+    ...actor(input),
+    bookingReference: text(booking?.reference),
+    paidCents: whole(booking?.paidCents),
+    currency: text(booking?.currencyCode),
+    paymentMethod: text(booking?.paymentMethod),
+  };
+}

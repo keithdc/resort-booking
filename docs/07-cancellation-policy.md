@@ -223,3 +223,7 @@ API:
 - `calculateRebookQuote(reservation, newDates, snapshot)` — returns pay/refund/fee; **404-style reject** if `rebookable === false`
 
 Frontends never hardcode rebookable or fee amounts.
+
+## Bookings nobody has paid yet (pay at hotel)
+
+A booking staff made for a guest who pays at the property (`docs/04-product-domain.md`) has `paid_cents = 0` until a person marks it paid, and the refund is worked out from what was **paid**, not from the total. So cancelling a pending booking always refunds **0** (a zero refund row, status `succeeded`, "no refund under the policy"), whoever cancels and whichever reason they pick, and a refund amount above 0 is refused. After it is marked paid, the booking behaves like any other: the saved policy applies, and because no online payment backs it the refund is a **manual** one. Changing dates is refused while payment is pending (`PAYMENT_PENDING`), for guests and for staff.

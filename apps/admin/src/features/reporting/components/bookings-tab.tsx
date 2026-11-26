@@ -37,7 +37,7 @@ import {
   bookingNights,
   bookingStatusKey,
   bookingStatusLabel,
-  paymentMethodLabel,
+  bookingPaymentLabel,
   type BookingStatusKey,
 } from '../utils/report-labels';
 import { useMoneyHidden } from './money-visibility';
@@ -164,7 +164,7 @@ export function BookingsTab({ report, status, onStatusChange, onChanged }: Booki
                   </Typography>
                   <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" alignItems="center" sx={{ mt: 1 }}>
                     <StatusChip status={bookingFilterStyle(bookingStatusKey(row))} label={bookingStatusLabel(row)} />
-                    <Chip size="small" variant="outlined" label={paymentMethodLabel(row.paymentMethod)} />
+                    <Chip size="small" variant="outlined" label={bookingPaymentLabel(row)} />
                   </Stack>
                   <Button
                     fullWidth
@@ -221,7 +221,7 @@ export function BookingsTab({ report, status, onStatusChange, onChanged }: Booki
                     <TableCell align="right">{bookingNights(row)}</TableCell>
                     <TableCell align="right">{row.guestCount}</TableCell>
                     {moneyHidden ? null : <TableCell align="right">{formatCents(row.totalCents, row.currencyCode)}</TableCell>}
-                    <TableCell>{paymentMethodLabel(row.paymentMethod)}</TableCell>
+                    <TableCell>{bookingPaymentLabel(row)}</TableCell>
                     <TableCell>
                       <StatusChip status={bookingFilterStyle(bookingStatusKey(row))} label={bookingStatusLabel(row)} />
                     </TableCell>

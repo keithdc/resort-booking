@@ -53,6 +53,7 @@ function row(overrides: Partial<BookingRow> = {}): BookingRow {
     booker_phone: '+33612345678',
     guest_note: '',
     payment_method: 'card',
+    payment_status: 'paid',
     total_cents: 96000,
     currency_code: 'EUR',
     policy_snapshot: snapshot(),
@@ -476,6 +477,16 @@ describe('BookingsService', () => {
       const booking = await service.lookup({ reference: NEW_REFERENCE, email: EMAIL });
 
       expect(booking).toMatchObject({ reference: NEW_REFERENCE, canChangeDates: true, changeDatesBlockedReason: null, rebookable: true, replacedByReference: null });
+    });
+
+    it('shows a pay-at-hotel booking nothing was paid for: it can be cancelled with nothing to refund, but its dates cannot be changed online', async () => {
+      findByReference.mockResolvedValue([changed({ payment_method: 'pay_at_hotel', payment_status: 'pending', paid_cents: 0 })]);
+
+      const booking = await service.lookup({ reference: NEW_REFERENCE, email: EMAIL });
+
+      expect(booking).toMatchObject({ status: 'confirmed', canCancel: true, canChangeDates: false });
+      expect(booking.refundQuote).toMatchObject({ paidCents: 0, refundCents: 0 });
+      expect(booking.changeDatesBlockedReason).toContain('paid at the property');
     });
 
     it('shows the OLD booking as cancelled, pointing at its replacement, with no cancellation refund', async () => {

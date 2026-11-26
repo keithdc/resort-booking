@@ -70,6 +70,7 @@ function row(overrides: Partial<BookingRow> = {}): BookingRow {
     booker_phone: '+33612345678',
     guest_note: '',
     payment_method: 'card',
+    payment_status: 'paid',
     total_cents: 96000,
     currency_code: 'EUR',
     paid_cents: 96000,
@@ -489,6 +490,18 @@ describe('RebookService', () => {
       await expect(attempt).rejects.toBeInstanceOf(ConflictException);
       await expect(attempt).rejects.toMatchObject({ response: { code: 'REBOOK_NOT_ALLOWED', message: REBOOK_NOT_ALLOWED_MESSAGE } });
       expect(getPolicySnapshot).not.toHaveBeenCalled();
+    });
+
+    it('refuses a pay-at-hotel booking nothing was paid for, for a guest and for staff, in each one\'s words', async () => {
+      const pending = row({ payment_method: 'pay_at_hotel', payment_status: 'pending', paid_cents: 0 });
+      findByReference.mockResolvedValue([pending]);
+
+      await expect(service.quote(NEW_DATES)).rejects.toMatchObject({
+        response: { code: 'PAYMENT_PENDING', message: expect.stringContaining('contact the property') as string },
+      });
+      await expect(
+        service.staffQuote(pending, { newCheckIn: '2027-08-01', newCheckOut: '2027-08-04', waiveFee: false }),
+      ).rejects.toMatchObject({ response: { code: 'PAYMENT_PENDING', message: expect.stringContaining('Mark it as paid first') as string } });
     });
 
     it('refuses a booking that has started', async () => {

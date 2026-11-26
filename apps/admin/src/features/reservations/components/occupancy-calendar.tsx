@@ -7,8 +7,9 @@
 'use client';
 
 import type { CalendarDayOccupancy, PropertySummary, StaffReservation } from '@resort-booking/shared-types';
+import AddOutlinedIcon from '@mui/icons-material/AddOutlined';
 import CalendarMonthOutlinedIcon from '@mui/icons-material/CalendarMonthOutlined';
-import { Alert, Box, Skeleton } from '@mui/material';
+import { Alert, Box, Button, Skeleton, Snackbar } from '@mui/material';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useCompactLayout } from '@/shared/hooks/use-compact-layout';
 import { PageHeader } from '@/shared/components/page-header';
@@ -20,6 +21,7 @@ import { CalendarDayPanel } from './calendar-day-panel';
 import { CalendarGrid } from './calendar-grid';
 import { CalendarLegend } from './calendar-legend';
 import { CalendarToolbar } from './calendar-toolbar';
+import { NewBookingDialog } from './new-booking-dialog';
 import { StayDetailDialog } from './stay-detail-dialog';
 
 interface OccupancyCalendarProps {
@@ -40,6 +42,8 @@ export function OccupancyCalendar({ properties }: OccupancyCalendarProps): React
   const [dayGuests, setDayGuests] = useState<StaffReservation[]>([]);
   const [dayLoading, setDayLoading] = useState(false);
   const [openStayId, setOpenStayId] = useState<string | null>(null);
+  const [newOpen, setNewOpen] = useState(false);
+  const [created, setCreated] = useState<string | null>(null);
   const todayIso = localTodayIso();
   const compact = useCompactLayout();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -100,6 +104,20 @@ export function OccupancyCalendar({ properties }: OccupancyCalendarProps): React
     setOpenStayId(null);
   };
 
+  const bookingCreated = (booking: StaffReservation): void => {
+    setNewOpen(false);
+    setCreated(`Booking ${booking.reference} created for ${booking.bookerName}. Payment is pending: pay at hotel.`);
+    // Show the new booking: its check-in day, in its month.
+    const [year, monthNumber] = booking.checkIn.split('-').map(Number);
+    if (year !== undefined && monthNumber !== undefined && !Number.isNaN(year) && !Number.isNaN(monthNumber)) {
+      setMonth(monthBounds(year, monthNumber));
+    }
+    setSelectedDate(booking.checkIn);
+    setOpenStayId(null);
+    void loadCalendar();
+    void loadDay(booking.checkIn);
+  };
+
   const openStay = dayGuests.find((row): boolean => row.id === openStayId) ?? null;
   const previousMonth = (): void =>
     goToMonth(month.month === 1 ? monthBounds(month.year - 1, 12) : monthBounds(month.year, month.month - 1));
@@ -118,6 +136,11 @@ export function OccupancyCalendar({ properties }: OccupancyCalendarProps): React
         icon={<CalendarMonthOutlinedIcon />}
         title="Who is staying"
         description="Select a day to see who is in-house. Open a booking for the full details, check-in and actions."
+        actions={
+          <Button variant="contained" size="small" startIcon={<AddOutlinedIcon fontSize="small" />} onClick={(): void => setNewOpen(true)}>
+            New booking
+          </Button>
+        }
       />
       <CalendarToolbar
         label={monthLabel(month.year, month.month)}
@@ -153,6 +176,19 @@ export function OccupancyCalendar({ properties }: OccupancyCalendarProps): React
       <Box ref={panelRef} sx={{ scrollMarginTop: 'calc(72px + env(safe-area-inset-top))' }}>
         <CalendarDayPanel date={selectedDate} guests={dayGuests} loading={dayLoading} openStayId={openStayId} onOpen={setOpenStayId} />
       </Box>
+      <NewBookingDialog
+        open={newOpen}
+        properties={properties}
+        defaultPropertyId={propertyId}
+        defaultDate={selectedDate}
+        onClose={(): void => setNewOpen(false)}
+        onCreated={bookingCreated}
+      />
+      <Snackbar open={created !== null} autoHideDuration={8000} onClose={(): void => setCreated(null)}>
+        <Alert severity="success" onClose={(): void => setCreated(null)}>
+          {created}
+        </Alert>
+      </Snackbar>
       <StayDetailDialog
         stay={openStay}
         onClose={(): void => {

@@ -44,6 +44,10 @@ describe('withReservationDefaults', () => {
     expect(filled.changes).toEqual([]);
     expect(filled.reference).toBe('');
     expect(filled.paidCents).toBe(0);
+    // An API from before pay at hotel: every booking it knows was paid online.
+    expect(filled.paymentStatus).toBe('paid');
+    expect(filled.paidAt).toBeNull();
+    expect(filled.createdByName).toBeNull();
     expect(filled.termsAcceptedAt).toBeNull();
     expect(filled.replacedByReference).toBeNull();
     expect(filled.rebookOfReference).toBeNull();
@@ -57,6 +61,12 @@ describe('withReservationDefaults', () => {
     });
 
     expect(withReservationDefaults(current)).toEqual(current);
+  });
+
+  it('keeps a pending pay-at-hotel booking pending', () => {
+    const filled = withReservationDefaults({ ...oldApiReservation(), paymentMethod: 'pay_at_hotel', paymentStatus: 'pending', createdByName: 'Eve' });
+
+    expect(filled).toMatchObject({ paymentStatus: 'pending', createdByName: 'Eve' });
   });
 
   it('keeps the booking facts it was given', () => {

@@ -23,6 +23,17 @@ vi.mock('./stay-detail-dialog', () => ({
     stay === null ? null : <div role="dialog" aria-label="Booking detail">{stay.bookerName}</div>,
 }));
 
+vi.mock('./new-booking-dialog', () => ({
+  NewBookingDialog: ({ open, defaultDate, onCreated }: { open: boolean; defaultDate: string; onCreated: (booking: StaffReservation) => void }): React.JSX.Element | null =>
+    open ? (
+      <div role="dialog" aria-label="New booking form" data-default-date={defaultDate}>
+        <button type="button" onClick={(): void => onCreated(staffReservation({ id: 'new', reference: 'BK-NEW0000001', bookerName: 'Grace Hopper', checkIn: '2031-03-05', checkOut: '2031-03-07' }))}>
+          Pretend it saved
+        </button>
+      </div>
+    ) : null,
+}));
+
 const PROPERTIES = [{ id: 'p1', name: 'Alpine Lake' }] as PropertySummary[];
 const today = currentMonthBounds(new Date());
 
@@ -44,6 +55,21 @@ describe('OccupancyCalendar', () => {
     expect(api.fetchStaffCalendar).toHaveBeenCalledWith(today.from, today.to, '');
     expect(api.fetchStaffReservationsOnDate).toHaveBeenCalledWith(localTodayIso(), '');
     expect(await screen.findByText('No bookings on this date')).toBeTruthy();
+  });
+
+  it('opens the new-booking form on the selected day, and after a save jumps to the new booking\'s day and says so', async () => {
+    render(<OccupancyCalendar properties={PROPERTIES} />);
+    await screen.findByRole('list', { name: 'Legend' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'New booking' }));
+    expect(screen.getByRole('dialog', { name: 'New booking form' }).getAttribute('data-default-date')).toBe(localTodayIso());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pretend it saved' }));
+
+    expect(screen.queryByRole('dialog', { name: 'New booking form' })).toBeNull();
+    expect(await screen.findByText(/Booking BK-NEW0000001 created for Grace Hopper\. Payment is pending: pay at hotel\./)).toBeTruthy();
+    await waitFor(() => expect(api.fetchStaffReservationsOnDate).toHaveBeenLastCalledWith('2031-03-05', ''));
+    await waitFor(() => expect(api.fetchStaffCalendar).toHaveBeenLastCalledWith('2031-03-01', '2031-04-01', ''));
   });
 
   it('lists the day\'s bookings and opens one', async () => {

@@ -4,7 +4,7 @@
  * @dependencies shared-types
  */
 
-import type { PaymentMethod, PromoCodeResult, QuoteDiscountLine, QuoteLine } from '@resort-booking/shared-types';
+import type { PaymentMethod, PromoCodeResult, Quote, QuoteDiscountLine, QuoteLine } from '@resort-booking/shared-types';
 import { isoDateInTimeZone } from '../../shared/dates/iso-date';
 
 export { isoDateInTimeZone };
@@ -128,4 +128,39 @@ export function maskPhone(phone: string): string {
     return '•••';
   }
   return `${phone.trim().startsWith('+') ? '+' : ''}••••• ${digits.slice(-3)}`;
+}
+
+/**
+ * The price fields of a quote, as saved with the hold.
+ */
+export function snapshotOf(quote: Quote): PriceSnapshot {
+  return {
+    lines: quote.lines,
+    subtotalCents: quote.subtotalCents,
+    discounts: quote.discounts,
+    discountCents: quote.discountCents,
+    totalCents: quote.totalCents,
+    currencyCode: quote.currencyCode,
+    promoCode: quote.promoCode,
+  };
+}
+
+/**
+ * Whole days from `today` to `date` (both YYYY-MM-DD, calendar arithmetic in UTC so no daylight-saving drift).
+ */
+export function daysFromToday(today: string, date: string): number {
+  return Math.round((Date.parse(`${date}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86_400_000);
+}
+
+interface PgErrorLike {
+  code?: string;
+}
+
+/** True for a clash with the no-overlap rule (23P01) or a unique key (23505). */
+export function isPgUniqueViolation(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) {
+    return false;
+  }
+  const candidate = error as PgErrorLike;
+  return candidate.code === '23P01' || candidate.code === '23505';
 }

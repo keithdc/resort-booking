@@ -8,7 +8,7 @@
  */
 
 import type { StaffReport, StaffReservation } from '@resort-booking/shared-types';
-import { bookingNights, bookingStatusLabel, paymentMethodLabel } from './report-labels';
+import { bookingNights, bookingStatusLabel, bookingPaymentLabel } from './report-labels';
 
 export type CsvCell = string | number;
 
@@ -80,7 +80,7 @@ export function buildReportCsv(report: StaffReport, context: CsvContext): string
       bookingNights(booking),
       booking.guestCount,
       ...(withMoney ? [money(booking.totalCents)] : []),
-      paymentMethodLabel(booking.paymentMethod),
+      bookingPaymentLabel(booking),
       bookingStatusLabel(booking),
     ]),
   ];

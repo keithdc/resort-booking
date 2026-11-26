@@ -96,6 +96,7 @@ const UNAUDITED_WRITES: Record<string, string> = {
   'POST /staff/me/two-factor/disable': 'TwoFactorService writes auth.two_factor_disabled (or auth.two_factor_failed) itself',
   'POST /staff/me/two-factor/recovery-codes/regenerate': 'TwoFactorService writes auth.recovery_codes_regenerated (or auth.two_factor_failed) itself',
   'POST /staff/reservations/:id/change-dates/quote': 'a price quote: writes nothing',
+  'POST /staff/reservations/quote': 'a price quote for a new booking: writes nothing',
   'POST /staff/properties/:propertyId/rate-periods/bulk/preview': 'a dry run: writes nothing',
 };
 
@@ -111,6 +112,10 @@ const ROLE_MATRIX: Record<string, StaffRole[]> = {
   'GET /staff/configuration': BOTH,
   'GET /staff/reservations/:id/cancel-preview': BOTH,
   'POST /staff/reservations/:id/cancel': BOTH,
+  // Booking for a guest who pays at the property, and ticking it paid when they did: the front desk does both, audited.
+  'POST /staff/reservations/quote': BOTH,
+  'POST /staff/reservations': BOTH,
+  'POST /staff/reservations/:id/mark-paid': BOTH,
   'POST /staff/reservations/:id/change-dates/quote': BOTH,
   'POST /staff/reservations/:id/change-dates': BOTH,
   'GET /staff/refunds': BOTH,

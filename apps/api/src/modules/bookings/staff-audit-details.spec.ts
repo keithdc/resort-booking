@@ -192,4 +192,82 @@ describe('audit rows of the staff money actions', () => {
     expect(() => interceptor.intercept(context, failing)).toThrow('refused');
     expect(recordBy).not.toHaveBeenCalled();
   });
+  it('create booking: who, reference, stay, dates, price and method; never the guest\'s name, email, phone or note', async () => {
+    await run(
+      StaffBookingsController.prototype.create,
+      ADMIN,
+      { body: { houseId: 'house-1', bookerName: 'Grace Hopper', bookerEmail: 'grace@example.com', bookerPhone: '+33612345678', guestNote: 'allergic to nuts' } },
+      {
+        status: 'ok',
+        data: {
+          id: BOOKING_ID,
+          reference: 'BK-1A2B3C4D5E',
+          houseId: 'house-1',
+          checkIn: '2027-08-01',
+          checkOut: '2027-08-04',
+          guestCount: 2,
+          totalCents: 96000,
+          currencyCode: 'EUR',
+          paymentMethod: 'pay_at_hotel',
+          paymentStatus: 'pending',
+          bookerName: 'Grace Hopper',
+          bookerEmail: 'grace@example.com',
+          bookerPhone: '+33612345678',
+          guestNote: 'allergic to nuts',
+        },
+      },
+    );
+
+    const [, action, details] = recordBy.mock.calls[0] ?? [];
+    expect(action).toBe('booking.created_by_staff');
+    expect(details).toEqual({
+      targetType: 'booking',
+      targetId: BOOKING_ID,
+      metadata: {
+        actorName: 'Ada Admin',
+        actorRole: 'admin',
+        viaRefundAccess: false,
+        bookingReference: 'BK-1A2B3C4D5E',
+        houseId: 'house-1',
+        checkIn: '2027-08-01',
+        checkOut: '2027-08-04',
+        guestCount: 2,
+        totalCents: 96000,
+        currency: 'EUR',
+        paymentMethod: 'pay_at_hotel',
+        paymentStatus: 'pending',
+      },
+    });
+    const written = JSON.stringify(recordBy.mock.calls);
+    expect(written).not.toContain('Grace');
+    expect(written).not.toContain('grace@example.com');
+    expect(written).not.toContain('allergic');
+    expect(written).not.toContain('+336');
+  });
+
+  it('mark paid: who ticked it, the booking and the amount recorded as received', async () => {
+    await run(
+      StaffBookingsController.prototype.markBookingPaid,
+      EMPLOYEE_WITH_ACCESS,
+      { params: { id: BOOKING_ID } },
+      { status: 'ok', data: { reference: 'BK-1A2B3C4D5E', paidCents: 96000, currencyCode: 'EUR', paymentMethod: 'pay_at_hotel', bookerEmail: 'guest@example.com' } },
+    );
+
+    const [, action, details] = recordBy.mock.calls[0] ?? [];
+    expect(action).toBe('booking.marked_paid');
+    expect(details).toEqual({
+      targetType: 'booking',
+      targetId: BOOKING_ID,
+      metadata: {
+        actorName: 'Pat Permitted',
+        actorRole: 'employee',
+        viaRefundAccess: true,
+        bookingReference: 'BK-1A2B3C4D5E',
+        paidCents: 96000,
+        currency: 'EUR',
+        paymentMethod: 'pay_at_hotel',
+      },
+    });
+    expect(JSON.stringify(recordBy.mock.calls)).not.toContain('guest@example.com');
+  });
 });

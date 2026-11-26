@@ -19,7 +19,7 @@ export const BOOKING_STATUS_OPTIONS: { value: BookingStatusKey; label: string }[
 ];
 
 /**
- * "Card / wallets", "Bank transfer", or "Not recorded".
+ * "Card / wallets", "Bank transfer", "Pay at hotel", or "Not recorded".
  */
 export function paymentMethodLabel(method: PaymentMethodSlice['paymentMethod'] | null): string {
   if (method === 'card') {
@@ -28,7 +28,18 @@ export function paymentMethodLabel(method: PaymentMethodSlice['paymentMethod'] |
   if (method === 'bank_transfer') {
     return 'Bank transfer';
   }
+  if (method === 'pay_at_hotel') {
+    return 'Pay at hotel';
+  }
   return 'Not recorded';
+}
+
+/**
+ * The payment of one booking for a list or export: the method, and "· Pending" while a pay-at-hotel booking is unpaid.
+ */
+export function bookingPaymentLabel(booking: Pick<StaffReservation, 'paymentMethod' | 'paymentStatus'>): string {
+  const method = paymentMethodLabel(booking.paymentMethod);
+  return booking.paymentStatus === 'pending' ? `${method} · Pending` : method;
 }
 
 /**

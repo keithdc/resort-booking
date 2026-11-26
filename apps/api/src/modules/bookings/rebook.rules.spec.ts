@@ -91,6 +91,23 @@ describe('checkRebookAllowed', () => {
     expect(checkRebookAllowed(true, 'confirmed', TODAY, TODAY)).toEqual({ allowed: true });
   });
 
+  it('refuses a booking nothing was paid for (pay at hotel), with a message for the guest or for staff', () => {
+    expect(checkRebookAllowed(true, 'confirmed', '2027-07-10', TODAY, 'pending')).toMatchObject({
+      allowed: false,
+      code: 'PAYMENT_PENDING',
+      message: expect.stringContaining('contact the property') as string,
+    });
+    expect(checkRebookAllowed(true, 'confirmed', '2027-07-10', TODAY, 'pending', 'staff')).toMatchObject({
+      allowed: false,
+      code: 'PAYMENT_PENDING',
+      message: expect.stringContaining('Mark it as paid first') as string,
+    });
+  });
+
+  it('allows a pay-at-hotel booking once it is marked paid', () => {
+    expect(checkRebookAllowed(true, 'confirmed', '2027-07-10', TODAY, 'paid')).toEqual({ allowed: true });
+  });
+
   it('refuses once the check-in date has passed', () => {
     expect(checkRebookAllowed(true, 'confirmed', '2027-05-31', TODAY)).toMatchObject({
       allowed: false,

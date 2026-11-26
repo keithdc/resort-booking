@@ -11,14 +11,24 @@ import type {
   StaffCancelPreview,
   StaffCancelResult,
   StaffChangeResult,
+  Quote,
   StaffRefund,
+  StaffReservation,
 } from '@resort-booking/shared-types';
 import type { StaffAccount } from '../../shared/roles/staff-role';
+import { StaffBookingCreator } from '../inventory/staff-booking-creator';
 import { StaffGuard, type StaffRequest } from '../identity/staff.guard';
 import { ParseUuidLikePipe } from '../../shared/validation/parse-uuid-like.pipe';
 import { MarkRefundPaidDto, StaffCancelDto, StaffChangeDatesDto, StaffChangeQuoteDto } from './dto/staff-actions.dto';
+import { StaffBookingQuoteDto, StaffCreateBookingDto } from './dto/staff-create-booking.dto';
 import { StaffRefundsQueryDto } from './dto/staff-refunds-query.dto';
-import { cancelAuditDetails, changeDatesAuditDetails, refundActionAuditDetails } from './staff-audit-details';
+import {
+  cancelAuditDetails,
+  changeDatesAuditDetails,
+  createBookingAuditDetails,
+  markBookingPaidAuditDetails,
+  refundActionAuditDetails,
+} from './staff-audit-details';
 import { StaffBookingsService } from './staff-bookings.service';
 import { StaffRefundsService } from './staff-refunds.service';
 import { Audited } from '../../shared/audit/audited.decorator';
@@ -36,7 +46,42 @@ export class StaffBookingsController {
   public constructor(
     private readonly bookings: StaffBookingsService,
     private readonly refunds: StaffRefundsService,
+    private readonly creator: StaffBookingCreator,
   ) {}
+
+  /** What a stay would cost for these dates, and whether they are free. Changes nothing. */
+  @Post('reservations/quote')
+  @AllowRoles('admin', 'employee')
+  @HttpCode(200)
+  @TenantScoped({ resource: 'house', from: 'body', key: 'houseId' })
+  public async quote(@Body() body: StaffBookingQuoteDto, @Req() request: StaffRequest): Promise<ApiOkBody<Quote>> {
+    return { status: 'ok', data: await this.creator.quote(this.staff(request), body) };
+  }
+
+  /**
+   * Makes a booking for a guest who pays at the property. Confirmed at once, payment pending. Admins and employees
+   * both may: it moves no money, and it is audited with who made it.
+   */
+  @Post('reservations')
+  @AllowRoles('admin', 'employee')
+  @Audited({ action: 'booking.created_by_staff', targetType: 'booking', targetFromResult: 'id', details: createBookingAuditDetails })
+  @TenantScoped({ resource: 'house', from: 'body', key: 'houseId' })
+  public async create(@Body() body: StaffCreateBookingDto, @Req() request: StaffRequest): Promise<ApiOkBody<StaffReservation>> {
+    return { status: 'ok', data: await this.creator.create(this.staff(request), body) };
+  }
+
+  /** The guest paid at the property: pending becomes paid, once. Audited with who ticked it. */
+  @Post('reservations/:id/mark-paid')
+  @AllowRoles('admin', 'employee')
+  @Audited({ action: 'booking.marked_paid', targetType: 'booking', targetParam: 'id', details: markBookingPaidAuditDetails })
+  @HttpCode(200)
+  @TenantScoped({ resource: 'booking', from: 'param', key: 'id' })
+  public async markBookingPaid(
+    @Param('id', ParseUuidLikePipe) id: string,
+    @Req() request: StaffRequest,
+  ): Promise<ApiOkBody<StaffReservation>> {
+    return { status: 'ok', data: await this.bookings.markPaid(this.staff(request), id) };
+  }
 
   /** What cancelling would refund under the booking's saved policy. Changes nothing. */
   @Get('reservations/:id/cancel-preview')

@@ -53,7 +53,7 @@ function paymentHabit(report: InsightInput): string | null {
   if (top.paymentMethod === 'unknown' || share <= 50) {
     return null;
   }
-  const how = top.paymentMethod === 'card' ? 'by card' : 'by bank transfer';
+  const how = top.paymentMethod === 'card' ? 'by card' : top.paymentMethod === 'pay_at_hotel' ? 'at the hotel' : 'by bank transfer';
   return `Most guests pay ${how} (${share}%).`;
 }
 

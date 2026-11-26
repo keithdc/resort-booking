@@ -12,6 +12,7 @@ import { formatIsoDate, formatShortDate } from '@/shared/utils/format-date';
 import { formatCents } from '@/shared/utils/money';
 import { stayStatusStyle } from '@/shared/utils/status-style';
 import { nightsBetween } from '../utils/dates';
+import { PaymentStatusChip } from './payment-status-chip';
 
 interface DayBookingCardProps {
   stay: StaffReservation;
@@ -73,6 +74,7 @@ export function DayBookingCard({ stay, selected, onOpen }: DayBookingCardProps):
             {stay.bookerName}
           </Typography>
           <StatusChip status={status} />
+          {stay.kind === 'reservation' && stay.status === 'confirmed' ? <PaymentStatusChip stay={stay} /> : null}
         </Stack>
         <Typography
           variant="caption"

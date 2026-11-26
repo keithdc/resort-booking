@@ -46,6 +46,7 @@ function row(overrides: Partial<BookingRow> = {}): BookingRow {
     booker_phone: null,
     guest_note: null,
     payment_method: 'card',
+    payment_status: 'paid',
     total_cents: 100000,
     currency_code: 'EUR',
     paid_cents: 100000,
@@ -74,6 +75,7 @@ const OUTCOME: CancelOutcome = {
 describe('StaffBookingsService', () => {
   const findById = jest.fn<Promise<BookingRow | null>, [string]>();
   const findKind = jest.fn<Promise<BlockKind | null>, [string]>();
+  const markPaid = jest.fn<Promise<boolean>, [string, string]>();
   const cancelRow = jest.fn<Promise<CancelOutcome>, [BookingRow, CancelInput]>();
   const staffQuote = jest.fn();
   const staffChange = jest.fn();
@@ -94,7 +96,7 @@ describe('StaffBookingsService', () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         StaffBookingsService,
-        { provide: BookingsRepository, useValue: { findById, findKind } },
+        { provide: BookingsRepository, useValue: { findById, findKind, markPaid } },
         { provide: BookingsService, useValue: { cancelRow } },
         { provide: RebookService, useValue: { staffQuote, staffChange } },
         {
@@ -532,6 +534,79 @@ describe('StaffBookingsService', () => {
       findById.mockResolvedValue(row({ organization_id: 'other' }));
       await expect(service.changeQuote(STAFF, ID, DATES)).rejects.toBeInstanceOf(NotFoundException);
       expect(staffChange).not.toHaveBeenCalled();
+    });
+  });
+  describe('pay at hotel (nothing paid yet)', () => {
+    const pending = (overrides: Partial<BookingRow> = {}): BookingRow =>
+      row({ payment_method: 'pay_at_hotel', payment_status: 'pending', paid_cents: 0, ...overrides });
+
+    it('previews a cancellation with nothing to refund, whatever the ladder says', async () => {
+      findById.mockResolvedValue(pending());
+
+      const preview = await service.cancelPreview(STAFF, ID);
+
+      expect(preview).toMatchObject({
+        canCancel: true,
+        paidCents: 0,
+        policyRefund: { refundPercent: 0, refundCents: 0 },
+      });
+      expect(preview.notice).toContain('Nothing has been paid');
+      expect(policyFor).not.toHaveBeenCalled();
+    });
+
+    it('cancels a pending booking with a zero refund (no refund row of any size)', async () => {
+      findById.mockResolvedValue(pending());
+
+      await service.cancel(EMPLOYEE, ID, { reason: 'guest_request', note: 'Guest called', refundCents: null });
+
+      expect(cancelRow).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ refundCents: 0, percent: 0 }));
+    });
+
+    it('refuses a refund amount on a booking nothing was paid for', async () => {
+      findById.mockResolvedValue(pending());
+
+      await expect(service.cancel(STAFF, ID, { reason: 'goodwill', note: 'Sorry', refundCents: 500 })).rejects.toMatchObject({
+        response: { code: 'INVALID_REFUND_AMOUNT' },
+      });
+      expect(cancelRow).not.toHaveBeenCalled();
+    });
+
+    it('marks it paid once, for an employee as well, and answers with the booking', async () => {
+      findById.mockResolvedValue(pending());
+      markPaid.mockResolvedValue(true);
+
+      const booking = await service.markPaid(EMPLOYEE, ID);
+
+      expect(markPaid).toHaveBeenCalledWith(ID, EMPLOYEE.id);
+      expect(booking).toEqual({ id: ID });
+    });
+
+    it('refuses a second tick without writing', async () => {
+      findById.mockResolvedValue(pending({ payment_status: 'paid', paid_cents: 100000 }));
+
+      await expect(service.markPaid(STAFF, ID)).rejects.toMatchObject({ status: 409, response: { code: 'ALREADY_PAID' } });
+      expect(markPaid).not.toHaveBeenCalled();
+    });
+
+    it('refuses an online booking, a cancelled one and another organization\'s', async () => {
+      findById.mockResolvedValue(row());
+      await expect(service.markPaid(STAFF, ID)).rejects.toMatchObject({ status: 409, response: { code: 'NOT_PAY_AT_HOTEL' } });
+
+      findById.mockResolvedValue(pending({ status: 'cancelled' }));
+      await expect(service.markPaid(STAFF, ID)).rejects.toMatchObject({ status: 409, response: { code: 'BOOKING_CANCELLED' } });
+
+      findById.mockResolvedValue(pending({ organization_id: 'other' }));
+      await expect(service.markPaid(STAFF, ID)).rejects.toBeInstanceOf(NotFoundException);
+      expect(markPaid).not.toHaveBeenCalled();
+    });
+
+    it('reports the right reason when the write lost a race', async () => {
+      findById.mockResolvedValueOnce(pending()).mockResolvedValueOnce(pending({ status: 'cancelled' }));
+      markPaid.mockResolvedValue(false);
+      await expect(service.markPaid(STAFF, ID)).rejects.toMatchObject({ response: { code: 'BOOKING_CANCELLED' } });
+
+      findById.mockResolvedValueOnce(pending()).mockResolvedValueOnce(pending({ payment_status: 'paid' }));
+      await expect(service.markPaid(STAFF, ID)).rejects.toMatchObject({ response: { code: 'ALREADY_PAID' } });
     });
   });
 });

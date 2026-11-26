@@ -134,7 +134,7 @@ export class BookingReader {
     const paidCents = this.paidCentsOf(row);
     const today = this.todayFor(row);
     const check = checkCancellation(paidCents, row.check_in, today, policy.tiers);
-    const change = checkRebookAllowed(policy.rebookable, 'confirmed', row.check_in, today);
+    const change = checkRebookAllowed(policy.rebookable, 'confirmed', row.check_in, today, row.payment_status);
     return {
       ...base,
       status: 'confirmed',

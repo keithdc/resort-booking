@@ -29,6 +29,29 @@ refunds hold a **lease** (`processing_started_at`) while a process is talking to
 "Retry" and "Mark as refunded" answer 409 `REFUND_NOT_RETRYABLE` / `REFUND_BEING_PROCESSED` while a call may still be in flight
 (a live lease, `REFUND_LEASE_SECONDS`, default 150). Wait a few minutes and try again; the lease expires by itself.
 
+## Money recorded by hand: pay at hotel
+
+A booking staff make for a guest who pays at the property (`payment_method = 'pay_at_hotel'`, migration 040) is confirmed with
+`payment_status = 'pending'` and `paid_cents = 0`. There is no row in `payments`: no provider is involved, so nothing here is
+reconciled automatically. A person ticks **Mark as paid** once the guest has paid at the desk.
+
+- **Who:** admins and employees. It moves no money out, it is audited, and the front desk is who takes the cash. An admin can still
+  see every tick in the audit log (`booking.marked_paid`: who, role, reference, amount; never the guest's details). If you want
+  only admins (or refund-access holders) to tick, change `@AllowRoles` on `POST /staff/reservations/:id/mark-paid` and the role
+  matrix in `tenant-isolation.spec.ts`; it is a one-line decision, see the open question in the hand-over notes.
+- **What it writes:** `payment_status = 'paid'`, `paid_at`, `marked_paid_by_staff_id`, `paid_cents = total_cents`, in one
+  conditional `UPDATE` (only a confirmed, pending pay-at-hotel row matches), so a double click or two people ticking cannot count
+  it twice (the second gets 409 `ALREADY_PAID`). The database also refuses `paid -> pending`, even for the owner role (trigger from
+  migration 040; the usual `resort.record_maintenance` escape hatch for an owner-run job still applies).
+- **Cancelling:** a pending booking is cancelled with a refund row of 0, "no refund under the policy", status `succeeded`; no
+  person has anything to do. A booking marked paid and later cancelled gets a normal policy refund, as a **manual** refund
+  (`provider = manual`, no online payment is on record): the person sends the money back and uses "Mark as refunded".
+- **Reconciling cash:** list what is still to collect with
+  `SELECT id, check_in, total_cents, currency_code FROM inventory_blocks WHERE payment_status = 'pending' AND kind = 'reservation' AND status = 'confirmed' ORDER BY check_in;`
+  (an index covers it). Pending bookings with a check-in in the past are the ones to chase. There is no screen for this yet.
+- **Not done yet (phase 2):** the **Credit card** option, which will give the guest a payment link and confirm the booking when the
+  provider reports the payment. It will reuse the hold and payment code of the guest checkout.
+
 ## Idempotency keys (why a retry cannot pay twice)
 
 Every provider refund call carries `refund-<refund id>-g<key generation>-c<chunk>`. Asking again with the same key returns the
@@ -105,6 +128,7 @@ Wire an alert to log lines (the API logs in plain text; match on the text) or to
 | log `Webhook refused` repeated | a wrong secret after a rotation, or someone probing |
 | log `says refund ... but our record says it is already paid` | the provider and our books disagree |
 | refunds `pending` older than 30 minutes, `failed` older than a day (SQL on `refunds`) | nobody is handling the queue |
+| bookings `pending` payment with a check-in in the past (SQL above) | a guest stayed and nobody marked it paid or chased it |
 | log `Refund reconciliation failed` | the sweep itself is down |
 
 The audit write is still fire and forget (R2-05 note): if the audit table is unreachable the action stands and only a log line

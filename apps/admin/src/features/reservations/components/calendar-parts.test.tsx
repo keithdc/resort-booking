@@ -145,6 +145,16 @@ describe('CalendarGrid', () => {
 describe('DayBookingCard', () => {
   afterEach(cleanup);
 
+  it('flags a pay-at-hotel booking that is not paid yet, and stays quiet for an online one', () => {
+    const { rerender } = render(
+      <DayBookingCard stay={staffReservation({ paymentMethod: 'pay_at_hotel', paymentStatus: 'pending', paidCents: 0 })} selected={false} onOpen={vi.fn()} />,
+    );
+    expect(screen.getByText('Pay at hotel · Pending')).toBeTruthy();
+
+    rerender(<DayBookingCard stay={staffReservation()} selected={false} onOpen={vi.fn()} />);
+    expect(screen.queryByText(/Pay at hotel/)).toBeNull();
+  });
+
   it('shows who, where, dates, nights, guests, total and status, and opens on click', () => {
     const onOpen = vi.fn();
     render(

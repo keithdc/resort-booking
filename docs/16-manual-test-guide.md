@@ -9,7 +9,7 @@ Ports used by the dev setup: web `3000`, admin `3001`, API `3002`.
 1. Stop the API, admin and web.
 2. Admin env: in `apps/admin/.env` rename `NEXT_PUBLIC_API_URL` to `API_URL` (same value, `http://localhost:3002`). The old name still works as a fallback, but the API address should not be in the browser bundle.
 3. Start everything with `npm run dev:api`, `npm run dev:admin` and `npm run dev:web` (use `npm run dev`, not a bare `next dev`).
-4. In the API terminal, look for the migration lines. **Expected:** pending migrations up to `039` are applied once, then nothing on the next restart. No error lines.
+4. In the API terminal, look for the migration lines. **Expected:** pending migrations up to `040` are applied once, then nothing on the next restart. No error lines.
 5. Sign in as the dev owner (`STAFF_OWNER_EMAIL` / `STAFF_OWNER_PASSWORD` from `apps/api/.env`).
 
 ## 1. Startup safety (optional, 2 minutes)
@@ -110,6 +110,25 @@ Optional: switch the dev database to the least-privilege roles with `docs/11-dat
 ## 13. Public rate limits (optional)
 
 Hammer a public read route: `for i in $(seq 1 320); do curl -s -o /dev/null -w "%{http_code}\n" localhost:3002/properties; done | sort | uniq -c`. **Expected:** mostly 200 and then some 429 once the per-minute limit is reached. Wait a minute to recover.
+
+## 14. Bookings made by staff (pay at hotel)
+
+Needs migration `040` (restart the API first). Use a stay with future dates free. Test data only.
+
+1. Calendar page, **New booking**. **Expected:** a dialog. If one property exists it is already chosen, and so is its stay when it has only one. Check-in starts on the day selected in the calendar.
+2. Pick check-in, nights and guests. **Expected:** after a moment the price appears (nights by rate, any discount, total). A date in the past, or more guests than the stay sleeps, shows a sentence instead of a price.
+3. **Expected:** the payment section has **Pay at hotel** selected, and **Credit card** greyed out with "Payment link: coming soon".
+4. Enter a guest name and a valid email (phone and note are optional). **Expected:** the **Book it · pay at hotel** button turns on only when there is a price, a name and a valid email.
+5. Book it. **Expected:** the calendar jumps to the check-in day and says "Booking BK-... created ... Payment is pending: pay at hotel". The day list shows the booking with a **Pay at hotel · Pending** chip.
+6. Open the booking. **Expected:** the header chip, Payment says "Not paid yet: pay at hotel", Paid so far 0, "Booked by <your name> (staff)", and a green **Mark as paid** button.
+7. Try the same dates again in **New booking**. **Expected:** the price area says those dates are not free and the book button stays off.
+8. Open the booking, **Change dates**, pick other dates, **See price**. **Expected:** it is refused with "This booking has not been paid yet. Mark it as paid first, or cancel it and make a new booking."
+9. On the guest site go to Manage booking, enter the reference and the guest email. **Expected:** it opens; cancelling would refund nothing; changing dates is not offered ("paid at the property ... contact the property").
+10. Back in admin choose **Mark as paid**. **Expected:** a confirmation ("Use this once the guest has paid you at the hotel. It is recorded in the audit log with your name."). Confirm. **Expected:** the chip becomes **Paid at hotel**, Paid so far equals the total, and the button is gone. Reload: same.
+11. Audit log (admin). **Expected:** `booking.created_by_staff` and `booking.marked_paid` with who did them, the reference and amounts, and no guest name, email, phone or note.
+12. As an **employee** (no refund access), repeat steps 1-6 and 10. **Expected:** it all works. A second booking: cancel it while pending. **Expected:** "Nothing has been paid for this booking yet ... nothing to refund", the booking is cancelled, and the Refunds page shows nothing to do.
+13. Reports, Bookings tab. **Expected:** the booking reads "Pay at hotel · Pending" (or "Pay at hotel" once paid).
+14. Database check (rolled back, changes nothing): `docker exec -i resort-booking-postgres-1 psql -U resort -d resort_booking -c "begin; update inventory_blocks set payment_status = 'pending' where payment_status = 'paid' and payment_method = 'pay_at_hotel'; rollback;"` **Expected:** an error "a paid booking cannot go back to pending" (or 0 rows if you have none paid yet).
 
 ## If something fails
 

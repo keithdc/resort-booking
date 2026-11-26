@@ -7,6 +7,7 @@
 'use client';
 
 import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import ChecklistOutlinedIcon from '@mui/icons-material/ChecklistOutlined';
 import CloseIcon from '@mui/icons-material/Close';
 import EventNoteOutlinedIcon from '@mui/icons-material/EventNoteOutlined';
@@ -32,6 +33,7 @@ import {
   Typography,
 } from '@mui/material';
 import { useEffect, useState } from 'react';
+import { ConfirmDialog } from '@/shared/components/confirm-dialog';
 import { StatusChip } from '@/shared/components/status-chip';
 import { useCanManageRefunds } from '@/shared/hooks/use-staff-role';
 import { UserAvatar } from '@/shared/components/user-avatar';
@@ -40,8 +42,9 @@ import { formatIsoDate } from '@/shared/utils/format-date';
 import { stayStatusStyle } from '@/shared/utils/status-style';
 import { formatDateTime } from '@/shared/utils/booking-labels';
 import { formatCents } from '@/shared/utils/money';
-import { patchStaffReservationArrival } from '../services/staff-reservations-api';
+import { markStaffReservationPaid, patchStaffReservationArrival } from '../services/staff-reservations-api';
 import { nightsBetween, todayLocalIso } from '../utils/dates';
+import { canMarkPaid, paymentMethodText } from '../utils/payment-status';
 import {
   canCancelStay,
   canChangeStayDates,
@@ -51,6 +54,7 @@ import {
   SAME_DAY_ADMIN_ONLY_MESSAGE,
 } from '../utils/stay-actions';
 import { CancellationBlock, HistoryBlock, RefundsBlock } from './booking-records';
+import { PaymentStatusChip } from './payment-status-chip';
 import { StaffCancelDialog } from './staff-cancel-dialog';
 import { StaffChangeDatesDialog } from './staff-change-dates-dialog';
 import { StayBlock, StayFact } from './stay-block';
@@ -77,6 +81,9 @@ export function StayDetailDialog({ stay, onClose, onUpdated, onChanged }: StayDe
   const [notice, setNotice] = useState<string | null>(null);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [changeOpen, setChangeOpen] = useState(false);
+  const [markPaidOpen, setMarkPaidOpen] = useState(false);
+  const [marking, setMarking] = useState(false);
+  const [markError, setMarkError] = useState<string | null>(null);
   const canManageRefunds = useCanManageRefunds();
 
   useEffect((): void => {
@@ -84,7 +91,28 @@ export function StayDetailDialog({ stay, onClose, onUpdated, onChanged }: StayDe
     setPending(null);
     setCancelOpen(false);
     setChangeOpen(false);
+    setMarkPaidOpen(false);
+    setMarkError(null);
   }, [stay?.id]);
+
+  const markPaid = async (): Promise<void> => {
+    if (stay === null) {
+      return;
+    }
+    setMarking(true);
+    setMarkError(null);
+    try {
+      const updated = await markStaffReservationPaid(stay.id);
+      onUpdated(updated);
+      setMarkPaidOpen(false);
+      setNotice(`Marked as paid: ${updated.reference}`);
+      onChanged();
+    } catch (err: unknown) {
+      setMarkError(err instanceof ApiRequestError ? err.message : 'Could not mark the booking as paid. Please try again.');
+    } finally {
+      setMarking(false);
+    }
+  };
 
   const setArrival = async (arrivalStatus: ArrivalStatus): Promise<void> => {
     if (stay === null) {
@@ -106,6 +134,7 @@ export function StayDetailDialog({ stay, onClose, onUpdated, onChanged }: StayDe
   const canCheckIn =
     stay !== null && stay.kind === 'reservation' && stay.status === 'confirmed' && stay.arrivalStatus === 'expected';
   const canCancel = stay !== null && canCancelStay(stay);
+  const canTickPaid = stay !== null && canMarkPaid(stay);
   const canChange = stay !== null && canChangeStayDates(stay, todayLocalIso());
   // Only changing dates is locked on the check-in day: a cancellation goes through (with no refund) without refund access.
   const sameDayLocked = stay !== null && canChange && isSameDayLockedForEmployee(stay, canManageRefunds, todayLocalIso());
@@ -129,6 +158,7 @@ export function StayDetailDialog({ stay, onClose, onUpdated, onChanged }: StayDe
                       {stay.bookerName}
                     </Typography>
                     <StatusChip status={stayStatusStyle(stay)} label={statusLabel(stay)} />
+                    {stay.kind === 'reservation' && stay.status === 'confirmed' ? <PaymentStatusChip stay={stay} showPaid /> : null}
                     <Chip size="small" variant="outlined" label={stay.reference} />
                   </Stack>
                   <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
@@ -167,7 +197,11 @@ export function StayDetailDialog({ stay, onClose, onUpdated, onChanged }: StayDe
                     <Typography variant="caption" color="text.secondary" display="block" sx={{ textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
                       Phone
                     </Typography>
-                    <MuiLink href={`tel:${stay.bookerPhone}`}>{stay.bookerPhone}</MuiLink>
+                    {stay.bookerPhone.trim() === '' ? (
+                      <Typography color="text.secondary">Not given</Typography>
+                    ) : (
+                      <MuiLink href={`tel:${stay.bookerPhone}`}>{stay.bookerPhone}</MuiLink>
+                    )}
                   </Box>
                 </StayBlock>
                 <StayBlock title="Booking" icon={<EventNoteOutlinedIcon />} tone="info">
@@ -177,17 +211,21 @@ export function StayDetailDialog({ stay, onClose, onUpdated, onChanged }: StayDe
                   <StayFact label="Guests on the booking" value={String(stay.guestCount)} />
                   <StayFact label="Stay" value={stay.houseName} />
                   <StayFact label="Property" value={stay.propertyName} />
+                  {stay.createdByName !== null ? <StayFact label="Booked by" value={`${stay.createdByName} (staff)`} /> : null}
                   <StayFact
                     label="Cancellation terms"
                     value={
                       stay.termsAcceptedAt === null
-                        ? 'Not recorded'
+                        ? stay.createdByName !== null
+                          ? 'Booked by staff: the guest did not accept terms online'
+                          : 'Not recorded'
                         : `Accepted the cancellation terms on ${formatDateTime(stay.termsAcceptedAt)}`
                     }
                   />
                 </StayBlock>
                 <StayBlock title="Payment" icon={<PaymentsOutlinedIcon />} tone="success">
-                  <StayFact label="Method" value={paymentLabel(stay)} />
+                  <StayFact label="Method" value={paymentMethodText(stay.paymentMethod)} />
+                  <StayFact label="Status" value={paymentStatusText(stay)} />
                   <StayFact label="Total" value={formatCents(stay.totalCents, stay.currencyCode)} />
                   <StayFact label="Paid so far" value={formatCents(stay.paidCents, stay.currencyCode)} />
                   <StayFact label="Record" value={stay.kind === 'hold' ? 'Hold (not yet a booking)' : 'Reservation'} />
@@ -231,6 +269,11 @@ export function StayDetailDialog({ stay, onClose, onUpdated, onChanged }: StayDe
                 {canCancel ? (
                   <Button color="error" variant="outlined" startIcon={<CancelOutlinedIcon />} disabled={pending !== null} onClick={(): void => setCancelOpen(true)}>
                     Cancel booking
+                  </Button>
+                ) : null}
+                {canTickPaid ? (
+                  <Button variant="contained" color="success" startIcon={<CheckCircleOutlineIcon />} disabled={pending !== null} onClick={(): void => setMarkPaidOpen(true)}>
+                    Mark as paid
                   </Button>
                 ) : null}
                 {canChange ? (
@@ -300,6 +343,23 @@ export function StayDetailDialog({ stay, onClose, onUpdated, onChanged }: StayDe
           />
         </>
       ) : null}
+      <ConfirmDialog
+        open={markPaidOpen && stay !== null}
+        title={`Mark ${stay?.reference ?? ''} as paid?`}
+        confirmLabel="Mark as paid"
+        pending={marking}
+        error={markError}
+        onConfirm={(): void => {
+          void markPaid();
+        }}
+        onClose={(): void => {
+          setMarkPaidOpen(false);
+          setMarkError(null);
+        }}
+      >
+        Mark {stay?.reference ?? ''} as paid? Use this once the guest has paid you at the hotel. It is recorded in the audit log with your name.
+        {stay !== null ? ` The whole total of ${formatCents(stay.totalCents, stay.currencyCode)} will count as paid.` : ''}
+      </ConfirmDialog>
       <Snackbar open={notice !== null} autoHideDuration={6000} onClose={(): void => setNotice(null)}>
         <Alert severity="success" onClose={(): void => setNotice(null)}>
           {notice}
@@ -309,14 +369,14 @@ export function StayDetailDialog({ stay, onClose, onUpdated, onChanged }: StayDe
   );
 }
 
-function paymentLabel(stay: StaffReservation): string {
-  if (stay.paymentMethod === 'bank_transfer') {
-    return 'Bank transfer';
+function paymentStatusText(stay: StaffReservation): string {
+  if (stay.paymentStatus === 'pending') {
+    return 'Not paid yet: pay at hotel';
   }
-  if (stay.paymentMethod === 'card') {
-    return 'Card / Apple Pay / Google Pay';
+  if (stay.paidAt !== null) {
+    return `Paid at hotel on ${formatDateTime(stay.paidAt)}`;
   }
-  return 'Not recorded';
+  return 'Paid';
 }
 
 function arrivalLabel(status: ArrivalStatus): string {
@@ -370,9 +430,9 @@ function SummaryStrip({ stay }: SummaryStripProps): React.JSX.Element {
     {
       label: 'Total',
       value: formatCents(stay.totalCents, stay.currencyCode),
-      note: `${formatCents(stay.paidCents, stay.currencyCode)} paid`,
+      note: stay.paymentStatus === 'pending' ? 'Not paid yet' : `${formatCents(stay.paidCents, stay.currencyCode)} paid`,
     },
-    { label: 'Arrival', value: arrivalLabel(stay.arrivalStatus), note: paymentLabel(stay) },
+    { label: 'Arrival', value: arrivalLabel(stay.arrivalStatus), note: paymentMethodText(stay.paymentMethod) },
   ];
   return (
     <Box

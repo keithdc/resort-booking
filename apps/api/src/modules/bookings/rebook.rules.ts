@@ -4,10 +4,16 @@
  * @dependencies shared-types, inventory.rules, bookings.rules
  */
 
-import type { RebookFeeType } from '@resort-booking/shared-types';
+import type { BookingPaymentStatus, RebookFeeType } from '@resort-booking/shared-types';
 import { isPriceSnapshot, nightsBetween, type PriceSnapshot } from '../inventory/inventory.rules';
 import { BOOKING_CANCELLED_MESSAGE, BOOKING_STARTED_MESSAGE, wholeDaysBetween } from './bookings.rules';
 
+/** A guest looking at a booking that is to be paid at the property: dates cannot be moved online until it is paid. */
+export const PAYMENT_PENDING_GUEST_MESSAGE =
+  'This booking is paid at the property, so its dates cannot be changed online. Please contact the property.';
+/** Staff: the price difference needs a paid booking to be worked out. */
+export const PAYMENT_PENDING_STAFF_MESSAGE =
+  'This booking has not been paid yet. Mark it as paid first, or cancel it and make a new booking.';
 export const REBOOK_NOT_ALLOWED_MESSAGE = 'The dates of this booking cannot be changed. To change them, cancel and book again.';
 export const NO_CHANGE_MESSAGE = 'Those are already the dates of this booking.';
 export const DATES_TAKEN_MESSAGE = 'Those dates are not available for this stay. Please choose other dates.';
@@ -63,7 +69,11 @@ export function rebookBalance(newTotalCents: number, feeCents: number, paidCents
 
 export type RebookEligibility =
   | { allowed: true }
-  | { allowed: false; code: 'BOOKING_CANCELLED' | 'REBOOK_NOT_ALLOWED' | 'BOOKING_ALREADY_STARTED'; message: string };
+  | {
+      allowed: false;
+      code: 'BOOKING_CANCELLED' | 'REBOOK_NOT_ALLOWED' | 'BOOKING_ALREADY_STARTED' | 'PAYMENT_PENDING';
+      message: string;
+    };
 
 /**
  * May this booking's dates be changed online? The policy that counts is the one saved with the booking
@@ -75,9 +85,19 @@ export function checkRebookAllowed(
   bookingStatus: 'confirmed' | 'cancelled',
   checkInIso: string,
   todayIso: string,
+  paymentStatus: BookingPaymentStatus = 'paid',
+  audience: 'guest' | 'staff' = 'guest',
 ): RebookEligibility {
   if (bookingStatus === 'cancelled') {
     return { allowed: false, code: 'BOOKING_CANCELLED', message: BOOKING_CANCELLED_MESSAGE };
+  }
+  if (paymentStatus === 'pending') {
+    // Nothing has been paid, so "what the guest paid" is 0 and a date change would charge the whole new stay again.
+    return {
+      allowed: false,
+      code: 'PAYMENT_PENDING',
+      message: audience === 'staff' ? PAYMENT_PENDING_STAFF_MESSAGE : PAYMENT_PENDING_GUEST_MESSAGE,
+    };
   }
   if (!rebookable) {
     return { allowed: false, code: 'REBOOK_NOT_ALLOWED', message: REBOOK_NOT_ALLOWED_MESSAGE };

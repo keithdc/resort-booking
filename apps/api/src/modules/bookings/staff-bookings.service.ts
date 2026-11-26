@@ -15,6 +15,7 @@ import type {
   StaffChangeQuoteRequest,
   StaffChangeResult,
   StaffRefund,
+  StaffReservation,
 } from '@resort-booking/shared-types';
 import { hasMoneyAccess, type StaffAccount } from '../../shared/roles/staff-role';
 import { referenceFor } from '../inventory/inventory.rules';
@@ -33,6 +34,7 @@ import { RebookService } from './rebook.service';
 import { StaffRefundsRepository } from './staff-refunds.repository';
 
 const BOOKING_NOT_FOUND = 'Booking not found';
+const PAYMENT_PENDING_CANCEL_NOTICE = 'Nothing has been paid for this booking yet (pay at hotel), so there is nothing to refund.';
 const MONEY_ACCESS_MESSAGE = 'You need refund access for this. Ask an admin to handle it or to turn on refund access for you.';
 
 /** How each cancel reason reads in the refund's text. */
@@ -79,6 +81,18 @@ export class StaffBookingsService {
     const base = { reservationId: row.id, reference: referenceFor(row.id), paidCents, currencyCode };
     if (row.status === 'cancelled') {
       return { ...base, canCancel: false, blockedReason: 'This booking is already cancelled.', notice: null, policyRefund: null };
+    }
+
+    if (row.payment_status === 'pending') {
+      // Pay at hotel and not paid yet: there is no money to give back, whoever cancels and whatever the ladder says.
+      const days = calculateRefund(0, row.check_in, this.reader.todayFor(row), []).daysBeforeCheckIn;
+      return {
+        ...base,
+        canCancel: true,
+        blockedReason: null,
+        notice: PAYMENT_PENDING_CANCEL_NOTICE,
+        policyRefund: { paidCents: 0, refundPercent: 0, refundCents: 0, currencyCode, daysBeforeCheckIn: days },
+      };
     }
 
     if (this.isSameDayLockedFor(staff, row)) {
@@ -161,6 +175,28 @@ export class StaffBookingsService {
   }
 
   /**
+   * A person ticks a pay-at-hotel booking as paid: the guest paid at the property. Pending becomes paid once, with the
+   * time and who did it, and the whole total counts as paid (so a later cancellation refunds under the policy, by hand,
+   * because no online payment backs it). Open to admins and employees: the front desk takes the money. A second tick, a
+   * cancelled booking and an online booking are all refused with a plain answer, and change nothing.
+   */
+  public async markPaid(staff: StaffAccount, id: string): Promise<StaffReservation> {
+    const row = await this.requireConfirmed(staff, id);
+    if (row.payment_method !== 'pay_at_hotel') {
+      throw new ConflictException({ message: 'Only a pay-at-hotel booking can be marked as paid.', code: 'NOT_PAY_AT_HOTEL' });
+    }
+    if (row.payment_status === 'paid') {
+      throw this.alreadyPaid();
+    }
+    if (!(await this.bookings.markPaid(id, staff.id))) {
+      // Lost a race: someone marked it paid, or it was cancelled, between the read and the write.
+      const latest = await this.bookings.findById(id);
+      throw latest?.status === 'cancelled' ? this.alreadyCancelled() : this.alreadyPaid();
+    }
+    return this.reservations.getReservation(id);
+  }
+
+  /**
    * Money decisions need money access. Without it a person may cancel only under the guest policy ("guest_request"),
    * never with "property_cancelled" (full refund), "goodwill" (any amount) or an explicit amount.
    */
@@ -203,6 +239,13 @@ export class StaffBookingsService {
     const note = request.note.trim();
     const common = { reasonCode: request.reason, initiatedBy: 'staff' as const, staffId: staff.id, note, label: REASON_LABELS[request.reason] };
 
+    if (row.payment_status === 'pending') {
+      // Nothing was paid (pay at hotel), so there is nothing to give back; the percent says so instead of quoting the ladder.
+      if (request.refundCents !== null && request.refundCents !== undefined && request.refundCents > 0) {
+        throw new BadRequestException({ message: 'Nothing has been paid for this booking, so there is nothing to refund.', code: 'INVALID_REFUND_AMOUNT' });
+      }
+      return { ...common, refundCents: 0, percent: 0 };
+    }
     if (this.isSameDayLockedFor(staff, row)) {
       // Only guest_request can get here (the other reasons need money access): forced to zero, and the text says why.
       return { ...common, refundCents: 0, percent: 0, label: SAME_DAY_NO_REFUND_LABEL };
@@ -279,6 +322,10 @@ export class StaffBookingsService {
 
   private notFound(): NotFoundException {
     return new NotFoundException({ message: BOOKING_NOT_FOUND, code: 'BOOKING_NOT_FOUND' });
+  }
+
+  private alreadyPaid(): ConflictException {
+    return new ConflictException({ message: 'This booking is already marked as paid.', code: 'ALREADY_PAID' });
   }
 
   private alreadyCancelled(): ConflictException {

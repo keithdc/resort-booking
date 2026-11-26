@@ -7,14 +7,15 @@
 import { Injectable } from '@nestjs/common';
 import type {
   ArrivalStatus,
+  BookingPaymentStatus,
   CancellationTier,
   HoldStatus,
   InventoryKind,
-  PaymentMethod,
   PropertyBookingConfig,
   RebookFeeType,
   StaffBookingChange,
   StaffRefund,
+  StaffPaymentMethod,
   StaffReservation,
 } from '@resort-booking/shared-types';
 import { DatabaseService } from '../../shared/database/database.service';
@@ -45,7 +46,10 @@ interface ReservationRow {
   booker_email: string;
   booker_phone: string;
   guest_note: string;
-  payment_method: PaymentMethod | null;
+  payment_method: StaffPaymentMethod | null;
+  payment_status: BookingPaymentStatus;
+  paid_at: Date | null;
+  created_by_name: string | null;
   status: HoldStatus;
   total_cents: number | null;
   currency_code: string;
@@ -76,7 +80,7 @@ const RESERVATION_SELECT = `
     ib.booker_name, ib.booker_email, ib.booker_phone, COALESCE(ib.guest_note, '') AS guest_note, ib.payment_method, ib.status,
     ib.total_cents, ib.currency_code, h.nightly_rate_cents,
     ib.kind, ib.rebook_of_id, ib.arrival_status,
-    ib.paid_cents, ib.terms_accepted_at, ib.cancelled_at, ib.created_at,
+    ib.paid_cents, ib.payment_status, ib.paid_at, cr.full_name AS created_by_name, ib.terms_accepted_at, ib.cancelled_at, ib.created_at,
     ib.cancelled_by_staff_id, su.full_name AS cancelled_by_name, ib.cancel_reason, ib.cancel_note,
     (
       SELECT nb.id FROM inventory_blocks nb
@@ -93,6 +97,7 @@ const RESERVATION_SELECT = `
   INNER JOIN properties p ON p.id = ib.property_id
   INNER JOIN houses h ON h.id = ib.house_id
   LEFT JOIN staff_users su ON su.id = ib.cancelled_by_staff_id
+  LEFT JOIN staff_users cr ON cr.id = ib.created_by_staff_id
 `;
 
 interface ConfigRow {
@@ -442,6 +447,9 @@ function mapReservation(
     bookerPhone: row.booker_phone ?? '',
     guestNote: row.guest_note ?? '',
     paymentMethod: row.payment_method,
+    paymentStatus: row.payment_status,
+    paidAt: row.paid_at === null ? null : row.paid_at.toISOString(),
+    createdByName: row.created_by_name,
     status: row.status,
     totalCents: row.total_cents ?? computed,
     currencyCode: row.currency_code,

@@ -4,7 +4,12 @@
  * @dependencies none
  */
 
+/** What a guest can pick at checkout. */
 export type PaymentMethod = 'card' | 'bank_transfer';
+/** Every way a booking can be paid for: the guest's choices, plus a booking staff made for a guest who pays at the property. */
+export type StaffPaymentMethod = PaymentMethod | 'pay_at_hotel';
+/** `pending`: confirmed but not paid yet (pay at hotel). `paid`: every online booking, and a pay-at-hotel one once a person marked it paid. */
+export type BookingPaymentStatus = 'paid' | 'pending';
 export type HoldStatus = 'active' | 'expired' | 'released' | 'confirmed' | 'cancelled';
 export type InventoryKind = 'hold' | 'reservation' | 'block';
 export type ArrivalStatus = 'expected' | 'checked_in' | 'checked_out';
@@ -410,7 +415,13 @@ export interface StaffReservation {
   bookerEmail: string;
   bookerPhone: string;
   guestNote: string;
-  paymentMethod: PaymentMethod | null;
+  paymentMethod: StaffPaymentMethod | null;
+  /** `pending` until a person marks a pay-at-hotel booking as paid. Always `paid` for online bookings. */
+  paymentStatus: BookingPaymentStatus;
+  /** When a person marked the booking paid, else null. */
+  paidAt: string | null;
+  /** Who made the booking for the guest (a staff member's name), else null for a booking the guest made online. */
+  createdByName: string | null;
   status: HoldStatus;
   kind: InventoryKind;
   arrivalStatus: ArrivalStatus;
@@ -434,6 +445,24 @@ export interface StaffReservation {
   refunds: StaffRefund[];
   /** Every date change involving this booking, oldest first. */
   changes: StaffBookingChange[];
+}
+
+/** What staff type to price a booking for a guest (the dates must be free and in the future). */
+export interface StaffBookingQuoteRequest {
+  houseId: string;
+  checkIn: string;
+  checkOut: string;
+  guestCount: number;
+}
+
+/** A booking made by staff. Only pay at hotel exists for now; a card payment link comes later. */
+export interface StaffCreateBookingRequest extends StaffBookingQuoteRequest {
+  paymentMethod: 'pay_at_hotel';
+  bookerName: string;
+  bookerEmail: string;
+  /** Optional: international format when given. */
+  bookerPhone: string;
+  guestNote: string;
 }
 
 export interface CalendarDayOccupancy {
@@ -496,7 +525,7 @@ export interface ReportSeriesPoint {
 }
 
 export interface PaymentMethodSlice {
-  paymentMethod: PaymentMethod | 'unknown';
+  paymentMethod: StaffPaymentMethod | 'unknown';
   reservationCount: number;
   revenueCents: number;
 }

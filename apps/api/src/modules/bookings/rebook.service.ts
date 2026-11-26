@@ -207,7 +207,7 @@ export class RebookService {
    */
   private async prepareForStaff(row: BookingRow, input: StaffChangeQuoteRequest): Promise<RebookContext> {
     const policy = await this.reader.policyFor(row);
-    this.assertEligible(row, { ...policy, rebookable: true });
+    this.assertEligible(row, { ...policy, rebookable: true }, 'staff');
     return this.buildContext(row, policy, input.newCheckIn, input.newCheckOut, input.waiveFee);
   }
 
@@ -268,8 +268,15 @@ export class RebookService {
     };
   }
 
-  private assertEligible(row: BookingRow, policy: PolicySnapshot): void {
-    const eligibility = checkRebookAllowed(policy.rebookable, row.status, row.check_in, this.reader.todayFor(row));
+  private assertEligible(row: BookingRow, policy: PolicySnapshot, audience: 'guest' | 'staff' = 'guest'): void {
+    const eligibility = checkRebookAllowed(
+      policy.rebookable,
+      row.status,
+      row.check_in,
+      this.reader.todayFor(row),
+      row.payment_status,
+      audience,
+    );
     if (!eligibility.allowed) {
       throw new ConflictException({ message: eligibility.message, code: eligibility.code });
     }
