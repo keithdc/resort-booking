@@ -15,6 +15,8 @@ import { teamErrorMessage } from '../utils/team-messages';
 export interface AuditFilterState {
   /** Action prefix such as "team."; empty for everything. */
   category: string;
+  /** A team member's id (from the Team page); empty for everyone. */
+  member: string;
   /** Inclusive dates ("2026-11-01") or empty. */
   from: string;
   to: string;
@@ -44,17 +46,18 @@ export function useAudit(filters: AuditFilterState): AuditState {
   const [error, setError] = useState<string | null>(null);
   const [version, setVersion] = useState(0);
   const latest = useRef(0);
-  const { category, from, to } = filters;
+  const { category, member, from, to } = filters;
 
   const query = useCallback(
     (after: string | null): Parameters<typeof fetchAudit>[0] => ({
       limit: AUDIT_PAGE_SIZE,
       ...(category === '' ? {} : { action: category }),
+      ...(member === '' ? {} : { member }),
       ...(from === '' ? {} : { from }),
       ...(to === '' ? {} : { to: exclusiveEnd(to) }),
       ...(after === null ? {} : { cursor: after }),
     }),
-    [category, from, to],
+    [category, member, from, to],
   );
 
   useEffect((): void => {

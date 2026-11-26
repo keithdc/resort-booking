@@ -156,6 +156,8 @@ export interface AuditPage {
 export interface AuditQuery {
   /** Only actions starting with this, e.g. "team." (sent as `action`). */
   action?: string;
+  /** Only what this team member did (their id from the Team page; sent as `member`). */
+  member?: string;
   /** Inclusive start (ISO date or date-time). */
   from?: string;
   /** Exclusive end (ISO date or date-time). */

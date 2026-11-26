@@ -104,22 +104,6 @@ describe('checkRebookAllowed', () => {
     });
   });
 
-  it('refuses a booking with a priced extra, with a message for the guest or for staff, but only when the policy would allow it', () => {
-    expect(checkRebookAllowed(true, 'confirmed', '2027-07-10', TODAY, 'paid', 'guest', true)).toMatchObject({
-      allowed: false,
-      code: 'EXTRAS_ON_BOOKING',
-      message: expect.stringContaining('contact the property') as string,
-    });
-    expect(checkRebookAllowed(true, 'confirmed', '2027-07-10', TODAY, 'paid', 'staff', true)).toMatchObject({
-      allowed: false,
-      code: 'EXTRAS_ON_BOOKING',
-      message: expect.stringContaining('Cancel it and make a new booking') as string,
-    });
-    // The policy's own "no" is still what a guest is told when dates cannot be changed at all.
-    expect(checkRebookAllowed(false, 'confirmed', '2027-07-10', TODAY, 'paid', 'guest', true)).toMatchObject({ code: 'REBOOK_NOT_ALLOWED' });
-    expect(checkRebookAllowed(true, 'confirmed', '2027-07-10', TODAY, 'paid', 'guest', false)).toEqual({ allowed: true });
-  });
-
   it('allows a pay-at-hotel booking once it is marked paid', () => {
     expect(checkRebookAllowed(true, 'confirmed', '2027-07-10', TODAY, 'paid')).toEqual({ allowed: true });
   });
@@ -220,8 +204,15 @@ describe('parseRebookPayload', () => {
     priceSnapshot: SNAPSHOT,
   };
 
-  it('reads a complete payload', () => {
-    expect(parseRebookPayload(GOOD)).toEqual(GOOD);
+  it('reads a complete payload (older payments without extras read as 0)', () => {
+    expect(parseRebookPayload(GOOD)).toEqual({ ...GOOD, extrasCents: 0 });
+  });
+
+  it('reads the carried-over extras amount, and ignores one that is not a whole non-negative number', () => {
+    expect(parseRebookPayload({ ...GOOD, extrasCents: 6000 })?.extrasCents).toBe(6000);
+    expect(parseRebookPayload({ ...GOOD, extrasCents: -5 })?.extrasCents).toBe(0);
+    expect(parseRebookPayload({ ...GOOD, extrasCents: 1.5 })?.extrasCents).toBe(0);
+    expect(parseRebookPayload({ ...GOOD, extrasCents: '6000' })?.extrasCents).toBe(0);
   });
 
   it.each([null, undefined, 'x', 7, [], {}, { ...GOOD, oldBookingId: 1 }, { ...GOOD, newTotalCents: '60000' }, { ...GOOD, priceSnapshot: { lines: [] } }])(
@@ -232,6 +223,6 @@ describe('parseRebookPayload', () => {
   );
 
   it('drops unknown fields instead of carrying them', () => {
-    expect(parseRebookPayload({ ...GOOD, sneaky: true })).toEqual(GOOD);
+    expect(parseRebookPayload({ ...GOOD, sneaky: true })).toEqual({ ...GOOD, extrasCents: 0 });
   });
 });

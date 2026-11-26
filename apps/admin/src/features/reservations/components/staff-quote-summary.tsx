@@ -8,7 +8,7 @@ import type { RebookQuote } from '@resort-booking/shared-types';
 import { Alert, Stack, Typography } from '@mui/material';
 import { COMBINED_DISCOUNTS_NOTE, discountLineLabel, discountsAreCombined } from '@/shared/utils/discount-line';
 import { formatCents } from '@/shared/utils/money';
-import { staffBalanceKind, staffBalanceStatement } from '../utils/change-labels';
+import { extrasCarriedLabel, staffBalanceKind, staffBalanceStatement } from '../utils/change-labels';
 
 interface StaffQuoteSummaryProps {
   quote: RebookQuote;
@@ -20,6 +20,7 @@ interface StaffQuoteSummaryProps {
  */
 export function StaffQuoteSummary({ quote }: StaffQuoteSummaryProps): React.JSX.Element {
   const money = (cents: number): string => formatCents(cents, quote.currencyCode);
+  const extrasLabel = extrasCarriedLabel(quote.extras);
   return (
     <Stack spacing={0.5} aria-label="Price of the new dates">
       <Typography sx={{ fontWeight: 600 }}>
@@ -42,6 +43,7 @@ export function StaffQuoteSummary({ quote }: StaffQuoteSummaryProps): React.JSX.
           {COMBINED_DISCOUNTS_NOTE}
         </Typography>
       ) : null}
+      {extrasLabel === null ? null : <Row label={extrasLabel} value={quote.extrasCents > 0 ? money(quote.extrasCents) : 'No charge'} muted />}
       <Row label="New total" value={money(quote.newTotalCents)} />
       <Row label="Change fee" value={money(quote.feeCents)} />
       <Row label="Already paid" value={money(quote.paidCents)} muted />

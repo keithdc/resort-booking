@@ -108,7 +108,7 @@ export function ReportsPage(): React.JSX.Element {
           </Box>
           {moneyHidden ? (
             <Alert severity="info" icon={<LockOutlinedIcon />} sx={{ mb: 3 }}>
-              Revenue, refunds and amounts are for admins. You can see bookings, nights, occupancy and arrivals.
+              Revenue, refunds and amounts are for admins and for team members with refund access. You can see bookings, nights, occupancy and arrivals. Ask an admin if you need the money figures.
             </Alert>
           ) : null}
           <AtAGlance report={report} />

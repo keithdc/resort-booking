@@ -14,11 +14,6 @@ export const PAYMENT_PENDING_GUEST_MESSAGE =
 /** Staff: the price difference needs a paid booking to be worked out. */
 export const PAYMENT_PENDING_STAFF_MESSAGE =
   'This booking has not been paid yet. Mark it as paid first, or cancel it and make a new booking.';
-/** A priced extra is part of what was paid, and a date change prices the stay only: cancel and book again instead. */
-export const PRICED_EXTRAS_GUEST_MESSAGE =
-  'This booking includes paid extras, so its dates cannot be changed online. Please contact the property, or cancel and book again.';
-export const PRICED_EXTRAS_STAFF_MESSAGE =
-  'This booking includes paid extras, so its dates cannot be changed here yet. Cancel it and make a new booking instead.';
 export const REBOOK_NOT_ALLOWED_MESSAGE = 'The dates of this booking cannot be changed. To change them, cancel and book again.';
 export const NO_CHANGE_MESSAGE = 'Those are already the dates of this booking.';
 export const DATES_TAKEN_MESSAGE = 'Those dates are not available for this stay. Please choose other dates.';
@@ -76,7 +71,7 @@ export type RebookEligibility =
   | { allowed: true }
   | {
       allowed: false;
-      code: 'BOOKING_CANCELLED' | 'REBOOK_NOT_ALLOWED' | 'BOOKING_ALREADY_STARTED' | 'PAYMENT_PENDING' | 'EXTRAS_ON_BOOKING';
+      code: 'BOOKING_CANCELLED' | 'REBOOK_NOT_ALLOWED' | 'BOOKING_ALREADY_STARTED' | 'PAYMENT_PENDING';
       message: string;
     };
 
@@ -92,7 +87,6 @@ export function checkRebookAllowed(
   todayIso: string,
   paymentStatus: BookingPaymentStatus = 'paid',
   audience: 'guest' | 'staff' = 'guest',
-  hasPricedExtras = false,
 ): RebookEligibility {
   if (bookingStatus === 'cancelled') {
     return { allowed: false, code: 'BOOKING_CANCELLED', message: BOOKING_CANCELLED_MESSAGE };
@@ -107,13 +101,6 @@ export function checkRebookAllowed(
   }
   if (!rebookable) {
     return { allowed: false, code: 'REBOOK_NOT_ALLOWED', message: REBOOK_NOT_ALLOWED_MESSAGE };
-  }
-  if (hasPricedExtras) {
-    return {
-      allowed: false,
-      code: 'EXTRAS_ON_BOOKING',
-      message: audience === 'staff' ? PRICED_EXTRAS_STAFF_MESSAGE : PRICED_EXTRAS_GUEST_MESSAGE,
-    };
   }
   const days = wholeDaysBetween(todayIso, checkInIso);
   if (Number.isNaN(days) || days < 0) {
@@ -155,7 +142,9 @@ export interface RebookPayload {
   newCheckOut: string;
   newTotalCents: number;
   feeCents: number;
-  /** The price lines the guest was quoted for the new dates. */
+  /** What the carried-over extras add to `newTotalCents` (their saved prices). Absent in payments opened before extras could be carried: 0. */
+  extrasCents?: number;
+  /** The price lines the guest was quoted for the new dates (the stay only; extras are counted by `extrasCents`). */
   priceSnapshot: PriceSnapshot;
 }
 
@@ -183,6 +172,7 @@ export function parseRebookPayload(raw: unknown): RebookPayload | null {
     newCheckOut: record.newCheckOut,
     newTotalCents: record.newTotalCents,
     feeCents: record.feeCents,
+    extrasCents: typeof record.extrasCents === 'number' && Number.isInteger(record.extrasCents) && record.extrasCents >= 0 ? record.extrasCents : 0,
     priceSnapshot: record.priceSnapshot,
   };
 }

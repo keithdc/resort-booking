@@ -14,6 +14,7 @@ import { EmptyState } from '@/shared/components/empty-state';
 import { PageHeader } from '@/shared/components/page-header';
 import { SectionCard } from '@/shared/components/section-card';
 import { useAudit } from '../hooks/use-audit';
+import { useMemberOptions } from '../hooks/use-member-options';
 import { AUDIT_CATEGORIES, actionLabel, actorLabel, detailsLine } from '../utils/audit-labels';
 import { formatDateTime } from '../utils/format-time';
 
@@ -23,11 +24,15 @@ import { formatDateTime } from '../utils/format-time';
  */
 export function AuditPage(): React.JSX.Element {
   const [category, setCategory] = useState('');
+  const [member, setMember] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
-  const audit = useAudit({ category, from, to });
+  const audit = useAudit({ category, member, from, to });
+  const members = useMemberOptions();
   const compact = useCompactLayout();
-  const filtered = category !== '' || from !== '' || to !== '';
+  const filtered = category !== '' || member !== '' || from !== '' || to !== '';
+  // A member picked earlier stays selectable while the list loads, so the field never shows an unknown value.
+  const memberKnown = member === '' || members.some((option): boolean => option.id === member);
 
   return (
     <>
@@ -46,12 +51,28 @@ export function AuditPage(): React.JSX.Element {
               </MenuItem>
             ))}
           </TextField>
+          <TextField
+            select
+            size="small"
+            label="Member"
+            value={memberKnown ? member : ''}
+            onChange={(event): void => setMember(event.target.value)}
+            sx={{ minWidth: { md: 220 } }}
+          >
+            <MenuItem value="">Everyone</MenuItem>
+            {members.map((option): React.JSX.Element => (
+              <MenuItem key={option.id} value={option.id}>
+                {option.label}
+              </MenuItem>
+            ))}
+          </TextField>
           <TextField size="small" type="date" label="From" value={from} onChange={(event): void => setFrom(event.target.value)} slotProps={{ inputLabel: { shrink: true } }} />
           <TextField size="small" type="date" label="To" value={to} onChange={(event): void => setTo(event.target.value)} slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: from === '' ? undefined : from } }} />
           {filtered ? (
             <Button
               onClick={(): void => {
                 setCategory('');
+                setMember('');
                 setFrom('');
                 setTo('');
               }}
@@ -77,7 +98,7 @@ export function AuditPage(): React.JSX.Element {
           <EmptyState
             icon={<FactCheckOutlinedIcon />}
             title={filtered ? 'Nothing matches these filters' : 'No activity recorded yet'}
-            hint={filtered ? 'Try a wider date range or another kind of action.' : 'Actions such as sign-ins and team changes appear here.'}
+            hint={filtered ? 'Try a wider date range, another kind of action or another member.' : 'Actions such as sign-ins and team changes appear here.'}
           />
         ) : (
           <>

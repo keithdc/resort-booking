@@ -42,13 +42,6 @@ describe('BookingsRepository', () => {
     expect(params).toEqual([[RANGE.low, RANGE.high, 'ada@example.com']]);
   });
 
-  it('counts the priced extras of the booking in the same statement', async () => {
-    await repository.findByReference(RANGE, 'ada@example.com');
-
-    expect(query.mock.calls[0]?.[0]).toContain('FROM reservation_extras ex');
-    expect(query.mock.calls[0]?.[0]).toContain('ex.line_cents > 0');
-  });
-
   it('lists the extras of one booking, oldest first, as the copy saved with it', async () => {
     query.mockResolvedValueOnce({
       rows: [{ id: 'e1', extra_service_id: 'x1', name: 'Breakfast', kind: 'instant', quantity: 2, unit_price_cents: 1800, line_cents: 3600, currency_code: 'EUR', status: 'confirmed' }],

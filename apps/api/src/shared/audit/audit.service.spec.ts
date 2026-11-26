@@ -116,7 +116,7 @@ describe('AuditService', () => {
 
       const result = await service.list(ORG, {});
 
-      expect(page).toHaveBeenCalledWith({ organizationId: ORG, actionPrefix: null, from: null, to: null, after: null, limit: 50 });
+      expect(page).toHaveBeenCalledWith({ organizationId: ORG, actionPrefix: null, staffUserId: null, from: null, to: null, after: null, limit: 50 });
       expect(result).toEqual({ items: [record()], nextCursor: null });
     });
 
@@ -138,6 +138,14 @@ describe('AuditService', () => {
 
       await service.list(ORG, { limit: 1, cursor: first.nextCursor ?? '' });
       expect(page.mock.calls[1]?.[0].after).toEqual({ createdAt: EXACT, id: ROW_ID });
+    });
+
+    it('passes a member filter on, and keeps the organization filter beside it', async () => {
+      page.mockResolvedValue({ records: [], last: null, hasMore: false });
+
+      await service.list(ORG, { staffUserId: ROW_ID });
+
+      expect(page.mock.calls[0]?.[0]).toMatchObject({ organizationId: ORG, staffUserId: ROW_ID });
     });
 
     it('passes the filters on: an action prefix and a date range', async () => {

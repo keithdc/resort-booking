@@ -52,7 +52,6 @@ function row(overrides: Partial<BookingRow> = {}): BookingRow {
     paid_cents: 100000,
     policy_snapshot: null,
     price_snapshot: null,
-    priced_extras_count: 0,
     rebook_of_id: null,
     replaced_by_id: null,
     payments: [],

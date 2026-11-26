@@ -1007,7 +1007,11 @@ export interface RebookQuote {
   subtotalCents: number;
   discounts: QuoteDiscountLine[];
   discountCents: number;
-  /** The new stay total after discounts. */
+  /** The extras on the booking, carried over to the new dates at the price they were booked at (never re-priced). Empty when none. */
+  extras: BookingExtra[];
+  /** What the carried-over extras add to the total (0 for free and on-request extras). */
+  extrasCents: number;
+  /** The whole new total: the new stay after discounts plus `extrasCents`. */
   newTotalCents: number;
   /** The change fee from the policy saved with the booking (none, fixed, or a percent of what was paid). */
   feeCents: number;

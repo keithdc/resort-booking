@@ -57,7 +57,7 @@ describe('report with money hidden', () => {
   it('replaces the revenue chart and insights with a short note', () => {
     render(hidden(<OverviewTab report={staffReport()} onOpenDetail={vi.fn()} />));
 
-    expect(screen.getByText(/revenue chart and the revenue insights are for admins/)).toBeTruthy();
+    expect(screen.getByText(/revenue chart and the revenue insights need refund access/)).toBeTruthy();
   });
 
   it('leaves the Amount column out of the bookings table', () => {

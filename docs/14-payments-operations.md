@@ -55,14 +55,16 @@ reconciled automatically. A person ticks **Mark as paid** once the guest has pai
 - **Reports: collected versus booked.** `grossRevenueCents` ("Paid by guests") and `netRevenueCents` ("Revenue") count a pay-at-hotel
   booking only once it is **paid**; the booked value of the period (`revenueCents`, the nights chart, property rows) still counts every
   confirmed booking. The difference is `unpaidAtHotelCents` ("To collect"), per period in the report and as of today in the attention
-  block (`attention.unpaidAtHotelCount/Cents/ArrivalsNext7DaysCount/PastCount`). Employees get the counts, never the amounts (the report
-  is redacted by role as before; `moneyHidden`). `report_bookings` (the read-only role's view, migration 042) gained `payment_status` and `paid_at`.
+  block (`attention.unpaidAtHotelCount/Cents/ArrivalsNext7DaysCount/PastCount`). Employees **without** refund access get the counts, never the amounts; an
+  admin, or an employee with refund access, gets the amounts too (the report is redacted by `hasMoneyAccess`, not by role; `moneyHidden`). `report_bookings` (the read-only role's view, migration 042) gained `payment_status` and `paid_at`.
   The CSV has "Payment status" and "Paid on" columns and two summary rows.
 - **Extras on the booking** (migration 041, `reservation_extras`): an instant extra adds price x quantity to `total_cents` (so the amount
   to collect, the amount marked paid and any later refund include it); an on-request extra is noted and charges nothing. The table is
   insert-and-read for the app role (only `status` can change), prices and quantities never change (trigger, even for the owner), no
   DELETE (owner-run maintenance only) and it is tied to the booking's organization and property by composite foreign keys. A booking
-  with a **priced** extra cannot have its dates changed (409 `EXTRAS_ON_BOOKING`): cancel and book again. Marking paid is unchanged.
+  with extras **can** have its dates changed: the extras are copied to the new booking at their saved prices and the new total is the new stay
+  plus them (`docs/07-cancellation-policy.md`); the balance payment, when the guest owes more, is only the difference, and its saved payload
+  carries `extrasCents` so a payment opened before this change still settles. Marking paid is unchanged.
 - **Not done yet (phase 2):** the **Credit card** option, which will give the guest a payment link and confirm the booking when the
   provider reports the payment. It will reuse the hold and payment code of the guest checkout.
 

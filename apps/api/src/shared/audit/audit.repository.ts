@@ -23,6 +23,8 @@ interface AuditRow {
 export interface AuditQuery {
   organizationId: string;
   actionPrefix: string | null;
+  /** Only rows done by this staff user (the organization filter still applies, so a foreign id matches nothing). */
+  staffUserId: string | null;
   from: string | null;
   to: string | null;
   /** The previous page's last row: its exact timestamp (microseconds, as text) and id. */
@@ -76,6 +78,7 @@ export class AuditRepository {
         AND ($3::timestamptz IS NULL OR a.created_at >= $3::timestamptz)
         AND ($4::timestamptz IS NULL OR a.created_at < $4::timestamptz)
         AND ($5::timestamptz IS NULL OR (a.created_at, a.id) < ($5::timestamptz, $6::uuid))
+        AND ($8::uuid IS NULL OR a.staff_user_id = $8::uuid)
       ORDER BY a.created_at DESC, a.id DESC
       LIMIT $7
       `,
@@ -87,6 +90,7 @@ export class AuditRepository {
         query.after?.createdAt ?? null,
         query.after?.id ?? null,
         query.limit + 1,
+        query.staffUserId,
       ],
     );
     const hasMore = result.rows.length > query.limit;

@@ -86,7 +86,10 @@ describe('audit log on a phone', () => {
 
   it('shows entries as cards', async () => {
     vi.resetModules();
-    vi.doMock('../services/team-api', () => ({ fetchAudit: vi.fn(() => Promise.resolve({ items: [RECORD], nextCursor: null })) }));
+    vi.doMock('../services/team-api', () => ({
+      fetchAudit: vi.fn(() => Promise.resolve({ items: [RECORD], nextCursor: null })),
+      fetchTeam: vi.fn(() => Promise.resolve({ members: [], invites: [], mailEnabled: false })),
+    }));
     const { AuditPage } = await import('./audit-page');
     render(<AuditPage />);
 

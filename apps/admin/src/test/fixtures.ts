@@ -125,6 +125,8 @@ export function rebookQuote(overrides: Partial<RebookQuote> = {}): RebookQuote {
     subtotalCents: 124800,
     discounts: [],
     discountCents: 0,
+    extras: [],
+    extrasCents: 0,
     newTotalCents: 124800,
     feeCents: 2000,
     paidCents: 96000,

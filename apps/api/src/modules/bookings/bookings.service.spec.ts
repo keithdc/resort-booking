@@ -59,7 +59,6 @@ function row(overrides: Partial<BookingRow> = {}): BookingRow {
     currency_code: 'EUR',
     policy_snapshot: snapshot(),
     price_snapshot: null,
-    priced_extras_count: 0,
     rebook_of_id: null,
     replaced_by_id: null,
     payments: [{ id: 'pay-1', provider: 'mock', providerRef: 'mock_pi_abc', refundableCents: 96000 }],
@@ -219,14 +218,16 @@ describe('BookingsService', () => {
       expect(booking.canChangeDates).toBe(true);
     });
 
-    it('cannot change dates online when the booking has a priced extra, and says why', async () => {
-      findByReference.mockResolvedValue([row({ priced_extras_count: 1 })]);
+    it('can still change dates online when the booking has a priced extra (the extras ride along)', async () => {
+      findByReference.mockResolvedValue([row()]);
+      listExtras.mockResolvedValue([
+        { id: 'x1', extraServiceId: 'svc', name: 'Breakfast', kind: 'instant', quantity: 2, unitPriceCents: 3000, lineCents: 6000, currencyCode: 'EUR', status: 'confirmed' },
+      ]);
 
       const booking = await service.lookup(REQUEST);
 
-      expect(booking.canChangeDates).toBe(false);
-      expect(booking.changeDatesBlockedReason).toContain('paid extras');
-      expect(booking.canCancel).toBe(true);
+      expect(booking.canChangeDates).toBe(true);
+      expect(booking.changeDatesBlockedReason).toBeNull();
     });
 
     it('exposes only the contract fields: no phone, no email, no staff data', async () => {

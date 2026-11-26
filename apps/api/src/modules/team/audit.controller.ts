@@ -25,7 +25,7 @@ export class AuditController {
 
   /**
    * The workspace's audit log, newest first, a page at a time (pass `nextCursor` back as `cursor`).
-   * Filter with `action` (a prefix such as "team."), `from` and `to`.
+   * Filter with `action` (a prefix such as "team."), `member` (a staff user id), `from` and `to`.
    */
   @Get('audit')
   @TenantExempt('the log is filtered by the caller organization in SQL')
@@ -34,6 +34,7 @@ export class AuditController {
       status: 'ok',
       data: await this.audit.list(staff.organizationId, {
         ...(query.action === undefined ? {} : { actionPrefix: query.action }),
+        ...(query.member === undefined ? {} : { staffUserId: query.member }),
         ...(query.from === undefined ? {} : { from: query.from }),
         ...(query.to === undefined ? {} : { to: query.to }),
         ...(query.cursor === undefined ? {} : { cursor: query.cursor }),

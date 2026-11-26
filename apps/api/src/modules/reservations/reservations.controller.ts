@@ -23,7 +23,7 @@ import { Audited } from '../../shared/audit/audited.decorator';
 import { keepReportForAdmin, redactReportForEmployee, type RoleAwareReport } from '../../shared/roles/redact-report';
 import { RoleGuard } from '../../shared/roles/role.guard';
 import { AllowRoles, RequireRole } from '../../shared/roles/roles.decorator';
-import type { StaffAccount } from '../../shared/roles/staff-role';
+import { hasMoneyAccess, type StaffAccount } from '../../shared/roles/staff-role';
 import { TenantGuard } from '../../shared/tenancy/tenant.guard';
 import { TenantExempt, TenantScoped } from '../../shared/tenancy/tenant-scope.decorator';
 
@@ -69,8 +69,8 @@ export class ReservationsController {
     @CurrentStaff() staff: StaffAccount,
   ): Promise<ApiOkBody<RoleAwareReport>> {
     const report = await this.reservations.getReport(query, staff.organizationId);
-    // An employee sees how busy the properties are, not the money (see redactReportForEmployee).
-    return { status: 'ok', data: staff.role === 'admin' ? keepReportForAdmin(report) : redactReportForEmployee(report) };
+    // An employee without money access sees how busy the properties are, not the money (see redactReportForEmployee).
+    return { status: 'ok', data: hasMoneyAccess(staff) ? keepReportForAdmin(report) : redactReportForEmployee(report) };
   }
 
   /**

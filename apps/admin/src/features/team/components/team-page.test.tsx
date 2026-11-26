@@ -170,7 +170,7 @@ describe('TeamPage', () => {
 
     const dialog = within(await screen.findByRole('dialog'));
     expect(dialog.getByText('Give Paul Martin refund access?')).toBeTruthy();
-    expect(dialog.getByText(/retry failed refunds, mark hand refunds as paid, mark pay-at-hotel bookings as paid, choose any refund amount/)).toBeTruthy();
+    expect(dialog.getByText(/retry failed refunds, mark hand refunds as paid, mark pay-at-hotel bookings as paid, see revenue, refunds and amounts in Reports, choose any refund amount/)).toBeTruthy();
     expect(dialog.getByText(/recorded in the audit log with their name/)).toBeTruthy();
     expect(api.updateMember).not.toHaveBeenCalled();
 

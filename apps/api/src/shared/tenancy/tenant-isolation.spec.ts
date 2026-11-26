@@ -104,7 +104,7 @@ const UNAUDITED_WRITES: Record<string, string> = {
 const ADMIN: StaffRole[] = ['admin'];
 const BOTH: StaffRole[] = ['admin', 'employee'];
 const ROLE_MATRIX: Record<string, StaffRole[]> = {
-  // Day to day: calendar, bookings, check-in, cancelling and moving bookings, the refund list (read only), reports (money hidden).
+  // Day to day: calendar, bookings, check-in, cancelling and moving bookings, the refund list (read only), reports (money hidden unless the employee has refund access).
   'GET /staff/calendar': BOTH,
   'GET /staff/reservations': BOTH,
   'GET /staff/reports': BOTH,

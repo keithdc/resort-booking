@@ -77,7 +77,6 @@ function row(overrides: Partial<BookingRow> = {}): BookingRow {
     paid_cents: 96000,
     policy_snapshot: snapshot(),
     price_snapshot: null,
-    priced_extras_count: 0,
     rebook_of_id: null,
     replaced_by_id: null,
     payments: [{ id: 'pay-1', provider: 'mock', providerRef: 'mock_pi_abc', refundableCents: 96000 }],
@@ -561,14 +560,136 @@ describe('RebookService', () => {
     });
   });
 
-  describe('rebook: a booking with priced extras', () => {
-    it('is refused for the guest before anything is quoted or changed', async () => {
-      findByReference.mockResolvedValue([row({ priced_extras_count: 1 })]);
+  describe('rebook: a booking with extras (they ride along at their saved prices)', () => {
+    // 96000 paid in all: the stay was 90000 and two priced extras added 6000. One free request rides along too.
+    const BREAKFAST: BookingExtra = {
+      id: 'ex-1',
+      extraServiceId: 'svc-1',
+      name: 'Breakfast',
+      kind: 'instant',
+      quantity: 2,
+      unitPriceCents: 3000,
+      lineCents: 6000,
+      currencyCode: 'EUR',
+      status: 'confirmed',
+    };
+    const DINNER: BookingExtra = {
+      id: 'ex-2',
+      extraServiceId: 'svc-2',
+      name: 'Private dinner',
+      kind: 'on_request',
+      quantity: 1,
+      unitPriceCents: 9000,
+      lineCents: 0,
+      currencyCode: 'EUR',
+      status: 'pending',
+    };
 
-      await expect(service.quote(NEW_DATES)).rejects.toMatchObject({ status: 409, response: { code: 'EXTRAS_ON_BOOKING' } });
-      await expect(service.rebook(NEW_DATES)).rejects.toMatchObject({ status: 409, response: { code: 'EXTRAS_ON_BOOKING' } });
-      expect(getQuote).not.toHaveBeenCalled();
-      expect(markCancelled).not.toHaveBeenCalled();
+    beforeEach(() => {
+      listExtras.mockResolvedValue([BREAKFAST, DINNER]);
+    });
+
+    it('is not refused: the quote is for the new stay plus the same extras, shown as their own line', async () => {
+      getQuote.mockResolvedValue(quoteFor(90000));
+
+      const quote = await service.quote(NEW_DATES);
+
+      expect(quote).toMatchObject({ extrasCents: 6000, newTotalCents: 96000, paidCents: 96000, feeCents: 2000, balanceCents: 2000, payCents: 2000, refundCents: 0 });
+      expect(quote.extras).toEqual([BREAKFAST, DINNER]);
+    });
+
+    it('prices the extras from the booking, never from the property\'s current prices', async () => {
+      getQuote.mockResolvedValue(quoteFor(90000));
+
+      await service.quote(NEW_DATES);
+
+      expect(listExtras).toHaveBeenCalledWith(ID);
+      // The only price lookup is the stay itself; no extras catalog is read.
+      expect(getQuote).toHaveBeenCalledTimes(1);
+    });
+
+    it('new stay cheaper than the old: the guest gets the difference back (the extras stay paid)', async () => {
+      getQuote.mockResolvedValue(quoteFor(60000));
+
+      const quote = await service.quote(NEW_DATES);
+      const result = await service.rebook(NEW_DATES);
+
+      // new total 60000 + 6000 = 66000, fee 2000, paid 96000 -> 28000 back
+      expect(quote).toMatchObject({ newTotalCents: 66000, balanceCents: -28000, payCents: 0, refundCents: 28000 });
+      expect(insertRefund).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ kind: 'rebook_difference', amountCents: 28000 }));
+      expect(result.outcome).toBe('changed');
+      const input = insertRebookedBooking.mock.calls[0]?.[1];
+      expect(input).toMatchObject({ totalCents: 66000, paidCents: 68000 });
+      expect(JSON.parse(input?.priceSnapshot ?? '{}')).toMatchObject({ totalCents: 60000, extrasCents: 6000, rebookFeeCents: 2000 });
+      expect(copyExtras).toHaveBeenCalledWith(expect.anything(), ID, NEW_ID);
+    });
+
+    it('new stay dearer than the old: the guest pays only the difference, and the payment keeps the extras with it', async () => {
+      getQuote.mockResolvedValue(quoteFor(120000));
+
+      const quote = await service.quote(NEW_DATES);
+      const result = await service.rebook(NEW_DATES);
+
+      // new total 120000 + 6000 = 126000, fee 2000, paid 96000 -> 32000 more
+      expect(quote).toMatchObject({ newTotalCents: 126000, payCents: 32000, refundCents: 0 });
+      expect(result.outcome).toBe('payment_required');
+      expect(openRebookPayment).toHaveBeenCalledWith(expect.objectContaining({ amountCents: quote.payCents }));
+      expect(openRebookPayment.mock.calls[0]?.[0].payload).toMatchObject({ newTotalCents: 126000, extrasCents: 6000, feeCents: 2000 });
+      expect(insertRebookedBooking).not.toHaveBeenCalled();
+    });
+
+    it('new stay the same price as the old: only the fee moves', async () => {
+      getQuote.mockResolvedValue(quoteFor(90000));
+      listExtras.mockResolvedValue([BREAKFAST]);
+      findByReference.mockResolvedValue([row({ policy_snapshot: snapshot({ rebookFeeType: 'none', rebookFeeValue: 0 }) })]);
+
+      const quote = await service.quote(NEW_DATES);
+      const result = await service.rebook(NEW_DATES);
+
+      expect(quote).toMatchObject({ newTotalCents: 96000, feeCents: 0, balanceCents: 0, payCents: 0, refundCents: 0 });
+      expect(result.outcome).toBe('changed');
+      expect(insertRefund).not.toHaveBeenCalled();
+      expect(insertRebookedBooking.mock.calls[0]?.[1]).toMatchObject({ totalCents: 96000, paidCents: 96000 });
+    });
+
+    it('the quote and the confirmed change agree to the cent (what was shown is what is charged)', async () => {
+      getQuote.mockResolvedValue(quoteFor(120000));
+
+      const quote = await service.quote(NEW_DATES);
+      await service.rebook(NEW_DATES);
+      const payload = openRebookPayment.mock.calls[0]?.[0].payload as { newTotalCents: number; feeCents: number; extrasCents: number };
+      const opened = openRebookPayment.mock.calls[0]?.[0];
+
+      expect(opened?.amountCents).toBe(quote.payCents);
+      expect(payload.newTotalCents).toBe(quote.newTotalCents);
+      expect(payload.feeCents).toBe(quote.feeCents);
+      expect(payload.extrasCents).toBe(quote.extrasCents);
+      // Once the payment settles, the new booking holds exactly the quoted total.
+      await service.applySettledChange(fakeClient(log), { id: 'pay-new', bookingId: ID, amountCents: quote.payCents, currencyCode: 'EUR', payload });
+      expect(insertRebookedBooking.mock.calls[0]?.[1]).toMatchObject({ totalCents: quote.newTotalCents, paidCents: quote.newTotalCents + quote.feeCents });
+    });
+
+    it('a percent fee is still a share of what was paid (extras included), as for cancelling', async () => {
+      getQuote.mockResolvedValue(quoteFor(90000));
+      findByReference.mockResolvedValue([row({ policy_snapshot: snapshot({ rebookFeeType: 'percent', rebookFeeValue: 10 }) })]);
+
+      const quote = await service.quote(NEW_DATES);
+
+      expect(quote.feeCents).toBe(9600);
+    });
+
+    it('still refuses a pay-at-hotel booking nobody has paid for, extras or not', async () => {
+      findByReference.mockResolvedValue([row({ payment_status: 'pending', paid_cents: 0 })]);
+
+      await expect(service.quote(NEW_DATES)).rejects.toMatchObject({ status: 409, response: { code: 'PAYMENT_PENDING' } });
+    });
+
+    it('an in-flight payment opened before extras could ride along still settles (no extrasCents means 0)', async () => {
+      const payload = { oldBookingId: ID, newCheckIn: '2027-08-01', newCheckOut: '2027-08-04', newTotalCents: 120000, feeCents: 2000, priceSnapshot: { ...PRICE, totalCents: 120000 } };
+
+      await service.applySettledChange(fakeClient(log), { id: 'pay-new', bookingId: ID, amountCents: 26000, currencyCode: 'EUR', payload });
+
+      expect(JSON.parse(insertRebookedBooking.mock.calls[0]?.[1].priceSnapshot ?? '{}')).toMatchObject({ extrasCents: 0 });
     });
   });
 
@@ -947,16 +1068,22 @@ describe('RebookService', () => {
       await expect(service.staffQuote(row({ check_in: '2027-05-30', check_out: '2027-06-03' }), STAFF_DATES)).rejects.toBeInstanceOf(ConflictException);
     });
 
-    it('refuses a booking with a priced extra, in words for staff, before quoting or changing anything', async () => {
-      const withExtras = row({ priced_extras_count: 2 });
+    it('quotes and changes a booking with a priced extra: the extras ride along and show in the quote', async () => {
+      const breakfast: BookingExtra = { id: 'ex-1', extraServiceId: 'svc-1', name: 'Breakfast', kind: 'instant', quantity: 2, unitPriceCents: 3000, lineCents: 6000, currencyCode: 'EUR', status: 'confirmed' };
+      listExtras.mockResolvedValue([breakfast]);
 
-      await expect(service.staffQuote(withExtras, STAFF_DATES)).rejects.toMatchObject({
-        status: 409,
-        response: { code: 'EXTRAS_ON_BOOKING', message: expect.stringContaining('Cancel it and make a new booking') as string },
-      });
-      await expect(service.staffChange(withExtras, STAFF_CHANGE, STAFF)).rejects.toMatchObject({ status: 409, response: { code: 'EXTRAS_ON_BOOKING' } });
-      expect(getQuote).not.toHaveBeenCalled();
-      expect(markCancelled).not.toHaveBeenCalled();
+      const quote = await service.staffQuote(row(), STAFF_DATES);
+      await service.staffChange(row(), STAFF_CHANGE, STAFF);
+
+      // new stay 60000 + extras 6000 = 66000; fee 2000; paid 96000 -> 28000 back
+      expect(quote).toMatchObject({ extrasCents: 6000, newTotalCents: 66000, refundCents: 28000 });
+      expect(quote.extras).toEqual([breakfast]);
+      expect(insertRefund).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ amountCents: 28000 }));
+      expect(copyExtras).toHaveBeenCalledWith(expect.anything(), ID, NEW_ID);
+    });
+
+    it('still refuses a staff change on a booking nobody has paid for', async () => {
+      await expect(service.staffQuote(row({ payment_status: 'pending', paid_cents: 0 }), STAFF_DATES)).rejects.toMatchObject({ response: { code: 'PAYMENT_PENDING' } });
     });
 
     it('applies a cheaper change, refunds the difference and keeps who did it and why', async () => {

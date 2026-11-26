@@ -7,6 +7,7 @@
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import type {
   ActionInitiator,
+  BookingExtra,
   GuestBooking,
   HouseAvailability,
   PromoCodeResult,
@@ -63,7 +64,11 @@ interface RebookContext {
   nights: number;
   currencyCode: string;
   priceSnapshot: PriceSnapshot;
+  /** The new stay plus the carried-over extras. This is the whole total the new booking will hold. */
   newTotalCents: number;
+  /** The old booking's extras, carried over as they were (saved prices), and what they add to the total. */
+  extras: BookingExtra[];
+  extrasCents: number;
   available: boolean;
   promoCode: PromoCodeResult | null;
 }
@@ -74,6 +79,8 @@ interface ChangePlan {
   newCheckIn: string;
   newCheckOut: string;
   newTotalCents: number;
+  /** What the carried-over extras add to `newTotalCents`; kept on the new booking's saved price. */
+  extrasCents: number;
   feeCents: number;
   priceSnapshot: PriceSnapshot;
   payCents: number;
@@ -248,6 +255,11 @@ export class RebookService {
       { excludeHoldId: row.id },
     );
 
+    // The extras ride along with their saved prices (not today's), so the new total is the new stay plus the same
+    // extras. Whatever was paid for the extras counts in `paidCents`, so only the stay's difference moves.
+    const extras = await this.bookings.listExtras(row.id);
+    const extrasCents = extras.reduce((sum, extra): number => sum + extra.lineCents, 0);
+    const newTotalCents = quote.totalCents + extrasCents;
     const paidCents = this.reader.paidCentsOf(row);
     const feeCents = waiveFee ? 0 : rebookFeeCents(policy.rebookFeeType, policy.rebookFeeValue, paidCents);
     return {
@@ -258,11 +270,13 @@ export class RebookService {
       dateCheck,
       paidCents,
       feeCents,
-      balance: rebookBalance(quote.totalCents, feeCents, paidCents),
+      balance: rebookBalance(newTotalCents, feeCents, paidCents),
       nights: quote.nights,
       currencyCode: quote.currencyCode,
       priceSnapshot: priceSnapshotOf(quote),
-      newTotalCents: quote.totalCents,
+      newTotalCents,
+      extras,
+      extrasCents,
       available: quote.available && dateCheck === 'ok',
       promoCode: quote.promoCode,
     };
@@ -276,7 +290,6 @@ export class RebookService {
       this.reader.todayFor(row),
       row.payment_status,
       audience,
-      row.priced_extras_count > 0,
     );
     if (!eligibility.allowed) {
       throw new ConflictException({ message: eligibility.message, code: eligibility.code });
@@ -295,6 +308,8 @@ export class RebookService {
       subtotalCents: priceSnapshot.subtotalCents,
       discounts: priceSnapshot.discounts,
       discountCents: priceSnapshot.discountCents,
+      extras: context.extras,
+      extrasCents: context.extrasCents,
       newTotalCents: context.newTotalCents,
       feeCents: context.feeCents,
       paidCents: context.paidCents,
@@ -324,6 +339,7 @@ export class RebookService {
       newCheckOut: context.newCheckOut,
       newTotalCents: context.newTotalCents,
       feeCents: context.feeCents,
+      extrasCents: context.extrasCents,
       priceSnapshot: context.priceSnapshot,
     };
     const payment = await this.payments.openRebookPayment({
@@ -372,6 +388,7 @@ export class RebookService {
       newCheckIn: context.newCheckIn,
       newCheckOut: context.newCheckOut,
       newTotalCents: context.newTotalCents,
+      extrasCents: context.extrasCents,
       feeCents: context.feeCents,
       priceSnapshot: context.priceSnapshot,
       payCents: manualPaymentCents,
@@ -445,6 +462,7 @@ export class RebookService {
       newCheckIn: payload.newCheckIn,
       newCheckOut: payload.newCheckOut,
       newTotalCents: payload.newTotalCents,
+      extrasCents: payload.extrasCents ?? 0,
       feeCents: payload.feeCents,
       priceSnapshot: payload.priceSnapshot,
       payCents: payment.amountCents,
@@ -484,9 +502,10 @@ export class RebookService {
         newCheckIn: plan.newCheckIn,
         newCheckOut: plan.newCheckOut,
         totalCents: plan.newTotalCents,
-        // Whatever the case, the new booking now holds exactly its price plus the fee.
+        // Whatever the case, the new booking now holds exactly its price (stay plus extras) plus the fee.
         paidCents: plan.newTotalCents + plan.feeCents,
-        priceSnapshot: JSON.stringify({ ...plan.priceSnapshot, rebookFeeCents: plan.feeCents }),
+        // Like a staff-made booking: the stay's own figures, with the extras on top and the fee beside them.
+        priceSnapshot: JSON.stringify({ ...plan.priceSnapshot, extrasCents: plan.extrasCents, rebookFeeCents: plan.feeCents }),
       });
     } catch (error: unknown) {
       if (isExclusionViolation(error)) {

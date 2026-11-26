@@ -20,6 +20,8 @@ function quote(overrides: Partial<RebookQuote> = {}): RebookQuote {
     subtotalCents: 124800,
     discounts: [],
     discountCents: 0,
+    extras: [],
+    extrasCents: 0,
     newTotalCents: 124800,
     feeCents: 0,
     paidCents: 96000,
@@ -36,6 +38,11 @@ function quote(overrides: Partial<RebookQuote> = {}): RebookQuote {
 function text(): string {
   return (screen.getByLabelText('Price of the new dates').textContent ?? '').replace(/\s/g, ' ');
 }
+
+const EXTRAS: RebookQuote['extras'] = [
+      { id: 'e1', extraServiceId: 's1', name: 'Breakfast', kind: 'instant', quantity: 2, unitPriceCents: 3000, lineCents: 6000, currencyCode: 'EUR', status: 'confirmed' },
+      { id: 'e2', extraServiceId: 's2', name: 'Private dinner', kind: 'on_request', quantity: 1, unitPriceCents: 9000, lineCents: 0, currencyCode: 'EUR', status: 'pending' },
+    ];
 
 describe('RebookQuoteSummary', () => {
   afterEach(cleanup);
@@ -115,5 +122,17 @@ describe('RebookQuoteSummary', () => {
 
     expect(text()).toContain('1 night');
     expect(text()).toContain('1 night × 200,00 €');
+  });
+
+  it('shows the carried-over extras as their own line before the new total, with the amount they add', () => {
+    render(<RebookQuoteSummary quote={quote({ extras: EXTRAS, extrasCents: 6000, newTotalCents: 130800 })} />);
+
+    expect(text()).toContain('Extras carried over: Breakfast × 2, Private dinner (on request)60,00 €New total');
+  });
+
+  it('shows no extras line when the booking has none', () => {
+    render(<RebookQuoteSummary quote={quote()} />);
+
+    expect(text()).not.toContain('Extras carried over');
   });
 });

@@ -477,10 +477,27 @@ New staff routes: `POST /staff/reservations/quote`, `POST /staff/reservations` (
   refuses any other field and bounds the list (10 extras) and the quantity (1-20) (tested through the real validation pipe).
 - **Audit:** `booking.created_by_staff` now also records `extrasCount`, `extrasCents` and the extras' **names** (never a note or guest data).
 - **Report privacy:** the new money figures (`unpaidAtHotelCents`, `attention.unpaidAtHotelCents`, `previous.unpaidAtHotelCents`) are zeroed for
-  employees by `redactReportForEmployee`; counts stay. Even an employee with refund access still sees the report without money, as
-  before (the report is redacted by role, not by permission): open question below. `report_bookings` gets two columns (`payment_status`,
+  employees **without** money access by `redactReportForEmployee`; counts stay. An employee with refund access sees them (decision
+  after review: see "Round 4 decisions" below). `report_bookings` gets two columns (`payment_status`,
   `paid_at`) and no personal data; the guest data export now includes the booking's payment status and its extras.
-- **Date changes:** a booking with a priced extra cannot be rebooked (409 `EXTRAS_ON_BOOKING`), so a price difference can never be computed
-  without the extras. Guest side too (`/manage` says to contact the property).
-- **Open question:** should an employee who has refund access also see money in Reports (today: no, only admins)? It would let them chase
-  unpaid-at-hotel amounts without asking an admin. Changing it is one condition in `ReservationsController.getReport`.
+- **Date changes:** first built as a refusal for priced extras; replaced, see "Round 4 decisions" below.
+
+### Round 4 decisions (owner)
+
+- **Report money for employees with refund access.** `GET /staff/reports` now chooses between the full and the redacted report with
+  `hasMoneyAccess(staff)` (admin, or an employee with `can_manage_refunds`, read from the database on every request), not `role === 'admin'`.
+  Without the tick the report is redacted exactly as before. The Team page's grant and remove dialogs and the invite checkbox say it
+  ("see revenue and money figures in Reports"); every audit entry for the tick already existed. Team, Audit log and Properties stay
+  admin-only. Why it is safe: the person already may decide refunds and see the amounts of each refund, so the totals add no new
+  power; the permission is per person, audited and revocable from the next request. Specs: `reservations.controller.spec.ts` (employee with
+  and without the tick), `redact-report.spec.ts`, `tenant-isolation.spec.ts` (the route stays `BOTH`).
+- **Date changes carry extras.** `EXTRAS_ON_BOOKING` and its two messages are gone (no migration: `reservation_extras` rows are copied
+  by the same `copyExtras` statement as before). The quote prices the stay today and adds the booking's own extras lines at their saved prices,
+  read inside the same request, so the amount shown is the amount charged: the quote, the balance payment (`payload.newTotalCents`,
+  `extrasCents`) and the new booking's `total_cents` are one number; a spec asserts they agree to the cent. Tenant and ownership are
+  unchanged (`BookingRow` is found by reference+email or by the staff `TenantScoped` booking id), no client sends a price. An in-flight balance
+  payment opened before the change has no `extrasCents` and settles as before (parsed as 0).
+- **Audit log member filter.** `GET /staff/audit?member=<staff user id>` (admins only, as before): validated as a UUID (400 otherwise),
+  bound as a SQL parameter, and always combined with the caller's organization, so another workspace's member id returns an empty page
+  and nothing about it. Works with `action`, dates and paging (the cursor is built from the filtered rows). Tested with a real Postgres in
+  `shared/audit/audit-member-filter.integration.spec.ts`.

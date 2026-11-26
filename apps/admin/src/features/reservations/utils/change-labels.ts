@@ -55,3 +55,18 @@ export function confirmChangeLabel(quote: Amounts): string {
       return 'Change dates';
   }
 }
+
+/**
+ * The carried-over extras as one line, e.g. "Extras carried over: Breakfast × 2, Private dinner (on request)".
+ * Null when the booking has none. Names and quantities only; the amount is shown beside it.
+ */
+export function extrasCarriedLabel(extras: RebookQuote['extras']): string | null {
+  if (extras.length === 0) {
+    return null;
+  }
+  const parts = extras.map((extra): string => {
+    const name = extra.quantity > 1 ? `${extra.name} × ${String(extra.quantity)}` : extra.name;
+    return extra.kind === 'on_request' ? `${name} (on request)` : name;
+  });
+  return `Extras carried over: ${parts.join(', ')}`;
+}

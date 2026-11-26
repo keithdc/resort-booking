@@ -155,6 +155,7 @@ describe('AcceptInviteDto', () => {
 describe('AuditQueryDto', () => {
   it('accepts no filters, and each filter alone or together', async () => {
     expect(accepted(await run(AuditQueryDto, {}, 'query'))).toBe(true);
+    expect(accepted(await run(AuditQueryDto, { member: '5f0c8c3e-0a8b-4d6e-9f55-2b8f1d4a7c11' }, 'query'))).toBe(true);
     expect(accepted(await run(AuditQueryDto, { action: 'team.', from: '2026-11-01', to: '2026-12-01T00:00:00Z', cursor: 'abc', limit: '20' }, 'query'))).toBe(true);
   });
 
@@ -167,6 +168,8 @@ describe('AuditQueryDto', () => {
     ['a limit of 0', { limit: '0' }],
     ['a limit that is not a number', { limit: 'many' }],
     ['a cursor over 200 characters', { cursor: 'x'.repeat(201) }],
+    ['a member that is not an id', { member: 'ada' }],
+    ['a member with SQL in it', { member: "x' OR '1'='1" }],
     ['an unknown filter', { organizationId: 'o2' }],
   ])('refuses %s', async (_label, payload) => {
     expect(accepted(await run(AuditQueryDto, payload, 'query'))).toBe(false);

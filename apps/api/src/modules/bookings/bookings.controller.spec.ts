@@ -47,6 +47,8 @@ const QUOTE: RebookQuote = {
   subtotalCents: 60000,
   discounts: [],
   discountCents: 0,
+  extras: [],
+  extrasCents: 0,
   newTotalCents: 60000,
   feeCents: 2000,
   paidCents: 96000,

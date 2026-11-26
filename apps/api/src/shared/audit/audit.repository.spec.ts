@@ -45,7 +45,7 @@ describe('AuditRepository', () => {
   });
 
   it('pages one organization in ONE statement, joining the staff name instead of looking each up', async () => {
-    await repository.page({ organizationId: 'o1', actionPrefix: 'team.', from: null, to: null, after: null, limit: 50 });
+    await repository.page({ organizationId: 'o1', actionPrefix: 'team.', staffUserId: null, from: null, to: null, after: null, limit: 50 });
 
     expect(query).toHaveBeenCalledTimes(1);
     const sql = query.mock.calls[0]?.[0] ?? '';
@@ -55,10 +55,21 @@ describe('AuditRepository', () => {
     expect(sql).toContain('(a.created_at, a.id) < ($5::timestamptz, $6::uuid)');
   });
 
-  it('asks for one more row than the page size, to know whether another page exists', async () => {
-    await repository.page({ organizationId: 'o1', actionPrefix: null, from: null, to: null, after: null, limit: 50 });
+  it('filters by member inside the organization filter, as a parameter (never text in the SQL)', async () => {
+    const member = '5f0c8c3e-0a8b-4d6e-9f55-2b8f1d4a7c11';
+    await repository.page({ organizationId: 'o1', actionPrefix: null, staffUserId: member, from: null, to: null, after: null, limit: 50 });
 
-    expect(query.mock.calls[0]?.[1]).toEqual(['o1', null, null, null, null, null, 51]);
+    const [sql, params] = query.mock.calls[0] ?? ['', []];
+    expect(sql).toContain('a.organization_id = $1::uuid');
+    expect(sql).toContain('a.staff_user_id = $8::uuid');
+    expect(sql).not.toContain(member);
+    expect((params as unknown[])[7]).toBe(member);
+  });
+
+  it('asks for one more row than the page size, to know whether another page exists', async () => {
+    await repository.page({ organizationId: 'o1', actionPrefix: null, staffUserId: null, from: null, to: null, after: null, limit: 50 });
+
+    expect(query.mock.calls[0]?.[1]).toEqual(['o1', null, null, null, null, null, 51, null]);
   });
 
   it('reports hasMore and the last row\'s exact timestamp when the extra row came back', async () => {
@@ -78,7 +89,7 @@ describe('AuditRepository', () => {
       rowCount: 3,
     });
 
-    const result = await repository.page({ organizationId: 'o1', actionPrefix: null, from: null, to: null, after: null, limit: 2 });
+    const result = await repository.page({ organizationId: 'o1', actionPrefix: null, staffUserId: null, from: null, to: null, after: null, limit: 2 });
 
     expect(result.hasMore).toBe(true);
     expect(result.records.map((record) => record.id)).toEqual(['id1', 'id2']);
@@ -87,7 +98,7 @@ describe('AuditRepository', () => {
   });
 
   it('has no next page and no last row for an empty result', async () => {
-    const result = await repository.page({ organizationId: 'o1', actionPrefix: null, from: null, to: null, after: null, limit: 10 });
+    const result = await repository.page({ organizationId: 'o1', actionPrefix: null, staffUserId: null, from: null, to: null, after: null, limit: 10 });
 
     expect(result).toEqual({ records: [], last: null, hasMore: false });
   });

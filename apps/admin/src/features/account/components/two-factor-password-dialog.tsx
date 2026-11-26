@@ -6,7 +6,7 @@
 
 'use client';
 
-import { Alert, Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Stack, TextField } from '@mui/material';
+import { Alert, Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Stack } from '@mui/material';
 import { useState } from 'react';
 import { ApiRequestError } from '@/shared/services/api-client';
 import { PasswordInput } from '@/shared/components/password-input';

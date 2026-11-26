@@ -23,7 +23,7 @@ interface InviteDialogProps {
 }
 
 const REFUND_ACCESS_HELP =
-  'Lets them retry failed refunds, mark hand refunds as paid, mark pay-at-hotel bookings as paid, choose any refund amount, waive the change fee and decide on the check-in day. Everything they do here is recorded in the audit log with their name.';
+  'Lets them retry failed refunds, mark hand refunds as paid, mark pay-at-hotel bookings as paid, see revenue and money figures in Reports, choose any refund amount, waive the change fee and decide on the check-in day. Everything they do here is recorded in the audit log with their name.';
 
 const ROLE_HINTS: Record<StaffRole, string> = {
   employee: 'Calendar, bookings and check-in. No money settings, no team. Refunds follow the policy unless you give them refund access.',

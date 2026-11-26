@@ -50,6 +50,12 @@ describe('AuditController', () => {
     expect(list).toHaveBeenCalledWith('o1', { actionPrefix: 'team.', from: '2026-11-01', to: '2026-12-01', cursor: 'abc', limit: 20 });
   });
 
+  it('maps the member query to a staff user filter', async () => {
+    await controller.list(STAFF, { member: '5f0c8c3e-0a8b-4d6e-9f55-2b8f1d4a7c11' });
+
+    expect(list).toHaveBeenCalledWith('o1', { staffUserId: '5f0c8c3e-0a8b-4d6e-9f55-2b8f1d4a7c11' });
+  });
+
   it('is admin only, behind the staff, tenant and role guards', () => {
     expect(Reflect.getMetadata('__guards__', AuditController)).toEqual([StaffGuard, TenantGuard, RoleGuard]);
     expect(Reflect.getMetadata(ALLOWED_ROLES, AuditController)).toEqual(['admin']);

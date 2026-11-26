@@ -51,6 +51,8 @@ export interface AuditPage {
 export interface AuditFilters {
   /** Only actions starting with this, e.g. "team." */
   actionPrefix?: string;
+  /** Only what this member did (their staff user id). Another organization's id simply matches nothing. */
+  staffUserId?: string;
   /** Inclusive start (ISO date or date-time). */
   from?: string;
   /** Exclusive end (ISO date or date-time). */

@@ -40,7 +40,7 @@ export function OverviewTab({ report, onOpenDetail }: OverviewTabProps): React.J
     // The chart and the insight sentences are about revenue, which is withheld; the cards above carry bookings and occupancy.
     return (
       <Alert severity="info">
-        The revenue chart and the revenue insights are for admins. Bookings, nights and occupancy are shown above and on the other tabs.
+        The revenue chart and the revenue insights need refund access (ask an admin). Bookings, nights and occupancy are shown above and on the other tabs.
       </Alert>
     );
   }

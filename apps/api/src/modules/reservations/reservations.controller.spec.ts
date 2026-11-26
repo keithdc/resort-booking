@@ -115,6 +115,14 @@ describe('ReservationsController', () => {
       expect(result.data.reservationCount).toBe(2);
     });
 
+    it('gives an employee with refund access every figure, like an admin', async () => {
+      const result = await controller.getReport({ from: '2026-11-01', to: '2026-12-01' }, { ...account('employee'), canManageRefunds: true });
+
+      expect(result.data.moneyHidden).toBe(false);
+      expect(result.data.revenueCents).toBe(99000);
+      expect(result.data.previous.grossRevenueCents).toBe(45000);
+    });
+
     it('asks the service for the caller\'s own organization', async () => {
       await controller.getReport({ from: '2026-11-01', to: '2026-12-01' }, account('employee'));
 

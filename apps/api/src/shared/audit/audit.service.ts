@@ -80,6 +80,7 @@ export class AuditService {
     const page = await this.audit.page({
       organizationId,
       actionPrefix,
+      staffUserId: filters.staffUserId ?? null,
       from: filters.from ?? null,
       to: filters.to ?? null,
       after: filters.cursor === undefined ? null : this.decodeCursor(filters.cursor),

@@ -4,6 +4,7 @@
  * @feature reservations
  */
 
+import type { RebookQuote } from '@resort-booking/shared-types';
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { rebookQuote } from '@/test/fixtures';
@@ -12,6 +13,11 @@ import { StaffQuoteSummary } from './staff-quote-summary';
 function text(): string {
   return (screen.getByLabelText('Price of the new dates').textContent ?? '').replace(/\s/g, ' ');
 }
+
+const EXTRAS: RebookQuote['extras'] = [
+      { id: 'e1', extraServiceId: 's1', name: 'Breakfast', kind: 'instant', quantity: 2, unitPriceCents: 3000, lineCents: 6000, currencyCode: 'EUR', status: 'confirmed' },
+      { id: 'e2', extraServiceId: 's2', name: 'Private dinner', kind: 'on_request', quantity: 1, unitPriceCents: 9000, lineCents: 0, currencyCode: 'EUR', status: 'pending' },
+    ];
 
 describe('StaffQuoteSummary', () => {
   afterEach(cleanup);
@@ -86,5 +92,17 @@ describe('StaffQuoteSummary', () => {
 
     expect(text()).toContain('· 1 night');
     expect(text()).toContain('1 night × 200,00 €');
+  });
+
+  it('shows the carried-over extras as their own line before the new total, with the amount they add', () => {
+    render(<StaffQuoteSummary quote={rebookQuote({ extras: EXTRAS, extrasCents: 6000, newTotalCents: 130800 })} />);
+
+    expect(text()).toContain('Extras carried over: Breakfast × 2, Private dinner (on request)60,00 €New total');
+  });
+
+  it('shows no extras line when the booking has none', () => {
+    render(<StaffQuoteSummary quote={rebookQuote()} />);
+
+    expect(text()).not.toContain('Extras carried over');
   });
 });

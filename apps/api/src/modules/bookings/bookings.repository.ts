@@ -37,8 +37,6 @@ export interface BookingRow {
   paid_cents: number | null;
   policy_snapshot: unknown;
   price_snapshot: unknown;
-  /** How many extras on the booking carry a price. Such a booking cannot have its dates changed online (see rebook.service). */
-  priced_extras_count: number;
   /** The booking this one replaced when its dates were changed, else null. */
   rebook_of_id: string | null;
   /** The booking that replaced this one when its dates were changed, else null. */
@@ -139,7 +137,6 @@ const SELECT_BOOKING = `
     ib.check_in::text AS check_in, ib.check_out::text AS check_out, ib.guest_count,
     ib.booker_name, ib.booker_email, ib.booker_phone, ib.guest_note, ib.payment_method, ib.payment_status,
     ib.total_cents, ib.currency_code, ib.paid_cents, ib.policy_snapshot, ib.price_snapshot, ib.rebook_of_id,
-    (SELECT count(*)::int FROM reservation_extras ex WHERE ex.inventory_block_id = ib.id AND ex.line_cents > 0) AS priced_extras_count,
     (
       SELECT nb.id FROM inventory_blocks nb
       WHERE nb.rebook_of_id = ib.id AND nb.kind = 'reservation'
@@ -387,8 +384,9 @@ export class BookingsRepository {
   }
 
   /**
-   * The extras ride along to the new booking, as they were (name, kind, price and quantity are copies). Only extras
-   * with nothing to pay can be here: a booking with a priced extra cannot change its dates.
+   * The extras ride along to the new booking exactly as they were: name, kind, saved price, quantity, line total and
+   * status are copies, never re-priced from the property's current extras. Priced extras too: the new booking's total
+   * is the new stay plus these same lines. The old booking keeps its own rows.
    */
   public async copyExtras(client: PoolClient, fromBookingId: string, toBookingId: string): Promise<void> {
     await client.query(

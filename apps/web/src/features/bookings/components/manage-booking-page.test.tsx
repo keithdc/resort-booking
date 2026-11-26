@@ -335,6 +335,8 @@ describe('ManageBookingPage', () => {
         subtotalCents: 96000,
         discounts: [],
         discountCents: 0,
+        extras: [],
+        extrasCents: 0,
         newTotalCents: 96000,
         feeCents: 0,
         paidCents: 96000,
@@ -369,7 +371,7 @@ describe('ManageBookingPage', () => {
       api.lookupBooking.mockResolvedValue(booking({ canChangeDates: true, changeDatesBlockedReason: null }));
       api.quoteRebook.mockResolvedValue({
         reference: 'BK-ABC1234567', newCheckIn: '2027-07-10', newCheckOut: '2027-07-11', nights: 1, currencyCode: 'EUR', lines: [], subtotalCents: 48000,
-        discounts: [], discountCents: 0, newTotalCents: 48000, feeCents: 0, paidCents: 96000, balanceCents: -48000, payCents: 0, refundCents: 48000,
+        discounts: [], discountCents: 0, extras: [], extrasCents: 0, newTotalCents: 48000, feeCents: 0, paidCents: 96000, balanceCents: -48000, payCents: 0, refundCents: 48000,
         available: true, problem: null, promoCode: null,
       });
       api.rebookBooking.mockResolvedValue({
