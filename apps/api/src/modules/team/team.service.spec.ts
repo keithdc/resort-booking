@@ -85,7 +85,7 @@ describe('TeamService', () => {
   };
   const identity = {
     assertPasswordAcceptable: jest.fn<void, [string, string]>(),
-    startSession: jest.fn<Promise<StaffSessionResult>, [StaffAccount]>(),
+    startSession: jest.fn<Promise<StaffSessionResult>, [StaffAccount, unknown?]>(),
     logoutAll: jest.fn<Promise<number>, [string]>(),
     resetTwoFactor: jest.fn<Promise<{ hadTwoFactor: boolean }>, [string, string]>(),
   };
@@ -204,6 +204,7 @@ describe('TeamService', () => {
       repo.registerWorkspace.mockResolvedValue(created);
 
       const session = await service.register(input, CONTEXT);
+      expect(identity.startSession).toHaveBeenCalledWith(expect.anything(), CONTEXT);
 
       expect(limiter.checkRegistration).toHaveBeenCalledWith('203.0.113.7', 'ada@example.com');
       expect(identity.assertPasswordAcceptable).toHaveBeenCalledWith(GOOD_PASSWORD, 'ada@example.com');

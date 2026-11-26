@@ -95,7 +95,7 @@ export class TeamService {
       }
       throw error;
     }
-    const session = await this.identity.startSession(account);
+    const session = await this.identity.startSession(account, context);
     this.logger.log(`register staff=${account.id} org=${account.organizationId} req=${context.requestId ?? 'none'}`);
     await this.audit.recordBy(this.actorOf(account, context), 'auth.register', { targetType: 'organization', targetId: account.organizationId });
     return session;
@@ -262,7 +262,7 @@ export class TeamService {
     if (used === null) {
       throw this.invalidInvite();
     }
-    const session = await this.identity.startSession(used.account);
+    const session = await this.identity.startSession(used.account, context);
     await this.audit.recordBy(this.actorOf(used.account, context), used.reset ? 'auth.access_reset_completed' : 'team.invite_accepted', {
       targetType: 'staff_invite',
       targetId: used.inviteId,
