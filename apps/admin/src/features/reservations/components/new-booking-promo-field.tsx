@@ -6,6 +6,7 @@
 
 'use client';
 
+import AutoAwesomeOutlinedIcon from '@mui/icons-material/AutoAwesomeOutlined';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import type { Discount, PromoCodeResult } from '@resort-booking/shared-types';
@@ -166,19 +167,28 @@ export function NewBookingPromoField({
         <Box>
           <Button
             size="small"
-            color="inherit"
+            color="info"
             onClick={(): void => setShowAutomatic((open) => !open)}
             aria-expanded={showAutomatic}
+            startIcon={<AutoAwesomeOutlinedIcon fontSize="small" />}
             endIcon={showAutomatic ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
-            sx={{ textTransform: 'none', color: 'text.secondary', px: 0.5 }}
+            sx={{ textTransform: 'none', fontWeight: 600, px: 0.5 }}
           >
             {String(automatic.length)} automatic offer{automatic.length === 1 ? '' : 's'} (already in the price when they fit)
           </Button>
           <Collapse in={showAutomatic} unmountOnExit>
             <Box component="ul" aria-label="Automatic offers" sx={{ listStyle: 'none', m: 0, p: 0, pl: 0.5 }}>
               {automatic.map((discount): React.JSX.Element => (
-                <Typography component="li" variant="caption" color="text.secondary" key={discount.id} sx={{ display: 'block', overflowWrap: 'anywhere' }}>
-                  {discount.label}: {summarizeEffect(discount.effect, currencyCode)} off · {summarizeConditions(discount)}
+                <Typography component="li" variant="caption" key={discount.id} sx={{ display: 'block', overflowWrap: 'anywhere', py: 0.25 }}>
+                  <Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>
+                    {discount.label}
+                  </Box>{' '}
+                  <Box component="span" sx={{ fontWeight: 600, color: 'success.main' }}>
+                    {summarizeEffect(discount.effect, currencyCode)} off
+                  </Box>{' '}
+                  <Box component="span" sx={{ color: 'info.main' }}>
+                    · {summarizeConditions(discount)}
+                  </Box>
                 </Typography>
               ))}
             </Box>

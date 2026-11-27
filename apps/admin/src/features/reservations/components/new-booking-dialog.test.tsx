@@ -209,9 +209,9 @@ describe('NewBookingDialog', () => {
     renderDialog();
     expect(await screen.findByText('1 coupon for this stay: open the list to pick one.')).toBeTruthy();
     // The automatic offer is one folded line, not a card.
-    expect(screen.queryByText(/Long stay: 10% off/)).toBeNull();
+    expect(screen.queryByText(/Long stay/)).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: /1 automatic offer/ }));
-    expect(screen.getByRole('list', { name: 'Automatic offers' }).textContent).toContain('Long stay: 10% off');
+    expect(screen.getByRole('list', { name: 'Automatic offers' }).textContent).toContain('Long stay 10% off');
 
     await userEvent.click(screen.getByRole('button', { name: 'Open' }));
     const options = await screen.findAllByRole('option');
