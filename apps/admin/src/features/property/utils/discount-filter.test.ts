@@ -9,6 +9,7 @@ import {
   couponCodeOf,
   filterDiscounts,
   guestLimitLabel,
+  DEFAULT_DISCOUNT_FILTERS,
   hasActiveFilters,
   NO_DISCOUNT_FILTERS,
   sortDiscounts,
@@ -93,8 +94,8 @@ describe('filterDiscounts', () => {
   });
 
   it('combines the three', () => {
-    expect(ids(filterDiscounts(ALL, { search: 'code', type: 'coupon', status: 'live' }, TODAY))).toEqual(['live-code']);
-    expect(ids(filterDiscounts(ALL, { search: 'code', type: 'automatic', status: 'live' }, TODAY))).toEqual([]);
+    expect(ids(filterDiscounts(ALL, { ...NO_DISCOUNT_FILTERS, search: 'code', type: 'coupon', status: 'live' }, TODAY))).toEqual(['live-code']);
+    expect(ids(filterDiscounts(ALL, { ...NO_DISCOUNT_FILTERS, search: 'code', type: 'automatic', status: 'live' }, TODAY))).toEqual([]);
   });
 });
 
@@ -116,5 +117,24 @@ describe('small helpers', () => {
     expect(hasActiveFilters({ ...NO_DISCOUNT_FILTERS, search: 'a' })).toBe(true);
     expect(hasActiveFilters({ ...NO_DISCOUNT_FILTERS, type: 'coupon' })).toBe(true);
     expect(hasActiveFilters({ ...NO_DISCOUNT_FILTERS, status: 'off' })).toBe(true);
+  });
+});
+
+describe('promoted filter and the default view', () => {
+  const PROMOTED = coupon('promo', 'PUBLIC10', { label: 'Public code', promoted: true });
+  const LIST = [LIVE_AUTO, PROMOTED, LIVE_CODE, LATER];
+
+  it('keeps only promoted discounts, or only those that are not', () => {
+    expect(ids(filterDiscounts(LIST, { ...NO_DISCOUNT_FILTERS, promoted: 'promoted' }, TODAY))).toEqual(['promo']);
+    expect(ids(filterDiscounts(LIST, { ...NO_DISCOUNT_FILTERS, promoted: 'not_promoted' }, TODAY))).toEqual(['live-auto', 'live-code', 'later']);
+  });
+
+  it('counts the promoted filter as an active filter', () => {
+    expect(hasActiveFilters({ ...NO_DISCOUNT_FILTERS, promoted: 'promoted' })).toBe(true);
+  });
+
+  it('opens on Live only', () => {
+    expect(DEFAULT_DISCOUNT_FILTERS.status).toBe('live');
+    expect(ids(filterDiscounts(ALL, DEFAULT_DISCOUNT_FILTERS, TODAY))).toEqual(['live-auto', 'live-code']);
   });
 });

@@ -259,3 +259,6 @@ The database tests connect with `DATABASE_ADMIN_URL`; it defaults to the local D
 1. Note the step, what you did and what you saw (a screenshot helps).
 2. The migrations are additive, so a code revert (`git revert <commit>`) is safe: the extra columns and tables stay and are ignored by older code. The append-only triggers also stay.
 3. Never edit a migration that has already run. Add a new one. The migration runner checks checksums and will stop with a message if an applied file was changed.
+
+**Default view and Promoted filter.** The Discounts list opens on **Live** discounts only, and the count line says how many exist in all ("Showing 3 of 3 matching, 87 in all"). A new discount that has not started yet, or one that is switched off, is therefore hidden until you choose another status or press **Clear filters** (which shows everything). The **Promoted** filter has three choices: Promoted or not, Promoted (shown to guests), Not promoted. Check that it combines with the search, Type and Status filters.
+

@@ -14,15 +14,22 @@ export const DISCOUNT_PAGE_SIZE = 20;
 
 export type DiscountTypeFilter = 'all' | 'coupon' | 'automatic';
 export type DiscountStatusFilter = 'all' | DiscountStatusKind;
+export type DiscountPromotedFilter = 'all' | 'promoted' | 'not_promoted';
 
 export interface DiscountFilters {
   /** Matches the name and the promo code, any case. */
   search: string;
   type: DiscountTypeFilter;
   status: DiscountStatusFilter;
+  /** Advertised to guests on the website, or not. */
+  promoted: DiscountPromotedFilter;
 }
 
-export const NO_DISCOUNT_FILTERS: DiscountFilters = { search: '', type: 'all', status: 'all' };
+/** Every discount, whatever its state: what "Clear filters" gives. */
+export const NO_DISCOUNT_FILTERS: DiscountFilters = { search: '', type: 'all', status: 'all', promoted: 'all' };
+
+/** What the list opens with: the discounts that are running now. */
+export const DEFAULT_DISCOUNT_FILTERS: DiscountFilters = { ...NO_DISCOUNT_FILTERS, status: 'live' };
 
 export const TYPE_FILTER_OPTIONS: readonly { value: DiscountTypeFilter; label: string }[] = [
   { value: 'all', label: 'All types' },
@@ -37,6 +44,12 @@ export const STATUS_FILTER_OPTIONS: readonly { value: DiscountStatusFilter; labe
   { value: 'used_up', label: 'Used up' },
   { value: 'ended', label: 'Ended' },
   { value: 'off', label: 'Off' },
+];
+
+export const PROMOTED_FILTER_OPTIONS: readonly { value: DiscountPromotedFilter; label: string }[] = [
+  { value: 'all', label: 'Promoted or not' },
+  { value: 'promoted', label: 'Promoted (shown to guests)' },
+  { value: 'not_promoted', label: 'Not promoted' },
 ];
 
 /** The promo code of a coupon, or null for an automatic discount. */
@@ -56,7 +69,7 @@ export function guestLimitLabel(discount: Pick<Discount, 'oncePerGuest' | 'condi
 
 /** Are any of the three filters set (so "Clear filters" has something to clear)? */
 export function hasActiveFilters(filters: DiscountFilters): boolean {
-  return filters.search.trim() !== '' || filters.type !== 'all' || filters.status !== 'all';
+  return filters.search.trim() !== '' || filters.type !== 'all' || filters.status !== 'all' || filters.promoted !== 'all';
 }
 
 /**
@@ -86,6 +99,12 @@ export function filterDiscounts(discounts: readonly Discount[], filters: Discoun
       return false;
     }
     if (filters.type === 'automatic' && code !== null) {
+      return false;
+    }
+    if (filters.promoted === 'promoted' && !discount.promoted) {
+      return false;
+    }
+    if (filters.promoted === 'not_promoted' && discount.promoted) {
       return false;
     }
     if (filters.status !== 'all' && discountStatus(discount, today).kind !== filters.status) {

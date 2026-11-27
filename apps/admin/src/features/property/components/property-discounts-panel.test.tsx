@@ -9,6 +9,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiRequestError } from '@/shared/services/api-client';
+import { NO_DISCOUNT_FILTERS } from '../utils/discount-filter';
 import { PropertyDiscountsPanel } from './property-discounts-panel';
 
 const api = vi.hoisted(() => ({
@@ -80,8 +81,9 @@ const WELCOME = discount('welcome', {
 
 const TODAY = '2026-11-25';
 
+/** Opens with every discount shown, so a test sees all rows. The default (Live only) has its own tests. */
 function renderPanel(): void {
-  render(<PropertyDiscountsPanel propertyId="p1" houses={HOUSES} today={TODAY} />);
+  render(<PropertyDiscountsPanel propertyId="p1" houses={HOUSES} today={TODAY} initialFilters={NO_DISCOUNT_FILTERS} />);
 }
 
 function row(name: string): HTMLElement {
@@ -357,6 +359,38 @@ describe('PropertyDiscountsPanel', () => {
 
       await waitFor(() => expect(api.updateDiscount).toHaveBeenCalledWith('long', expect.objectContaining({ label: 'Long stay plus' })));
       expect(screen.queryByRole('dialog', { name: 'Apply this discount to every stay?' })).toBeNull();
+    });
+  });
+
+  describe('the default view and the Promoted filter', () => {
+    const PUBLIC = discount('pub', { label: 'Public code', conditions: [{ kind: 'promo_code', code: 'PUBLIC10' }], promoted: true });
+
+    it('opens on Live discounts only and says so; Clear filters shows them all', async () => {
+      api.fetchDiscounts.mockResolvedValue([LONG_STAY, WELCOME, PUBLIC, discount('off', { label: 'Switched off', active: false })]);
+      render(<PropertyDiscountsPanel propertyId="p1" houses={HOUSES} today={TODAY} />);
+      await screen.findByRole('table', { name: 'Discounts' });
+      expect(screen.queryByText('Switched off')).toBeNull();
+      expect(screen.getByRole('status').textContent).toContain('4 in all');
+      expect(screen.getAllByRole('combobox').map((box) => box.textContent)).toContain('Live');
+
+      await userEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+      expect(await screen.findByText('Switched off')).toBeTruthy();
+    });
+
+    it('filters by Promoted and Not promoted', async () => {
+      api.fetchDiscounts.mockResolvedValue([discount('quiet', { label: 'Quiet offer', promoted: false }), PUBLIC]);
+      renderPanel();
+      await screen.findByRole('table', { name: 'Discounts' });
+
+      await userEvent.click(screen.getByLabelText('Promoted'));
+      await userEvent.click(await screen.findByRole('option', { name: 'Promoted (shown to guests)' }));
+      expect(screen.queryByText('Quiet offer')).toBeNull();
+      expect(screen.getByText('Public code')).toBeTruthy();
+
+      await userEvent.click(screen.getByLabelText('Promoted'));
+      await userEvent.click(await screen.findByRole('option', { name: 'Not promoted' }));
+      expect(screen.getByText('Quiet offer')).toBeTruthy();
+      expect(screen.queryByText('Public code')).toBeNull();
     });
   });
 

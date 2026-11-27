@@ -49,14 +49,17 @@ import {
   type DiscountStatusKind,
 } from '../utils/discount-draft';
 import {
+  DEFAULT_DISCOUNT_FILTERS,
   DISCOUNT_PAGE_SIZE,
   filterDiscounts,
   guestLimitLabel,
   hasActiveFilters,
   NO_DISCOUNT_FILTERS,
+  PROMOTED_FILTER_OPTIONS,
   STATUS_FILTER_OPTIONS,
   TYPE_FILTER_OPTIONS,
   type DiscountFilters,
+  type DiscountPromotedFilter,
   type DiscountStatusFilter,
   type DiscountTypeFilter,
 } from '../utils/discount-filter';
@@ -68,6 +71,8 @@ interface PropertyDiscountsPanelProps {
   houses: readonly HouseSummary[];
   /** Today's local date (YYYY-MM-DD). Defaults to the browser's today; tests pass a fixed day. */
   today?: string;
+  /** The filters the list opens with. Defaults to Live only; tests pass everything. */
+  initialFilters?: DiscountFilters;
 }
 
 const STATUS_ICON: Record<DiscountStatusKind, React.ReactElement> = {
@@ -90,14 +95,14 @@ const STATUS_COLOR: Record<DiscountStatusKind, 'default' | 'success' | 'warning'
  * Discounts for one property: long stay, early bird, promo codes and so on. Automatic discounts never stack
  * (the guest gets the best one); a promo code stacks after it.
  */
-export function PropertyDiscountsPanel({ propertyId, houses, today }: PropertyDiscountsPanelProps): React.JSX.Element {
+export function PropertyDiscountsPanel({ propertyId, houses, today, initialFilters = DEFAULT_DISCOUNT_FILTERS }: PropertyDiscountsPanelProps): React.JSX.Element {
   const [clockToday] = useState<string>(() => localTodayIso());
   const todayIso = today ?? clockToday;
   const state = usePropertyDiscounts(propertyId);
   const compact = useCompactLayout();
   const [deleteId, setDeleteId] = useState<string | null>(null);
   // The filters are local to this screen (like the audit log): nothing is saved or put in the address.
-  const [filters, setFilters] = useState<DiscountFilters>(NO_DISCOUNT_FILTERS);
+  const [filters, setFilters] = useState<DiscountFilters>(initialFilters);
   const [shown, setShown] = useState(DISCOUNT_PAGE_SIZE);
   const currencyCode = houses[0]?.currencyCode ?? 'EUR';
   const matching = filterDiscounts(state.discounts, filters, todayIso);
@@ -175,6 +180,20 @@ export function PropertyDiscountsPanel({ propertyId, houses, today }: PropertyDi
                 </MenuItem>
               ))}
             </TextField>
+            <TextField
+              select
+              size="small"
+              label="Promoted"
+              value={filters.promoted}
+              onChange={(event): void => changeFilters({ promoted: event.target.value as DiscountPromotedFilter })}
+              sx={{ minWidth: { sm: 210 } }}
+            >
+              {PROMOTED_FILTER_OPTIONS.map((option): React.JSX.Element => (
+                <MenuItem key={option.value} value={option.value}>
+                  {option.label}
+                </MenuItem>
+              ))}
+            </TextField>
           </Stack>
           <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
             <Typography variant="body2" color="text.secondary" role="status">
@@ -189,7 +208,9 @@ export function PropertyDiscountsPanel({ propertyId, houses, today }: PropertyDi
           </Stack>
         </Stack>
       ) : null}
-      {state.discounts.length > 0 && matching.length === 0 ? <Typography>No discounts match these filters</Typography> : null}
+      {state.discounts.length > 0 && matching.length === 0 ? (
+        <Typography>{filters.status === 'live' ? 'No discounts match these filters (only live ones are shown). Clear the filters to see them all.' : 'No discounts match these filters'}</Typography>
+      ) : null}
       {matching.length > 0 && compact ? (
         <Box component="ul" aria-label="Discounts" sx={{ listStyle: 'none', m: 0, p: 0, display: 'grid', gap: 1.5 }}>
           {visible.map((discount): React.JSX.Element => (
