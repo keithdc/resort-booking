@@ -23,7 +23,26 @@ import { submitErrorMessage } from './session-errors';
 import { PasswordInput } from '@/shared/components/password-input';
 
 interface InvitePageProps {
-  token: string;
+  /** Only for an older link (`/invite/<token>`): the token that came in the path. New links keep it after the `#`. */
+  legacyToken?: string;
+}
+
+const HASH_TOKEN = /^#token=([0-9a-f]{64})$/;
+/** Where the page lives once the token is out of the address bar. */
+const CLEAN_PATH = '/invite';
+
+/**
+ * Reads the token from the address (`/invite#token=...`, or the older path form) and removes it from the address bar and
+ * the history entry at once, so it is not left on screen, in a bookmark or in a Referer header on the next request.
+ * Returns null when there is no usable token.
+ */
+function takeTokenFromAddress(legacyToken: string | undefined): string | null {
+  const fromHash = HASH_TOKEN.exec(window.location.hash)?.[1];
+  const token = fromHash ?? (legacyToken !== undefined && /^[0-9a-f]{64}$/.test(legacyToken) ? legacyToken : null);
+  if (window.location.hash !== '' || window.location.pathname !== CLEAN_PATH) {
+    window.history.replaceState(window.history.state, '', CLEAN_PATH);
+  }
+  return token ?? null;
 }
 
 type Preview = { state: 'loading' } | { state: 'invalid' } | { state: 'error'; message: string } | { state: 'ready'; invite: InvitePreview };
@@ -32,16 +51,30 @@ type Preview = { state: 'loading' } | { state: 'invalid' } | { state: 'error'; m
  * The page behind an invitation (or access-reset) link: who invited you, the role, then name and password.
  * Unknown, used, revoked and expired links all give the same friendly "link not valid" page.
  */
-export function InvitePage({ token }: InvitePageProps): React.JSX.Element {
+export function InvitePage({ legacyToken }: InvitePageProps): React.JSX.Element {
   const router = useRouter();
   const [preview, setPreview] = useState<Preview>({ state: 'loading' });
+  const [token, setToken] = useState<string | null>(null);
   const [fullName, setFullName] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Read the token once, then take it out of the address bar.
+  useEffect((): void => {
+    const found = takeTokenFromAddress(legacyToken);
+    if (found === null) {
+      setPreview({ state: 'invalid' });
+    } else {
+      setToken(found);
+    }
+  }, [legacyToken]);
+
   useEffect((): (() => void) => {
+    if (token === null) {
+      return (): void => undefined;
+    }
     let cancelled = false;
     fetchInvitePreview(token)
       .then((invite): void => {
@@ -112,6 +145,11 @@ export function InvitePage({ token }: InvitePageProps): React.JSX.Element {
       // A reset link only sets a password: the name is never sent.
       const name = isReset ? '' : fullName.trim();
       // The BFF sets the httpOnly session cookie; the answer carries no token.
+      if (token === null) {
+        setPreview({ state: 'invalid' });
+        setPending(false);
+        return;
+      }
       await acceptInvite({ token, password, ...(name === '' ? {} : { fullName: name }) });
       router.replace('/');
       router.refresh();

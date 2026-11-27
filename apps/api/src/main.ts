@@ -16,6 +16,7 @@ import { startMetricsSummary } from './shared/http/http-metrics';
 import { ApiExceptionFilter } from './shared/filters/api-exception.filter';
 import { trustProxySetting } from './shared/http/client-ip';
 import { requestIdMiddleware } from './shared/http/request-id';
+import { requestContextMiddleware } from './shared/http/request-context';
 import { securityHeadersMiddleware } from './shared/http/security-headers.middleware';
 import { urlLengthMiddleware } from './shared/http/url-length.middleware';
 import { dropRawBodyOutsideWebhooks, webhookSizeGuard } from './shared/http/webhook-raw-body';
@@ -53,6 +54,9 @@ async function bootstrap(): Promise<void> {
   app.useBodyParser('json', { limit: JSON_BODY_LIMIT });
   app.useBodyParser('urlencoded', { limit: JSON_BODY_LIMIT, extended: false });
   app.use(dropRawBodyOutsideWebhooks);
+  // After the body parsers on purpose: the context must start where the handler chain starts, not in a stream event
+  // that the parser waits for. Services read it to write audit rows inside their own transaction (docs/13 R6-05).
+  app.use(requestContextMiddleware);
 
   // TRUST_PROXY=<hops> only when a reverse proxy sits in front: otherwise X-Forwarded-For is client-controlled.
   app.set('trust proxy', trustProxySetting(process.env.TRUST_PROXY));

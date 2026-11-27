@@ -97,6 +97,14 @@ const UNAUDITED_WRITES: Record<string, string> = {
   'POST /staff/me/two-factor/recovery-codes/regenerate': 'TwoFactorService writes auth.recovery_codes_regenerated (or auth.two_factor_failed) itself',
   'POST /staff/reservations/:id/change-dates/quote': 'a price quote: writes nothing',
   'POST /staff/reservations/quote': 'a price quote for a new booking: writes nothing',
+  'POST /staff/reservations': 'StaffBookingCreator writes booking.created_by_staff itself, in the booking transaction (docs/13 R6-05)',
+  'POST /staff/reservations/:id/change-dates': 'RebookService writes booking.dates_changed_by_staff itself, in the swap transaction (docs/13 R6-05)',
+  'POST /staff/refunds/:id/mark-paid': 'StaffRefundsService writes refund.marked_paid itself, in the same transaction as the update (docs/13 R6-05)',
+  'POST /staff/reservations/:id/notes': 'StaffNotesService writes booking.note_added itself, in the same transaction as the note (docs/13 R6-05)',
+  'DELETE /staff/reservations/:id/notes/:noteId': 'StaffNotesService writes booking.note_removed itself, in the same transaction as the hiding (docs/13 R6-05)',
+  'POST /staff/reservations/:id/cancel': 'StaffBookingsService writes booking.cancelled_by_staff itself, in the cancel transaction (docs/13 R6-05)',
+  'PATCH /staff/reservations/:id/source': 'StaffBookingsService writes booking.source_changed itself, in the same transaction as the change (docs/13 R6-05)',
+  'POST /staff/reservations/:id/mark-paid': 'StaffBookingsService writes booking.marked_paid itself, in the same transaction as the update (docs/13 R6-05)',
   'POST /staff/properties/:propertyId/rate-periods/bulk/preview': 'a dry run: writes nothing',
 };
 
@@ -141,6 +149,7 @@ const ROLE_MATRIX: Record<string, StaffRole[]> = {
   'POST /staff/refunds/:id/retry': BOTH,
   'POST /staff/refunds/:id/mark-paid': BOTH,
   'POST /staff/reservations/:id/mark-paid': BOTH,
+  'PATCH /staff/reservations/:id/source': ADMIN,
   // Everything that sets the business up: admin only.
   'GET /staff/properties/:propertyId/configuration': ADMIN,
   'PUT /staff/properties/:propertyId/configuration': ADMIN,
@@ -216,6 +225,7 @@ const PUBLIC_STAFF_ROUTES = new Set([
   'GET /staff/register/status',
   'POST /staff/register',
   'GET /staff/invites/:token/preview',
+  'POST /staff/invites/preview',
   'POST /staff/invites/accept',
 ]);
 
@@ -406,11 +416,13 @@ describe('tenant isolation: every staff route', () => {
     }
   });
 
-  it('the money-access routes are exactly the ones marked @RequireMoneyAccess, and each is audited', () => {
+  it('the money-access routes are exactly the ones marked @RequireMoneyAccess, and each is audited (by the interceptor or in the service)', () => {
     const marked = STAFF_ROUTES.filter((route) => route.moneyAccess).map((route) => route.key);
     expect(marked.sort()).toEqual([...MONEY_ACCESS_ROUTES].sort());
     for (const key of MONEY_ACCESS_ROUTES) {
-      expect(STAFF_ROUTES.find((candidate) => candidate.key === key)?.audited).toBe(true);
+      // Audited by the interceptor, or by the service itself inside the transaction (then the route says so in UNAUDITED_WRITES).
+      const audited = STAFF_ROUTES.find((candidate) => candidate.key === key)?.audited === true;
+      expect(audited || UNAUDITED_WRITES[key]?.includes('writes') === true).toBe(true);
     }
   });
 

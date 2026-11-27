@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { staffRefund, staffReservation } from '@/test/fixtures';
-import { countByStatus, filterBookings, withReportRefunds } from './bookings-filter';
+import { countBySource, countByStatus, filterBookings, withReportRefunds } from './bookings-filter';
 
 const ROWS = [
   staffReservation({ id: '1', bookerName: 'Ada Lovelace', reference: 'BK-AAAA000001' }),
@@ -86,5 +86,25 @@ describe('withReportRefunds', () => {
     const row = ROWS[1]!;
     withReportRefunds(row, [staffRefund({ reservationId: '2' })]);
     expect(row.refunds).toEqual([]);
+  });
+});
+
+describe('the source filter', () => {
+  const MIXED = [
+    staffReservation({ id: 'w', bookingSource: 'website' }),
+    staffReservation({ id: 'a1', bookingSource: 'airbnb', paymentMethod: 'paid_by_channel' }),
+    staffReservation({ id: 'a2', bookingSource: 'airbnb', paymentMethod: 'paid_by_channel', status: 'cancelled' }),
+    staffReservation({ id: 'p', bookingSource: 'phone_email' }),
+  ];
+
+  it('keeps only bookings from that source, and combines with status and search', () => {
+    expect(ids(filterBookings(MIXED, null, '', 'airbnb'))).toEqual(['a1', 'a2']);
+    expect(ids(filterBookings(MIXED, 'confirmed', '', 'airbnb'))).toEqual(['a1']);
+    expect(ids(filterBookings(MIXED, null, 'alpine', 'phone_email'))).toEqual(['p']);
+    expect(ids(filterBookings(MIXED, null, '', null))).toEqual(['w', 'a1', 'a2', 'p']);
+  });
+
+  it('counts the bookings of each source for the chips', () => {
+    expect(countBySource(MIXED)).toEqual({ website: 1, airbnb: 2, booking_com: 0, other_site: 0, phone_email: 1, walk_in: 0 });
   });
 });

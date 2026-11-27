@@ -55,6 +55,17 @@ describe('RegistrationController', () => {
     expect(register).toHaveBeenCalledWith(body, { ip: '203.0.113.7', requestId: 'req-1' });
   });
 
+  it('previews an invitation from a token in the BODY, with the caller IP (new links keep the token out of the address)', async () => {
+    preview.mockResolvedValue({ organizationName: 'Humphreys', email: 'new@example.com', role: 'employee', isReset: false });
+
+    await expect(controller.previewByBody({ token: TOKEN }, request())).resolves.toEqual({
+      status: 'ok',
+      data: { organizationName: 'Humphreys', email: 'new@example.com', role: 'employee', isReset: false },
+    });
+
+    expect(preview).toHaveBeenCalledWith(TOKEN, { ip: '203.0.113.7', requestId: 'req-1' });
+  });
+
   it('previews an invitation with the caller IP', async () => {
     preview.mockResolvedValue({ organizationName: 'Humphreys', email: 'new@example.com', role: 'employee', isReset: false });
 
@@ -85,7 +96,7 @@ describe('RegistrationController', () => {
   });
 
   it('has no staff guard: these routes are public on purpose', () => {
-    for (const handler of [controller.status, controller.register, controller.preview, controller.accept]) {
+    for (const handler of [controller.status, controller.register, controller.preview, controller.previewByBody, controller.accept]) {
       expect(Reflect.getMetadata('__guards__', handler)).toBeUndefined();
     }
     expect(Reflect.getMetadata('__guards__', RegistrationController)).toBeUndefined();

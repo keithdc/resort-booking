@@ -13,9 +13,11 @@ interface InviteRouteProps {
 }
 
 /**
- * Invitation link route (public, no sidebar). The token comes from the address; the API validates it.
+ * DEPRECATED older link shape `/invite/<token>`, kept for one release so links already handed out still open (they are
+ * single-use and expire). New links are `/invite#token=...` (app/invite/page.tsx). Remove this route with the API's
+ * deprecated GET preview (docs/17). The page removes the token from the address bar as soon as it loads.
  */
 export default async function InviteRoute({ params }: InviteRouteProps): Promise<React.JSX.Element> {
   const { token } = await params;
-  return <InvitePage token={token} />;
+  return <InvitePage legacyToken={token} />;
 }

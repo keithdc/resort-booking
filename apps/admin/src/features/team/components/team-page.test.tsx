@@ -283,7 +283,7 @@ describe('TeamPage', () => {
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Reset access' }));
 
     const link = (await screen.findByLabelText('One-time link')) as HTMLInputElement;
-    expect(link.value).toBe(`${window.location.origin}/invite/${'c'.repeat(64)}`);
+    expect(link.value).toBe(`${window.location.origin}/invite#token=${'c'.repeat(64)}`);
     expect(api.resetAccess).toHaveBeenCalledWith('m2', false);
   });
 
@@ -308,7 +308,7 @@ describe('TeamPage', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Get a new link for Lena Roche' }));
 
     const link = (await screen.findByLabelText('One-time link')) as HTMLInputElement;
-    expect(link.value).toBe(`${window.location.origin}/invite/${'d'.repeat(64)}`);
+    expect(link.value).toBe(`${window.location.origin}/invite#token=${'d'.repeat(64)}`);
     expect(api.revokeInvite).toHaveBeenCalledWith('i1');
     expect(api.createInvite).toHaveBeenCalledWith(expect.objectContaining({ fullName: 'Lena Roche' }));
   });
@@ -413,7 +413,7 @@ describe('TeamPage invite flow', () => {
 
     expect(api.createInvite).toHaveBeenCalledWith({ email: 'nora@atlantic.example', fullName: 'Nora Vidal', role: 'employee' });
     const link = (await screen.findByLabelText('One-time link')) as HTMLInputElement;
-    expect(link.value).toBe(`${window.location.origin}/invite/${'a'.repeat(64)}`);
+    expect(link.value).toBe(`${window.location.origin}/invite#token=${'a'.repeat(64)}`);
     expect(screen.getByText(/only time you will see the link/)).toBeTruthy();
   });
 
@@ -424,7 +424,7 @@ describe('TeamPage invite flow', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Copy link' }));
 
-    await waitFor(() => expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/invite/${'a'.repeat(64)}`));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/invite#token=${'a'.repeat(64)}`));
     expect(await screen.findByRole('button', { name: 'Copied' })).toBeTruthy();
   });
 

@@ -135,11 +135,15 @@ export function cspHeaderName(reportOnly: boolean): string {
  * Headers that do not change per request (everything except the CSP, which carries a nonce).
  * HSTS is production only: sending it from http://localhost would pin the browser to https.
  */
-export function buildStaticSecurityHeaders(options: { isProduction: boolean }): HeaderEntry[] {
+export function buildStaticSecurityHeaders(options: {
+  isProduction: boolean;
+  /** The admin app sends no Referer at all (its invitation page must never leak a link); the guest site keeps the default. */
+  referrerPolicy?: 'strict-origin-when-cross-origin' | 'no-referrer';
+}): HeaderEntry[] {
   const headers: HeaderEntry[] = [
     { key: 'X-Content-Type-Options', value: 'nosniff' },
     { key: 'X-Frame-Options', value: 'DENY' },
-    { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+    { key: 'Referrer-Policy', value: options.referrerPolicy ?? 'strict-origin-when-cross-origin' },
     { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=(), payment=(), usb=()' },
     { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
   ];

@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { isFormDirty, organizationProblem } from './form-dirty';
+import { changesSensitiveFields, isFormDirty, organizationProblem } from './form-dirty';
 
 describe('isFormDirty', () => {
   const start = { name: 'Humphreys', iban: 'FR76' };
@@ -25,5 +25,21 @@ describe('organizationProblem', () => {
     expect(organizationProblem({ emailsValid: false, phoneValid: false })).toContain('email');
     expect(organizationProblem({ emailsValid: true, phoneValid: false })).toContain('phone');
     expect(organizationProblem({ emailsValid: true, phoneValid: true })).toBeNull();
+  });
+});
+
+describe('changesSensitiveFields', () => {
+  const base = { iban: 'FR76 0000', bic: 'ABCDFR22', bankAccountName: 'Humphreys SARL', contactEmail: 'ops@example.com', bookingEmail: 'book@example.com', guestReplyEmail: 'hello@example.com' };
+
+  it('is false for the same values', () => {
+    expect(changesSensitiveFields(base, { ...base })).toBe(false);
+  });
+
+  it('ignores spacing and case in an IBAN or BIC and case or spacing around an email', () => {
+    expect(changesSensitiveFields(base, { ...base, iban: 'fr760000', bic: 'abcdfr22', bookingEmail: ' Book@Example.com ' })).toBe(false);
+  });
+
+  it.each(['iban', 'bic', 'bankAccountName', 'contactEmail', 'bookingEmail', 'guestReplyEmail'] as const)('is true when %s changes', (field) => {
+    expect(changesSensitiveFields(base, { ...base, [field]: 'something-else-1' })).toBe(true);
   });
 });

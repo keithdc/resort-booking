@@ -32,7 +32,8 @@ const OTHER_PROTECTION: Record<string, string> = {
   'POST /staff/logout': 'open item of docs/13 R2-14: a token delete, no data read',
   'GET /staff/register/status': 'no database or Redis access: answers from configuration',
   'POST /staff/register': 'TeamLimiter (per IP) and closed registration in production',
-  'GET /staff/invites/:token/preview': 'TeamLimiter and a token shape check',
+  'GET /staff/invites/:token/preview': 'TeamLimiter and a token shape check (DEPRECATED older link shape, docs/17)',
+  'POST /staff/invites/preview': 'TeamLimiter and a token shape check (the token is in the body, never in the address)',
   'POST /staff/invites/accept': 'TeamLimiter',
 };
 

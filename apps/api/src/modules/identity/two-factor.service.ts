@@ -8,11 +8,13 @@
 
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
+import type { PoolClient } from 'pg';
 import type { TwoFactorChallenge, TwoFactorRecoveryCodes, TwoFactorSetup, TwoFactorStatus } from '@resort-booking/shared-types';
 import { AuditService } from '../../shared/audit/audit.service';
 import type { AuditActor } from '../../shared/audit/audit.types';
@@ -244,12 +246,50 @@ export class TwoFactorService {
    * Admin reset (lost phone): removes the member's two-factor. The organization is enforced in SQL, so a member
    * of another workspace is "not found".
    */
-  public async resetForMember(organizationId: string, staffUserId: string): Promise<{ hadTwoFactor: boolean }> {
-    const outcome = await this.store.removeForMember(organizationId, staffUserId);
+  public async resetForMember(
+    organizationId: string,
+    staffUserId: string,
+    audit?: (client: PoolClient, outcome: { hadTwoFactor: boolean }) => Promise<void>,
+  ): Promise<{ hadTwoFactor: boolean }> {
+    const outcome = await this.store.removeForMember(organizationId, staffUserId, audit);
     if (outcome === null) {
       throw new NotFoundException({ message: 'Team member not found', code: 'STAFF_NOT_FOUND' });
     }
     return outcome;
+  }
+
+  /**
+   * Proves it is the signed-in person before a risky change (bank details, where guest mail goes): the current password,
+   * and a code or unused recovery code when two-step verification is on. Wrong answers count toward the same limiter as
+   * sign-in and disabling, so this cannot be used to guess a password.
+   */
+  public async reauthenticate(
+    staff: StaffAccount,
+    password: string | undefined,
+    code: string | undefined,
+    context: TwoFactorContext,
+    scope: string,
+  ): Promise<void> {
+    await this.limiter.assertAllowed(staff.id, context.ip);
+    const wantsCode = await this.store.isEnabled(staff.id);
+    if (password === undefined || password === '') {
+      throw new ForbiddenException({
+        message: wantsCode
+          ? 'Enter your current password and a code from your authenticator app to change this.'
+          : 'Enter your current password to change this.',
+        code: wantsCode ? 'REAUTH_REQUIRED_2FA' : 'REAUTH_REQUIRED',
+      });
+    }
+    await this.assertPassword(staff, password, context);
+    if (wantsCode) {
+      if (code === undefined || code.trim() === '') {
+        throw new ForbiddenException({ message: 'Enter a code from your authenticator app to change this.', code: 'REAUTH_REQUIRED_2FA' });
+      }
+      if ((await this.checkSecondFactor(staff.id, code.trim())) === null) {
+        throw await this.wrongCode(staff, context, scope);
+      }
+    }
+    await this.limiter.recordSuccess(staff.id);
   }
 
   // --- Internals ---

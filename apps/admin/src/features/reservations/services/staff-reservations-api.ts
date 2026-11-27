@@ -6,6 +6,7 @@
 
 import type {
   ArrivalStatus,
+  BookingSource,
   ExtraService,
   PropertyBookingConfig,
   RebookQuote,
@@ -158,6 +159,15 @@ export function createStaffBooking(body: StaffCreateBookingRequest): Promise<Sta
  */
 export function markStaffReservationPaid(reservationId: string): Promise<StaffReservation> {
   return mutateStaffApiOk<RawStaffReservation>(`/staff/reservations/${reservationId}/mark-paid`, 'POST', {}).then(
+    withReservationDefaults,
+  );
+}
+
+/**
+ * An admin corrects where a booking came from (within the same group; the API refuses a move across). Audited.
+ */
+export function changeStaffReservationSource(reservationId: string, source: BookingSource): Promise<StaffReservation> {
+  return mutateStaffApiOk<RawStaffReservation>(`/staff/reservations/${encodeURIComponent(reservationId)}/source`, 'PATCH', { source }).then(
     withReservationDefaults,
   );
 }

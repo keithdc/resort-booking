@@ -10,15 +10,16 @@ const BASE: InviteMailInput = {
   inviterName: 'Ada Lovelace',
   organizationName: 'Humphreys',
   role: 'employee',
-  link: 'https://admin.example.com/invite/abc123',
+  link: 'https://admin.example.com/invite#token=abc123',
   expiresAt: new Date('2026-11-29T12:05:00.000Z'),
   isReset: false,
 };
 
 describe('inviteLink', () => {
-  it('matches the admin route /invite/[token] and ignores a trailing slash', () => {
-    expect(inviteLink('https://admin.example.com', 'tok')).toBe('https://admin.example.com/invite/tok');
-    expect(inviteLink('http://localhost:3001/', 'tok')).toBe('http://localhost:3001/invite/tok');
+  it('puts the token after the # (never sent to a server) and ignores a trailing slash', () => {
+    expect(inviteLink('https://admin.example.com', 'tok')).toBe('https://admin.example.com/invite#token=tok');
+    expect(inviteLink('http://localhost:3001/', 'tok')).toBe('http://localhost:3001/invite#token=tok');
+    expect(new URL(inviteLink('https://admin.example.com', 'tok')).pathname).toBe('/invite');
   });
 });
 
@@ -41,12 +42,12 @@ describe('renderInviteMail', () => {
     for (const body of [mail.text, mail.html]) {
       expect(body).toContain('typed by the sender');
       expect(body).toContain('Role: an employee');
-      expect(body).toContain('https://admin.example.com/invite/abc123');
+      expect(body).toContain('https://admin.example.com/invite#token=abc123');
       expect(body).toContain('expires 29 Nov 2026, 12:05 UTC');
       expect(body).toContain('If you did not expect this, you can ignore this email');
       expect(body).toContain('We never ask for your password or a code by email or phone');
     }
-    expect(mail.html).toContain('href="https://admin.example.com/invite/abc123"');
+    expect(mail.html).toContain('href="https://admin.example.com/invite#token=abc123"');
   });
 
   it('says administrator for an admin', () => {

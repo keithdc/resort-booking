@@ -86,7 +86,7 @@ describe('StaffBookingsController', () => {
 
   it('routes a new booking, its quote and the paid tick to the right service with the signed-in staff member', async () => {
     const body = {
-      houseId: 'house', checkIn: '2027-08-01', checkOut: '2027-08-04', guestCount: 2, paymentMethod: 'pay_at_hotel' as const,
+      houseId: 'house', checkIn: '2027-08-01', checkOut: '2027-08-04', guestCount: 2, paymentMethod: 'pay_at_hotel' as const, bookingSource: 'phone_email' as const, channelTotalCents: null,
       bookerName: 'Ada', bookerEmail: 'ada@example.com', bookerPhone: '', guestNote: '',
     };
     creator.quote.mockResolvedValue({ q: 1 });

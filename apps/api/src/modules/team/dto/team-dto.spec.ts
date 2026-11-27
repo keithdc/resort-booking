@@ -11,6 +11,7 @@ import { apiValidationPipeOptions } from '../../../shared/validation/validation-
 import { AcceptInviteDto } from './accept-invite.dto';
 import { AuditQueryDto } from './audit-query.dto';
 import { CreateInviteDto } from './create-invite.dto';
+import { PreviewInviteDto } from './preview-invite.dto';
 import { RegisterDto } from './register.dto';
 import { ResetAccessDto } from './reset-access.dto';
 import { UpdateMemberDto } from './update-member.dto';
@@ -27,6 +28,20 @@ async function run<T extends object>(type: new () => T, payload: object, source:
 
 const accepted = (result: unknown): boolean => !(result instanceof Error);
 const TOKEN = 'd'.repeat(64);
+
+describe('PreviewInviteDto', () => {
+  it('accepts exactly a 64-character hex token and nothing else', async () => {
+    expect(accepted(await run(PreviewInviteDto, { token: TOKEN }))).toBe(true);
+    for (const bad of ['', 'abc', 'g'.repeat(64), 'D'.repeat(64), `${TOKEN}a`, 123]) {
+      expect(accepted(await run(PreviewInviteDto, { token: bad }))).toBe(false);
+    }
+    expect(accepted(await run(PreviewInviteDto, {}))).toBe(false);
+  });
+
+  it('refuses unknown fields', async () => {
+    expect(accepted(await run(PreviewInviteDto, { token: TOKEN, extra: 1 }))).toBe(false);
+  });
+});
 
 describe('RegisterDto', () => {
   const good = { organizationName: 'Humphreys', fullName: 'Ada Lovelace', email: 'ada@example.com', password: 'Correct-Horse-9' };

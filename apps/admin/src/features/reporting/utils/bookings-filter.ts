@@ -4,7 +4,7 @@
  * @dependencies report-labels
  */
 
-import type { StaffRefund, StaffReservation } from '@resort-booking/shared-types';
+import type { BookingSource, StaffRefund, StaffReservation } from '@resort-booking/shared-types';
 import { bookingStatusKey, isUnpaidAtHotel, type BookingFilter } from './report-labels';
 
 /** True when the booking belongs under this filter. */
@@ -21,10 +21,14 @@ export function filterBookings(
   rows: readonly StaffReservation[],
   status: BookingFilter | null,
   search: string,
+  source: BookingSource | null = null,
 ): StaffReservation[] {
   const needle = search.trim().toLowerCase();
   const matching = rows.filter((row: StaffReservation): boolean => {
     if (status !== null && !matchesFilter(row, status)) {
+      return false;
+    }
+    if (source !== null && row.bookingSource !== source) {
       return false;
     }
     if (needle === '') {
@@ -37,6 +41,15 @@ export function filterBookings(
   return status === 'unpaid_at_hotel'
     ? [...matching].sort((a: StaffReservation, b: StaffReservation): number => a.checkIn.localeCompare(b.checkIn) || a.reference.localeCompare(b.reference))
     : matching;
+}
+
+/** How many bookings came from each source (for the source filter chips). */
+export function countBySource(rows: readonly StaffReservation[]): Record<BookingSource, number> {
+  const counts: Record<BookingSource, number> = { website: 0, airbnb: 0, booking_com: 0, other_site: 0, phone_email: 0, walk_in: 0 };
+  for (const row of rows) {
+    counts[row.bookingSource] += 1;
+  }
+  return counts;
 }
 
 /**

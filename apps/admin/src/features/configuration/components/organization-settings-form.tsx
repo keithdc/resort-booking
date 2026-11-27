@@ -16,7 +16,8 @@ import { useState } from 'react';
 import { saveOrganizationSettings } from '@/features/property/services/staff-property-api';
 import { SectionCard } from '@/shared/components/section-card';
 import { ApiRequestError } from '@/shared/services/api-client';
-import { isFormDirty, organizationProblem } from '../utils/form-dirty';
+import { changesSensitiveFields, isFormDirty, organizationProblem } from '../utils/form-dirty';
+import { ConfirmSensitiveChangeDialog } from './confirm-sensitive-change-dialog';
 import { SaveBar } from './save-bar';
 
 interface OrganizationSettingsFormProps {
@@ -35,6 +36,7 @@ export function OrganizationSettingsForm({ initial }: OrganizationSettingsFormPr
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const set = (patch: Partial<OrganizationSettings>): void => {
     setForm((current): OrganizationSettings => ({ ...current, ...patch }));
@@ -45,32 +47,48 @@ export function OrganizationSettingsForm({ initial }: OrganizationSettingsFormPr
   const phoneValid = form.contactPhone === '' || isValidPhone(form.contactPhone);
   const problem = organizationProblem({ emailsValid, phoneValid });
 
+  /** Sends the form. Bank and email changes carry the password (and code) the person just typed; throws on a refusal. */
+  const send = async (proof: { currentPassword: string; twoFactorCode?: string } | null): Promise<void> => {
+    const next = await saveOrganizationSettings({
+      name: form.name,
+      legalName: form.legalName,
+      legalAddress: form.legalAddress,
+      vatNumber: form.vatNumber,
+      iban: form.iban,
+      bic: form.bic,
+      bankAccountName: form.bankAccountName,
+      contactEmail: form.contactEmail,
+      contactPhone: form.contactPhone,
+      ownerName: form.ownerName,
+      bookingEmail: form.bookingEmail,
+      guestReplyEmail: form.guestReplyEmail,
+      ...(proof === null ? {} : proof),
+    });
+    setSaved(next);
+    setForm(next);
+    setNotice(true);
+  };
+
   const onSave = async (): Promise<void> => {
+    if (changesSensitiveFields(saved, form)) {
+      setConfirmOpen(true);
+      return;
+    }
     setPending(true);
     setError(null);
     try {
-      const next = await saveOrganizationSettings({
-        name: form.name,
-        legalName: form.legalName,
-        legalAddress: form.legalAddress,
-        vatNumber: form.vatNumber,
-        iban: form.iban,
-        bic: form.bic,
-        bankAccountName: form.bankAccountName,
-        contactEmail: form.contactEmail,
-        contactPhone: form.contactPhone,
-        ownerName: form.ownerName,
-        bookingEmail: form.bookingEmail,
-        guestReplyEmail: form.guestReplyEmail,
-      });
-      setSaved(next);
-      setForm(next);
-      setNotice(true);
+      await send(null);
     } catch (err: unknown) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not save organization');
     } finally {
       setPending(false);
     }
+  };
+
+  const onConfirmed = async (currentPassword: string, twoFactorCode: string | undefined): Promise<void> => {
+    setError(null);
+    await send({ currentPassword, ...(twoFactorCode === undefined ? {} : { twoFactorCode }) });
+    setConfirmOpen(false);
   };
 
   return (
@@ -155,6 +173,7 @@ export function OrganizationSettingsForm({ initial }: OrganizationSettingsFormPr
         onSave={(): void => void onSave()}
         onDiscard={(): void => setForm(saved)}
       />
+      <ConfirmSensitiveChangeDialog open={confirmOpen} onConfirm={onConfirmed} onClose={(): void => setConfirmOpen(false)} />
       <Snackbar open={notice} autoHideDuration={3000} onClose={(): void => setNotice(false)}>
         <Alert severity="success" onClose={(): void => setNotice(false)}>
           Organization saved

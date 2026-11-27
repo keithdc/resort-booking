@@ -6,6 +6,7 @@
 
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import type { PoolClient } from 'pg';
 import type { TwoFactorResetResult } from '@resort-booking/shared-types';
 import { AuditService } from '../../shared/audit/audit.service';
 import type { AuditActor } from '../../shared/audit/audit.types';
@@ -22,7 +23,7 @@ import { TeamLimiter } from './team-limiter';
 import { inviteLink, renderInviteMail } from './team-mail';
 import { TeamRepository, type InviteRecord } from './team.repository';
 import { inviteIsOpen, isRegistrationOpen, memberChangeAction, type MemberRefusal } from './team.rules';
-import type { InviteEmailStatus, InviteIssued, InvitePreview, MemberChange, RegistrationStatus, TeamMember, TeamOverview } from './team.types';
+import type { InviteEmailStatus, InviteIssued, InvitePreview, MemberChange, RegistrationStatus, TeamInvite, TeamMember, TeamOverview } from './team.types';
 
 const DEFAULT_INVITE_HOURS = 72;
 const HOUR_MS = 60 * 60 * 1000;
@@ -123,21 +124,24 @@ export class TeamService {
       throw this.emailTaken();
     }
     const canManageRefunds = input.role === 'employee' && input.canManageRefunds === true;
-    const issued = await this.issue(actor, { email, fullName, role: input.role, canManageRefunds, staffUserId: null }, input.sendEmail === true);
-    await this.audit.recordBy(auditActor(actor), 'team.invite_created', {
-      targetType: 'staff_invite',
-      targetId: issued.invite.id,
-      metadata: { role: input.role, canManageRefunds, emailed: issued.emailStatus === 'sent' },
-    });
-    return issued;
+    // The audit row is written in the same transaction as the invitation: no link without its row. `emailRequested` says
+    // whether sending the link by email was asked for; whether it arrived is not known yet and is shown to the admin.
+    return this.issue(actor, { email, fullName, role: input.role, canManageRefunds, staffUserId: null }, input.sendEmail === true, (client, invite) =>
+      this.audit.recordInTransaction(client, auditActor(actor), 'team.invite_created', {
+        targetType: 'staff_invite',
+        targetId: invite.id,
+        metadata: { role: input.role, canManageRefunds, emailRequested: input.sendEmail === true },
+      }),
+    );
   }
 
   public async revokeInvite(actor: TeamActor, inviteId: string): Promise<void> {
-    const revoked = await this.team.revokeInvite(actor.staff.organizationId, inviteId);
+    const revoked = await this.team.revokeInvite(actor.staff.organizationId, inviteId, (client) =>
+      this.audit.recordInTransaction(client, auditActor(actor), 'team.invite_revoked', { targetType: 'staff_invite', targetId: inviteId }),
+    );
     if (revoked === null) {
       throw new NotFoundException({ message: 'Invitation not found', code: 'INVITE_NOT_FOUND' });
     }
-    await this.audit.recordBy(auditActor(actor), 'team.invite_revoked', { targetType: 'staff_invite', targetId: inviteId });
   }
 
   /**
@@ -150,7 +154,23 @@ export class TeamService {
     if (change.role === undefined && change.active === undefined && change.canManageRefunds === undefined) {
       throw new BadRequestException({ message: 'Nothing to change', code: 'NOTHING_TO_CHANGE' });
     }
-    const outcome = await this.team.changeMember(actor.staff.organizationId, actor.staff.id, staffId, change);
+    // The audit row(s) are written in the same transaction as the change: no role, refund-access or switch-off change
+    // without its row, and no row for a change that did not happen (docs/13 R6-05).
+    const outcome = await this.team.changeMember(actor.staff.organizationId, actor.staff.id, staffId, change, async (client, done) => {
+      for (const action of memberChangeAction(done.before, done.after)) {
+        await this.audit.recordInTransaction(client, auditActor(actor), action, {
+          targetType: 'staff_user',
+          targetId: staffId,
+          metadata: {
+            role: done.after.role,
+            canManageRefunds: done.after.canManageRefunds,
+            memberName: done.memberName,
+            changedByName: actor.staff.fullName,
+            changedByRole: actor.staff.role,
+          },
+        });
+      }
+    });
     if (outcome.kind === 'refused') {
       throw this.refusal(outcome.code);
     }
@@ -158,19 +178,6 @@ export class TeamService {
     const updated = members.find((member): boolean => member.id === staffId);
     if (updated === undefined) {
       throw new NotFoundException({ message: 'Team member not found', code: 'STAFF_NOT_FOUND' });
-    }
-    for (const action of memberChangeAction(outcome.before, outcome.after)) {
-      await this.audit.recordBy(auditActor(actor), action, {
-        targetType: 'staff_user',
-        targetId: staffId,
-        metadata: {
-          role: outcome.after.role,
-          canManageRefunds: outcome.after.canManageRefunds,
-          memberName: updated.fullName,
-          changedByName: actor.staff.fullName,
-          changedByRole: actor.staff.role,
-        },
-      });
     }
     return updated;
   }
@@ -191,17 +198,18 @@ export class TeamService {
       throw new ConflictException({ message: 'Switch this person on before resetting their access', code: 'MEMBER_INACTIVE' });
     }
     await this.identity.logoutAll(staffId);
-    const issued = await this.issue(
+    // The audit row is written in the same transaction as the one-time link (see createInvite for `emailRequested`).
+    return this.issue(
       actor,
       { email: member.email, fullName: member.fullName, role: member.role, canManageRefunds: false, staffUserId: staffId },
       options.sendEmail === true,
+      (client, invite) =>
+        this.audit.recordInTransaction(client, auditActor(actor), 'team.access_reset', {
+          targetType: 'staff_user',
+          targetId: staffId,
+          metadata: { inviteId: invite.id, emailRequested: options.sendEmail === true },
+        }),
     );
-    await this.audit.recordBy(auditActor(actor), 'team.access_reset', {
-      targetType: 'staff_user',
-      targetId: staffId,
-      metadata: { inviteId: issued.invite.id, emailed: issued.emailStatus === 'sent' },
-    });
-    return issued;
   }
 
   /**
@@ -212,13 +220,14 @@ export class TeamService {
     if (staffId === actor.staff.id) {
       throw new BadRequestException({ message: 'Use Account to turn off your own two-factor', code: 'USE_TWO_FACTOR_DISABLE' });
     }
-    const outcome = await this.identity.resetTwoFactor(actor.staff.organizationId, staffId);
-    await this.audit.recordBy(auditActor(actor), 'team.two_factor_reset', {
-      targetType: 'staff_user',
-      targetId: staffId,
-      metadata: { hadTwoFactor: outcome.hadTwoFactor },
-    });
-    return outcome;
+    // The audit row is written in the same transaction as the removal: no two-factor wiped without its row (docs/13 R6-05).
+    return this.identity.resetTwoFactor(actor.staff.organizationId, staffId, (client, done) =>
+      this.audit.recordInTransaction(client, auditActor(actor), 'team.two_factor_reset', {
+        targetType: 'staff_user',
+        targetId: staffId,
+        metadata: { hadTwoFactor: done.hadTwoFactor },
+      }),
+    );
   }
 
   /**
@@ -274,6 +283,7 @@ export class TeamService {
     actor: TeamActor,
     input: { email: string; fullName: string; role: StaffRole; canManageRefunds: boolean; staffUserId: string | null },
     sendEmail: boolean,
+    audit?: (client: PoolClient, invite: TeamInvite) => Promise<void>,
   ): Promise<InviteIssued> {
     const token = createSessionToken();
     const now = new Date();
@@ -289,7 +299,7 @@ export class TeamService {
       expiresAt,
       createdBy: actor.staff.id,
       now,
-    });
+    }, audit);
     const issued: InviteIssued = { invite, inviteToken: token, expiresAt: expiresAt.toISOString() };
     if (!sendEmail) {
       return issued;

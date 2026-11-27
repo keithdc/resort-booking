@@ -62,3 +62,13 @@ describe('MARK_PAID_NEEDS_ACCESS_MESSAGE', () => {
     expect(MARK_PAID_NEEDS_ACCESS_MESSAGE).toContain('refund access on the Team page');
   });
 });
+
+describe('a booking made on another site', () => {
+  it('is quiet in lists and says "Paid on the other site" on the booking card; it is never markable as paid', () => {
+    const stay = { paymentMethod: 'paid_by_channel' as const, paymentStatus: 'paid' as const };
+
+    expect(paymentChipStyle(stay)).toBeNull();
+    expect(paymentChipStyle(stay, true)).toEqual({ label: 'Paid on the other site', tone: 'success' });
+    expect(paymentMethodText('paid_by_channel')).toBe('Paid on the other website');
+  });
+});

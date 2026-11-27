@@ -19,9 +19,9 @@ export function registerWorkspace(body: RegisterRequest): Promise<SignedInAnswer
   return requestPublicApiOk<SignedInAnswer>('/staff/register', 'POST', body);
 }
 
-/** GET /staff/invites/:token/preview (404 for an unknown, used, revoked or expired link). */
+/** POST /staff/invites/preview with the token in the body (404 for an unknown, used, revoked or expired link). */
 export function fetchInvitePreview(token: string): Promise<InvitePreview> {
-  return requestPublicApiOk<InvitePreview>(`/staff/invites/${encodeURIComponent(token)}/preview`, 'GET');
+  return requestPublicApiOk<InvitePreview>('/staff/invites/preview', 'POST', { token });
 }
 
 /** POST /staff/invites/accept: chooses the password and the server sets the session cookie. */

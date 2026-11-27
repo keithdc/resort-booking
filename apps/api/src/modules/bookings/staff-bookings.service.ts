@@ -6,6 +6,7 @@
 
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import type {
+  BookingSource,
   RebookQuote,
   StaffCancelPreview,
   StaffCancelReason,
@@ -17,11 +18,12 @@ import type {
   StaffRefund,
   StaffReservation,
 } from '@resort-booking/shared-types';
+import { AuditService } from '../../shared/audit/audit.service';
 import { hasMoneyAccess, type StaffAccount } from '../../shared/roles/staff-role';
-import { referenceFor } from '../inventory/inventory.rules';
+import { isChannelSource, referenceFor } from '../inventory/inventory.rules';
 import { ReservationsService } from '../reservations/reservations.service';
 import { BookingReader } from './booking-reader';
-import { BookingsRepository, type BookingRow } from './bookings.repository';
+import { BookingsRepository, type AuditInTransaction, type BookingRow } from './bookings.repository';
 import {
   calculateRefund,
   isCheckInTodayOrPast,
@@ -29,11 +31,13 @@ import {
   SAME_DAY_NO_REFUND_LABEL,
   SAME_DAY_NO_REFUND_NOTICE,
 } from './bookings.rules';
-import { BookingsService, type CancelInput } from './bookings.service';
+import { BookingsService, type CancelAudit, type CancelInput } from './bookings.service';
 import { RebookService } from './rebook.service';
+import { cancelAuditMetadata, markPaidAuditMetadata, sourceChangedAuditMetadata } from './staff-audit-details';
 import { StaffRefundsRepository } from './staff-refunds.repository';
 
 const BOOKING_NOT_FOUND = 'Booking not found';
+const CHANNEL_CANCEL_NOTICE = 'This booking was made on another website. Refunds for it are handled on that website, so cancelling here only frees the dates and records no refund.';
 const PAYMENT_PENDING_CANCEL_NOTICE = 'Nothing has been paid for this booking yet (pay at hotel), so there is nothing to refund.';
 const MONEY_ACCESS_MESSAGE = 'You need refund access for this. Ask an admin to handle it or to turn on refund access for you.';
 
@@ -63,6 +67,7 @@ export class StaffBookingsService {
     private readonly reader: BookingReader,
     private readonly reservations: ReservationsService,
     private readonly refunds: StaffRefundsRepository,
+    private readonly audit: AuditService,
   ) {}
 
   /**
@@ -81,6 +86,18 @@ export class StaffBookingsService {
     const base = { reservationId: row.id, reference: referenceFor(row.id), paidCents, currencyCode };
     if (row.status === 'cancelled') {
       return { ...base, canCancel: false, blockedReason: 'This booking is already cancelled.', notice: null, policyRefund: null };
+    }
+
+    if (row.payment_method === 'paid_by_channel') {
+      // Made on another site: that site holds the money, so no refund is made here whoever cancels.
+      const days = calculateRefund(0, row.check_in, this.reader.todayFor(row), []).daysBeforeCheckIn;
+      return {
+        ...base,
+        canCancel: true,
+        blockedReason: null,
+        notice: CHANNEL_CANCEL_NOTICE,
+        policyRefund: { paidCents: 0, refundPercent: 0, refundCents: 0, currencyCode, daysBeforeCheckIn: days },
+      };
     }
 
     if (row.payment_status === 'pending') {
@@ -135,7 +152,19 @@ export class StaffBookingsService {
     this.requireMoneyAccessForCancel(staff, request);
     const row = await this.requireConfirmed(staff, id);
     const input = await this.cancelInput(staff, row, request);
-    const outcome = await this.bookingsService.cancelRow(row, input);
+    // The audit row is written in the cancel's own transaction: no cancelled booking without its row, and no row without it.
+    const audit: CancelAudit = (client, { refundId, plan }) =>
+      this.audit.recordInTransaction(client, { organizationId: staff.organizationId, staffUserId: staff.id }, 'booking.cancelled_by_staff', {
+        targetType: 'booking',
+        targetId: id,
+        metadata: cancelAuditMetadata(
+          staff,
+          id,
+          request.reason,
+          refundId === null ? null : { amountCents: plan.amountCents, percent: plan.percent, reason: plan.reason, status: plan.status, currencyCode: plan.currencyCode },
+        ),
+      });
+    const outcome = await this.bookingsService.cancelRow(row, input, audit);
     if (!outcome.cancelledNow) {
       throw this.alreadyCancelled();
     }
@@ -190,10 +219,51 @@ export class StaffBookingsService {
     if (row.payment_status === 'paid') {
       throw this.alreadyPaid();
     }
-    if (!(await this.bookings.markPaid(id, staff.id, staff.organizationId))) {
+    // The audit row is written in the same transaction as the update: no tick without its row, no row without its tick.
+    const audit: AuditInTransaction = (client) =>
+      this.audit.recordInTransaction(client, { organizationId: staff.organizationId, staffUserId: staff.id }, 'booking.marked_paid', {
+        targetType: 'booking',
+        targetId: id,
+        metadata: markPaidAuditMetadata(staff, row),
+      });
+    if (!(await this.bookings.markPaid(id, staff.id, staff.organizationId, audit))) {
       // Lost a race: someone marked it paid, or it was cancelled, between the read and the write.
       const latest = await this.bookings.findById(id);
       throw latest?.status === 'cancelled' ? this.alreadyCancelled() : this.alreadyPaid();
+    }
+    return this.reservations.getReservation(id);
+  }
+
+  /**
+   * An admin corrects where a booking came from (it was typed wrong). Only within the same group: the property's own
+   * bookings among themselves, or channel bookings among themselves, because a move across would make the payment record
+   * wrong. Audited with who, the old and the new source, in the same transaction.
+   */
+  public async changeSource(staff: StaffAccount, id: string, to: BookingSource): Promise<StaffReservation> {
+    if (staff.role !== 'admin') {
+      throw new ForbiddenException({ message: 'Only an admin can change where a booking came from.', code: 'FORBIDDEN_ROLE' });
+    }
+    const current = await this.bookings.sourceOf(staff.organizationId, id);
+    if (current === null) {
+      throw this.notFound();
+    }
+    if (current === to) {
+      throw new ConflictException({ message: 'The booking already has that source.', code: 'NO_CHANGE' });
+    }
+    if (isChannelSource(current) !== isChannelSource(to)) {
+      throw new ConflictException({
+        message: 'A booking made on another site cannot become one of your own (or the other way round): its payment was handled on that site. Cancel it and add it again instead.',
+        code: 'SOURCE_GROUP_CHANGE',
+      });
+    }
+    const audit: AuditInTransaction = (client) =>
+      this.audit.recordInTransaction(client, { organizationId: staff.organizationId, staffUserId: staff.id }, 'booking.source_changed', {
+        targetType: 'booking',
+        targetId: id,
+        metadata: sourceChangedAuditMetadata(staff, id, current, to),
+      });
+    if (!(await this.bookings.changeSource(staff.organizationId, id, current, to, audit))) {
+      throw new ConflictException({ message: 'This booking was just changed by someone else. Reload it and try again.', code: 'BOOKING_CHANGED' });
     }
     return this.reservations.getReservation(id);
   }
@@ -241,6 +311,10 @@ export class StaffBookingsService {
     const note = request.note.trim();
     const common = { reasonCode: request.reason, initiatedBy: 'staff' as const, staffId: staff.id, note, label: REASON_LABELS[request.reason] };
 
+    if (row.payment_method === 'paid_by_channel') {
+      // Another site collected the money: no refund of any size, and no refund row (docs/13 section 12).
+      return { ...common, refundCents: 0, percent: 0, label: 'Staff cancelled a booking made on another site: refunds are handled there', skipRefundRow: true };
+    }
     if (row.payment_status === 'pending') {
       // Nothing was paid (pay at hotel), so there is nothing to give back; the percent says so instead of quoting the ladder.
       if (request.refundCents !== null && request.refundCents !== undefined && request.refundCents > 0) {

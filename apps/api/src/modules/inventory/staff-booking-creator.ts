@@ -12,9 +12,11 @@ import type {
   StaffCreateBookingRequest,
   StaffReservation,
 } from '@resort-booking/shared-types';
+import { AuditService } from '../../shared/audit/audit.service';
 import { LIMITS } from '../../shared/validation/limits';
 import { DatabaseService } from '../../shared/database/database.service';
 import type { StaffAccount } from '../../shared/roles/staff-role';
+import { createBookingAuditMetadata } from '../bookings/staff-audit-details';
 import { DiscountsService } from '../discounts/discounts.service';
 import { priceExtras, type PricedExtras } from '../extras/booking-extras';
 import { ExtrasRepository } from '../extras/extras.repository';
@@ -24,6 +26,7 @@ import { ReservationsService } from '../reservations/reservations.service';
 import { InventoryRepository } from './inventory.repository';
 import {
   daysFromToday,
+  isChannelSource,
   isCheckInBeforeToday,
   isoDateInTimeZone,
   isPgUniqueViolation,
@@ -57,6 +60,7 @@ export class StaffBookingCreator {
     private readonly extras: ExtrasRepository,
     private readonly bookingExtras: ReservationExtrasRepository,
     private readonly limiter: StaffBookingLimiter,
+    private readonly audit: AuditService,
   ) {}
 
   /**
@@ -98,10 +102,17 @@ export class StaffBookingCreator {
    */
   public async create(staff: StaffAccount, request: StaffCreateBookingRequest): Promise<StaffReservation> {
     await this.limiter.checkCreate(staff.id);
-    const quote = await this.priceBooking(staff, request);
-    if (!quote.available) {
+    const channel = this.assertSourceRules(request);
+    // A channel booking has no extras and is not priced from our rates (the other site collected the money): the
+    // quote is used only to check that the dates are free and the stay and dates are acceptable.
+    const priced = await this.priceBooking(staff, channel ? { ...request, extras: [] } : request);
+    if (!priced.available) {
       throw this.datesUnavailable();
     }
+    const channelTotal = channel ? (request.channelTotalCents ?? 0) : 0;
+    const quote: StaffBookingQuote = channel
+      ? { ...priced, totalCents: channelTotal, subtotalCents: channelTotal, discountCents: 0, discounts: [], lines: [], extras: [], extrasCents: 0, promoCode: null }
+      : priced;
     const house = await this.houses.getHouseById(request.houseId);
     if (house === null) {
       throw new NotFoundException({ message: 'Stay not found', code: 'HOUSE_NOT_FOUND' });
@@ -137,6 +148,8 @@ export class StaffBookingCreator {
             priceSnapshot: JSON.stringify({ ...snapshotOf({ ...quote, totalCents: stayTotalCents }), extrasCents: quote.extrasCents }),
             policySnapshot: JSON.stringify(policy),
             createdByStaffId: staff.id,
+            bookingSource: request.bookingSource,
+            paymentMethod: channel ? 'paid_by_channel' : 'pay_at_hotel',
           });
           await this.bookingExtras.insertAll(client, {
             organizationId: house.organizationId,
@@ -146,6 +159,24 @@ export class StaffBookingCreator {
           });
           // Discounts count toward their use limits once a booking exists, whoever made it.
           await this.discounts.recordRedemptions(client, bookingId, quote.discounts);
+          // The audit row is part of the same transaction: no booking without its row, no row for a booking that did not happen.
+          await this.audit.recordInTransaction(client, { organizationId: staff.organizationId, staffUserId: staff.id }, 'booking.created_by_staff', {
+            targetType: 'booking',
+            targetId: bookingId,
+            metadata: createBookingAuditMetadata(staff, {
+              id: bookingId,
+              houseId: house.id,
+              checkIn: request.checkIn,
+              checkOut: request.checkOut,
+              guestCount: request.guestCount,
+              totalCents: quote.totalCents,
+              currencyCode: quote.currencyCode,
+              extras: quote.extras,
+              bookingSource: request.bookingSource,
+              paymentMethod: channel ? 'paid_by_channel' : 'pay_at_hotel',
+              paymentStatus: channel ? 'paid' : 'pending',
+            }),
+          });
           await client.query('COMMIT');
           return bookingId;
         } catch (error: unknown) {
@@ -160,6 +191,35 @@ export class StaffBookingCreator {
       }
       throw error;
     }
+  }
+
+  /**
+   * The source decides how the booking is paid and priced. A channel source (Airbnb, Booking.com, another site) needs
+   * `paid_by_channel`, the total the guest paid there and no extras; a booking of the property's own (our website,
+   * phone or email, walk-in) is `pay_at_hotel` with no typed total. Anything else is a plain 400. Returns true for a channel booking.
+   */
+  private assertSourceRules(request: StaffCreateBookingRequest): boolean {
+    const channel = isChannelSource(request.bookingSource);
+    const bad = (message: string, code: string): BadRequestException => new BadRequestException({ message, code });
+    if (channel) {
+      if (request.paymentMethod !== 'paid_by_channel') {
+        throw bad('A booking from another site is recorded as paid on that site.', 'SOURCE_PAYMENT_MISMATCH');
+      }
+      if (request.channelTotalCents === null || request.channelTotalCents === undefined || request.channelTotalCents < 1) {
+        throw bad('Enter the total the guest paid on that site.', 'CHANNEL_TOTAL_REQUIRED');
+      }
+      if ((request.extras ?? []).length > 0) {
+        throw bad('Extras are not added to a booking made on another site.', 'CHANNEL_NO_EXTRAS');
+      }
+      return true;
+    }
+    if (request.paymentMethod !== 'pay_at_hotel') {
+      throw bad('A booking of your own is paid at the property.', 'SOURCE_PAYMENT_MISMATCH');
+    }
+    if (request.channelTotalCents !== null && request.channelTotalCents !== undefined) {
+      throw bad('A total typed by hand is only for a booking made on another site.', 'CHANNEL_TOTAL_NOT_ALLOWED');
+    }
+    return false;
   }
 
   /**

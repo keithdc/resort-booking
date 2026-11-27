@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { staffReservation } from '../../../test/fixtures';
+import { staffReport, staffReservation } from '../../../test/fixtures';
 import { withReportDefaults, withReservationDefaults, type RawStaffReservation } from './reservation-defaults';
 
 /** What an older API sends: a reservation without any of the newer fields. */
@@ -154,5 +154,18 @@ describe('withReportDefaults', () => {
       unpaidHoldCount: 2, refundsToPayCount: 1, refundsToPayCents: 500, arrivalsTodayCount: 1, arrivalsNext7DaysCount: 3,
       unpaidAtHotelCount: 0, unpaidAtHotelCents: 0, unpaidAtHotelArrivalsNext7DaysCount: 0, unpaidAtHotelPastCount: 0,
     });
+  });
+});
+
+describe('the booking source', () => {
+  it('is the website for a booking from an API that does not send it, and kept when it does', () => {
+    const { bookingSource: _dropped, ...older } = staffReservation();
+    expect(withReservationDefaults(older as never).bookingSource).toBe('website');
+    expect(withReservationDefaults(staffReservation({ bookingSource: 'airbnb' })).bookingSource).toBe('airbnb');
+  });
+
+  it('is an empty list in a report from an older API', () => {
+    const { bookingSources: _dropped, ...older } = staffReport();
+    expect(withReportDefaults(older as never).bookingSources).toEqual([]);
   });
 });

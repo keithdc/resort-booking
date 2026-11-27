@@ -6,6 +6,8 @@
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
+import type { PoolClient } from 'pg';
+import { runWithRequestContext } from '../http/request-context';
 import { AuditRepository, type AuditQuery } from './audit.repository';
 import { AuditService } from './audit.service';
 import type { AuditEntry, AuditRecord } from './audit.types';
@@ -30,6 +32,7 @@ function record(): AuditRecord {
 
 describe('AuditService', () => {
   const insert = jest.fn<Promise<void>, [AuditEntry]>();
+  const insertWith = jest.fn<Promise<void>, [PoolClient, AuditEntry]>();
   const page = jest.fn<Promise<{ records: AuditRecord[]; last: { createdAt: string; id: string } | null; hasMore: boolean }>, [AuditQuery]>();
   const errors: string[] = [];
   let service: AuditService;
@@ -41,10 +44,11 @@ describe('AuditService', () => {
       errors.push(String(args[0]));
     });
     insert.mockResolvedValue(undefined);
+    insertWith.mockResolvedValue(undefined);
     const moduleRef = await Test.createTestingModule({
       providers: [
         AuditService,
-        { provide: AuditRepository, useValue: { insert, page } },
+        { provide: AuditRepository, useValue: { insert, insertWith, page } },
         { provide: ConfigService, useValue: { get: (name: string): string | undefined => (name === 'IP_HASH_SALT' ? 'pepper' : undefined) } },
       ],
     }).compile();
@@ -53,6 +57,37 @@ describe('AuditService', () => {
 
   afterEach(() => {
     jest.restoreAllMocks();
+  });
+
+  describe('recordInTransaction', () => {
+    const client = Object.create(null) as PoolClient;
+
+    it('writes on the caller\'s transaction client, with the request\'s network (hashed) and id', async () => {
+      await runWithRequestContext({ ip: '203.0.113.9', requestId: 'req-77' }, () =>
+        service.recordInTransaction(client, { organizationId: ORG, staffUserId: 's1' }, 'booking.marked_paid', { targetType: 'booking', targetId: 'b1', metadata: { paidCents: 100 } }),
+      );
+
+      expect(insertWith).toHaveBeenCalledTimes(1);
+      const [usedClient, entry] = insertWith.mock.calls[0] ?? [];
+      expect(usedClient).toBe(client);
+      expect(entry).toMatchObject({ organizationId: ORG, staffUserId: 's1', action: 'booking.marked_paid', targetType: 'booking', targetId: 'b1', requestId: 'req-77' });
+      expect(entry?.ipHash).toMatch(/^[0-9a-f]+$/);
+      expect(JSON.stringify(entry)).not.toContain('203.0.113.9');
+      expect(insert).not.toHaveBeenCalled();
+    });
+
+    it('works outside a request: no network and no request id', async () => {
+      await service.recordInTransaction(client, { organizationId: ORG, staffUserId: 's1' }, 'team.role_changed');
+
+      expect(insertWith.mock.calls[0]?.[1]).toMatchObject({ ipHash: null, requestId: null });
+    });
+
+    it('THROWS when the row cannot be written, so the caller\'s transaction rolls back (unlike record)', async () => {
+      insertWith.mockRejectedValue(new Error('disk full'));
+
+      await expect(service.recordInTransaction(client, { organizationId: ORG, staffUserId: 's1' }, 'booking.marked_paid')).rejects.toThrow('disk full');
+      expect(errors).toEqual([]);
+    });
   });
 
   describe('record', () => {

@@ -25,6 +25,9 @@ export function paymentChipStyle(stay: PaymentFields, showPaid = false): Payment
   if (stay.paymentMethod === 'pay_at_hotel') {
     return { label: 'Paid at hotel', tone: 'success' };
   }
+  if (stay.paymentMethod === 'paid_by_channel') {
+    return showPaid ? { label: 'Paid on the other site', tone: 'success' } : null;
+  }
   return showPaid ? { label: 'Paid', tone: 'success' } : null;
 }
 
@@ -38,6 +41,9 @@ export function paymentMethodText(method: StaffPaymentMethod | null): string {
   }
   if (method === 'pay_at_hotel') {
     return 'Pay at hotel';
+  }
+  if (method === 'paid_by_channel') {
+    return 'Paid on the other website';
   }
   return 'Not recorded';
 }

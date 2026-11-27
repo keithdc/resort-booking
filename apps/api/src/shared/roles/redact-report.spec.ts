@@ -23,6 +23,7 @@ function booking(): StaffReservation {
     guestNote: '',
     paymentMethod: 'card',
     paymentStatus: 'paid',
+    bookingSource: 'website',
     paidAt: null,
     createdByName: null, notesCount: 0, lastNoteAt: null,
     status: 'confirmed',
@@ -106,6 +107,10 @@ function report(): StaffReport {
     ],
     daily: [{ date: '2026-12-01', revenueCents: 32000, occupiedNights: 1, stayCount: 1, pendingCount: 0, cancelledCount: 0 }],
     paymentMethods: [{ paymentMethod: 'card', reservationCount: 4, revenueCents: 128000 }],
+    bookingSources: [
+      { source: 'website', reservationCount: 3, occupiedNights: 9, revenueCents: 96000, sharePercent: 75 },
+      { source: 'airbnb', reservationCount: 1, occupiedNights: 3, revenueCents: 32000, sharePercent: 25 },
+    ],
     stays: [row],
     grossRevenueCents: 136000,
     refundedCents: 8000,
@@ -155,6 +160,15 @@ describe('redactReportForEmployee', () => {
 
     expect(moneyValues(redacted)).toEqual([]);
     expect(redacted.refunds).toEqual([]);
+  });
+
+  it('keeps where the bookings came from (counts, nights, shares) but not what they are worth', () => {
+    const redacted = redactReportForEmployee(report());
+
+    expect(redacted.bookingSources).toEqual([
+      { source: 'website', reservationCount: 3, occupiedNights: 9, revenueCents: 0, sharePercent: 75 },
+      { source: 'airbnb', reservationCount: 1, occupiedNights: 3, revenueCents: 0, sharePercent: 25 },
+    ]);
   });
 
   it('keeps everything about activity: nights, occupancy, counts, arrivals, names', () => {

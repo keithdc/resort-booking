@@ -10,6 +10,7 @@ import type { RefundStatus, StaffRefund } from '@resort-booking/shared-types';
 import { DatabaseService } from '../../shared/database/database.service';
 import { mapStaffRefund, STAFF_REFUND_SELECT, type StaffRefundRow } from '../reservations/staff-history';
 import { parseRefundablePayments, type RefundablePayment } from './bookings.rules';
+import type { AuditInTransaction } from './bookings.repository';
 
 /** The bits of a refund staff actions need to decide and to act. */
 export interface RefundActionRow {
@@ -249,17 +250,34 @@ export class StaffRefundsRepository {
    * Marks a pending or failed refund as paid by hand, with who and how. Refused (`busy`) while a provider call for it
    * may still be in flight (live lease): the money could go out twice. `not_open` when it is already paid.
    */
-  public async markManualPaid(refundId: string, staffId: string, note: string, leaseSeconds: number): Promise<ManualPaidOutcome> {
-    const result = await this.database.query(
-      `
+  public async markManualPaid(
+    refundId: string,
+    staffId: string,
+    note: string,
+    leaseSeconds: number,
+    audit?: AuditInTransaction,
+  ): Promise<ManualPaidOutcome> {
+    const sql = `
       UPDATE refunds
       SET status = 'succeeded', provider = 'manual', failure_reason = NULL, processing_started_at = NULL,
         resolution_note = $3, resolved_by_staff_id = $4, resolved_at = now(), updated_at = now()
       WHERE id = $1 AND status IN ('pending', 'failed') AND ${STALE_LEASE}
-      `,
-      [refundId, leaseSeconds, note, staffId],
-    );
-    if ((result.rowCount ?? 0) > 0) {
+      `;
+    const params = [refundId, leaseSeconds, note, staffId];
+    let paid: boolean;
+    if (audit === undefined) {
+      paid = ((await this.database.query(sql, params)).rowCount ?? 0) > 0;
+    } else {
+      // The audit row is saved in the same transaction as the update: both happen or neither does (docs/13 R6-05).
+      paid = await this.database.withTransaction(async (client): Promise<boolean> => {
+        const updated = ((await client.query(sql, params)).rowCount ?? 0) > 0;
+        if (updated) {
+          await audit(client);
+        }
+        return updated;
+      });
+    }
+    if (paid) {
       return 'paid';
     }
     const current = await this.findForAction(refundId);

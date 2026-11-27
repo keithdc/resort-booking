@@ -6,11 +6,13 @@
 
 'use client';
 
-import type { ExtraService, HouseSummary, PropertySummary, StaffBookingQuote, StaffReservation } from '@resort-booking/shared-types';
+import type { BookingSource, ExtraService, HouseSummary, PropertySummary, StaffBookingQuote, StaffReservation } from '@resort-booking/shared-types';
 import { isValidEmail, isValidPhone } from '@resort-booking/ui/contact';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fetchStaffHouses } from '@/features/property/services/staff-property-api';
 import { ApiRequestError } from '@/shared/services/api-client';
+import { isChannelSource } from '@/shared/utils/booking-source';
+import { parseEurosToCents } from '@/shared/utils/money';
 import { createStaffBooking, fetchStaffBookingExtras, quoteStaffBooking } from '../services/staff-reservations-api';
 import { todayLocalIso } from '../utils/dates';
 import { extraChoices, NEW_BOOKING_MAX_EXTRA_QUANTITY, NEW_BOOKING_MAX_NOTE, stayFromDraft, stayProblem } from '../utils/new-booking';
@@ -41,6 +43,14 @@ export interface NewBookingState {
   email: string;
   phone: string;
   note: string;
+  /** Where the guest booked. A booking from Airbnb, Booking.com or another site was paid there. */
+  bookingSource: BookingSource;
+  /** True for a booking made on another site: the price is typed by hand and there are no extras. */
+  isChannel: boolean;
+  /** What the guest paid on that site, as typed (euros). */
+  channelTotal: string;
+  /** The typed total in cents, or null while it is empty or not a valid amount. */
+  channelTotalCents: number | null;
   /** The extras the chosen property offers guests (empty while loading or when it has none). */
   extras: ExtraService[];
   /** How many of each offered extra are ticked, by extra id (absent or 0: not chosen). */
@@ -65,6 +75,8 @@ export interface NewBookingState {
   setEmail: (email: string) => void;
   setPhone: (phone: string) => void;
   setNote: (note: string) => void;
+  setBookingSource: (source: BookingSource) => void;
+  setChannelTotal: (value: string) => void;
   /** Ticks an extra (quantity 1 to 20) or unticks it (0). */
   setExtraQuantity: (extraId: string, quantity: number) => void;
   save: () => Promise<void>;
@@ -88,6 +100,8 @@ export function useNewBooking({ open, properties, defaultPropertyId, defaultDate
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [note, setNote] = useState('');
+  const [bookingSource, setBookingSourceState] = useState<BookingSource>('phone_email');
+  const [channelTotal, setChannelTotalState] = useState('');
   const [extras, setExtras] = useState<ExtraService[]>([]);
   const [extraQuantities, setExtraQuantities] = useState<Record<string, number>>({});
   const [quote, setQuote] = useState<StaffBookingQuote | null>(null);
@@ -119,6 +133,8 @@ export function useNewBooking({ open, properties, defaultPropertyId, defaultDate
     setEmail('');
     setPhone('');
     setNote('');
+    setBookingSourceState('phone_email');
+    setChannelTotalState('');
     setExtras([]);
     setExtraQuantities({});
     setQuote(null);
@@ -186,7 +202,13 @@ export function useNewBooking({ open, properties, defaultPropertyId, defaultDate
   const draft = useMemo(() => ({ houseId, checkIn, nights, guests }), [houseId, checkIn, nights, guests]);
   const stay = useMemo(() => stayFromDraft(draft, house, today), [draft, house, today]);
   const problem = stayProblem(draft, house, today);
-  const choices = useMemo(() => extraChoices(extraQuantities, extras), [extraQuantities, extras]);
+  const isChannel = isChannelSource(bookingSource);
+  const channelTotalCents = useMemo((): number | null => {
+    const cents = parseEurosToCents(channelTotal);
+    return cents !== null && cents >= 1 ? cents : null;
+  }, [channelTotal]);
+  // A booking made on another site has no extras (the other site sold it as it is).
+  const choices = useMemo(() => (isChannel ? [] : extraChoices(extraQuantities, extras)), [isChannel, extraQuantities, extras]);
 
   // The live price.
   useEffect((): (() => void) => {
@@ -225,11 +247,20 @@ export function useNewBooking({ open, properties, defaultPropertyId, defaultDate
   }, [open, stay, choices]);
 
   const contactReady = name.trim().length > 0 && isValidEmail(email.trim()) && (phone === '' || isValidPhone(phone)) && note.length <= NEW_BOOKING_MAX_NOTE;
-  const canSave = stay !== null && quote !== null && quote.available && !quoting && contactReady && !saving;
+  const canSave = stay !== null && quote !== null && quote.available && !quoting && contactReady && !saving && (!isChannel || channelTotalCents !== null);
 
   const forget = useCallback((): void => {
     setError(null);
   }, []);
+
+  const setBookingSource = useCallback((source: BookingSource): void => {
+    setBookingSourceState(source);
+    forget();
+  }, [forget]);
+  const setChannelTotal = useCallback((value: string): void => {
+    setChannelTotalState(value);
+    forget();
+  }, [forget]);
 
   const setPropertyId = useCallback((id: string): void => {
     setPropertyIdState(id);
@@ -270,7 +301,9 @@ export function useNewBooking({ open, properties, defaultPropertyId, defaultDate
       const booking = await createStaffBooking({
         ...stay,
         ...(choices.length === 0 ? {} : { extras: choices }),
-        paymentMethod: 'pay_at_hotel',
+        paymentMethod: isChannel ? 'paid_by_channel' : 'pay_at_hotel',
+        bookingSource,
+        channelTotalCents: isChannel ? channelTotalCents : null,
         bookerName: name.trim(),
         bookerEmail: email.trim(),
         bookerPhone: phone,
@@ -287,7 +320,7 @@ export function useNewBooking({ open, properties, defaultPropertyId, defaultDate
       setSaving(false);
       savingNow.current = false;
     }
-  }, [canSave, choices, email, name, note, onCreated, phone, stay]);
+  }, [bookingSource, canSave, channelTotalCents, choices, email, isChannel, name, note, onCreated, phone, stay]);
 
   return {
     propertyId,
@@ -302,6 +335,10 @@ export function useNewBooking({ open, properties, defaultPropertyId, defaultDate
     email,
     phone,
     note,
+    bookingSource,
+    isChannel,
+    channelTotal,
+    channelTotalCents,
     extras,
     extraQuantities,
     quote,
@@ -323,6 +360,8 @@ export function useNewBooking({ open, properties, defaultPropertyId, defaultDate
     setEmail,
     setPhone,
     setNote,
+    setBookingSource,
+    setChannelTotal,
     setExtraQuantity,
     save,
   };

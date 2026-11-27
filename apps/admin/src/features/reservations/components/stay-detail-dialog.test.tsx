@@ -5,6 +5,7 @@
  */
 
 import type {
+  BookingSource,
   ArrivalStatus,
   RebookQuote,
   StaffBookingNote,
@@ -33,11 +34,12 @@ const api = vi.hoisted(() => ({
   fetchStaffBookingNotes: vi.fn<(id: string) => Promise<StaffBookingNote[]>>(),
   addStaffBookingNote: vi.fn<(id: string, body: string) => Promise<StaffBookingNote>>(),
   removeStaffBookingNote: vi.fn<(id: string, noteId: string) => Promise<void>>(),
+  changeStaffReservationSource: vi.fn<(id: string, source: BookingSource) => Promise<StaffReservation>>(),
 }));
 
-const role = vi.hoisted(() => ({ canManageRefunds: true }));
+const role = vi.hoisted(() => ({ canManageRefunds: true, isAdmin: true }));
 
-vi.mock('@/shared/hooks/use-staff-role', () => ({ useCanManageRefunds: (): boolean => role.canManageRefunds }));
+vi.mock('@/shared/hooks/use-staff-role', () => ({ useCanManageRefunds: (): boolean => role.canManageRefunds, useIsAdmin: (): boolean => role.isAdmin }));
 vi.mock('../services/staff-reservations-api', () => api);
 
 // "Today" is fixed so a booking can reliably be in the future or the past.
@@ -74,6 +76,7 @@ function renderDialog(stay: StaffReservation): { onClose: () => void; onUpdated:
 describe('StayDetailDialog', () => {
   beforeEach(() => {
     role.canManageRefunds = true;
+    role.isAdmin = true;
     Object.values(api).forEach((mock) => mock.mockReset());
     api.fetchStaffCancelPreview.mockResolvedValue(PREVIEW);
     api.fetchStaffBookingNotes.mockResolvedValue([]);
@@ -317,6 +320,62 @@ describe('StayDetailDialog', () => {
       await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
       expect(onClose).toHaveBeenCalledTimes(1);
       expect(await screen.findByText('Dates changed. The new booking is BK-NEW0000000')).toBeTruthy();
+    });
+  });
+
+  describe('where the booking came from', () => {
+    it('shows the source as a chip in the header and in the booking block, also for a booking made on another site', () => {
+      renderDialog(staffReservation({ ...FUTURE, bookingSource: 'airbnb', paymentMethod: 'paid_by_channel' }));
+
+      const dialog = screen.getByRole('dialog');
+      expect(within(dialog).getByLabelText('Booked via Airbnb')).toBeTruthy();
+      expect(plain(dialog.textContent)).toContain('Where it came from');
+      expect(plain(dialog.textContent)).toContain('Paid on the other website');
+    });
+
+    it('lets an admin correct it inside the same group, saves it and reports the booking back', async () => {
+      const updated = staffReservation({ ...FUTURE, bookingSource: 'booking_com', paymentMethod: 'paid_by_channel' });
+      api.changeStaffReservationSource.mockResolvedValue(updated);
+      const handlers = renderDialog(staffReservation({ ...FUTURE, bookingSource: 'airbnb', paymentMethod: 'paid_by_channel' }));
+
+      await userEvent.click(screen.getByRole('button', { name: 'Change where this booking came from' }));
+      await userEvent.click(screen.getByRole('combobox', { name: 'Corrected source' }));
+      const options = screen.getAllByRole('option').map((option) => option.textContent);
+      expect(options).toEqual(['Booking.com', 'Another website']);
+      await userEvent.click(screen.getByRole('option', { name: 'Booking.com' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+      await waitFor(() => expect(api.changeStaffReservationSource).toHaveBeenCalledWith('r1', 'booking_com'));
+      expect(handlers.onUpdated).toHaveBeenCalledWith(updated);
+    });
+
+    it('offers an own booking only the other own sources (never an outside site)', async () => {
+      renderDialog(staffReservation({ ...FUTURE, bookingSource: 'phone_email' }));
+
+      await userEvent.click(screen.getByRole('button', { name: 'Change where this booking came from' }));
+      await userEvent.click(screen.getByRole('combobox', { name: 'Corrected source' }));
+
+      expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual(['Our website', 'Walk-in']);
+    });
+
+    it('shows the API\'s words when the correction is refused', async () => {
+      api.changeStaffReservationSource.mockRejectedValue(new ApiRequestError('The booking already has that source.', 409, { code: 'NO_CHANGE' }));
+      renderDialog(staffReservation({ ...FUTURE, bookingSource: 'walk_in' }));
+
+      await userEvent.click(screen.getByRole('button', { name: 'Change where this booking came from' }));
+      await userEvent.click(screen.getByRole('combobox', { name: 'Corrected source' }));
+      await userEvent.click(screen.getByRole('option', { name: 'Our website' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+      expect(await screen.findByText('The booking already has that source.')).toBeTruthy();
+    });
+
+    it('leaves the correction to admins: an employee only reads the source', () => {
+      role.isAdmin = false;
+      renderDialog(staffReservation({ ...FUTURE, bookingSource: 'airbnb', paymentMethod: 'paid_by_channel' }));
+
+      expect(screen.queryByRole('button', { name: 'Change where this booking came from' })).toBeNull();
+      expect(within(screen.getByRole('dialog')).getAllByText('Airbnb').length).toBeGreaterThan(0);
     });
   });
 

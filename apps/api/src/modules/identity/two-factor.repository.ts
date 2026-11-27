@@ -8,6 +8,7 @@
  */
 
 import { Injectable } from '@nestjs/common';
+import type { PoolClient } from 'pg';
 import { DatabaseService } from '../../shared/database/database.service';
 
 interface TwoFactorRow {
@@ -156,9 +157,12 @@ export class TwoFactorRepository {
    * Admin reset: removes the two-factor of one member OF THIS ORGANIZATION (the organization is part of the
    * statement, so another workspace's member can never be touched). Null when the member is not in it.
    */
-  public async removeForMember(organizationId: string, staffUserId: string): Promise<{ hadTwoFactor: boolean } | null> {
-    const result = await this.database.query<{ had: boolean }>(
-      `
+  public async removeForMember(
+    organizationId: string,
+    staffUserId: string,
+    audit?: (client: PoolClient, outcome: { hadTwoFactor: boolean }) => Promise<void>,
+  ): Promise<{ hadTwoFactor: boolean } | null> {
+    const sql = `
       WITH member AS (
         SELECT id FROM staff_users WHERE id = $1 AND organization_id = $2
       ), challenges AS (
@@ -167,11 +171,22 @@ export class TwoFactorRepository {
         DELETE FROM staff_two_factor WHERE staff_user_id IN (SELECT id FROM member) RETURNING staff_user_id
       )
       SELECT EXISTS (SELECT 1 FROM removed) AS had FROM member
-      `,
-      [staffUserId, organizationId],
-    );
-    const row = result.rows[0];
-    return row === undefined ? null : { hadTwoFactor: row.had };
+      `;
+    const params = [staffUserId, organizationId];
+    if (audit === undefined) {
+      const row = (await this.database.query<{ had: boolean }>(sql, params)).rows[0];
+      return row === undefined ? null : { hadTwoFactor: row.had };
+    }
+    // The audit row is saved in the same transaction: no removed two-factor without its row (docs/13 R6-05).
+    return this.database.withTransaction(async (client): Promise<{ hadTwoFactor: boolean } | null> => {
+      const row = (await client.query<{ had: boolean }>(sql, params)).rows[0];
+      if (row === undefined) {
+        return null;
+      }
+      const outcome = { hadTwoFactor: row.had };
+      await audit(client, outcome);
+      return outcome;
+    });
   }
 
   /** A fresh challenge replaces the person's earlier ones; expired ones of anybody are swept in passing. */

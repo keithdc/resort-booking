@@ -14,7 +14,9 @@ import type {
   RebookRequest,
 } from '@resort-booking/shared-types';
 import { Client, type PoolClient } from 'pg';
+import { AuditService } from '../../shared/audit/audit.service';
 import { DatabaseService } from '../../shared/database/database.service';
+import type { StaffAccount } from '../../shared/roles/staff-role';
 import { DiscountsService } from '../discounts/discounts.service';
 import { AvailabilityService } from '../inventory/availability.service';
 import type { PriceSnapshot } from '../inventory/inventory.rules';
@@ -152,6 +154,7 @@ describe('RebookService', () => {
   const issueRefund = jest.fn<Promise<RefundResult>, [RefundRequest]>();
   const openRebookPayment = jest.fn<Promise<PaymentSummary>, [OpenRebookPaymentInput]>();
   const recordManualPayment = jest.fn<Promise<string>, [PoolClient, unknown]>();
+  const recordInTransaction = jest.fn<Promise<void>, [PoolClient, { organizationId: string; staffUserId: string }, string, Record<string, unknown>?]>();
   const moveRedemptions = jest.fn<Promise<void>, [PoolClient, string, string, readonly unknown[]]>();
   const getPolicySnapshot = jest.fn<Promise<PolicySnapshot>, [string]>();
   let log: string[];
@@ -243,6 +246,10 @@ describe('RebookService', () => {
     getPolicySnapshot.mockResolvedValue(snapshot({ rebookable: true, rebookFeeType: 'none', rebookFeeValue: 0 }));
     findBookingIdByChangePayment.mockResolvedValue(NEW_ID);
     recordManualPayment.mockResolvedValue('manual-pay');
+    recordInTransaction.mockImplementation(() => {
+      log.push('audit');
+      return Promise.resolve();
+    });
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -273,6 +280,7 @@ describe('RebookService', () => {
         { provide: PaymentsService, useValue: { describeProvider, issueRefund, openRebookPayment, recordManualPayment } },
         { provide: DiscountsService, useValue: { moveRedemptions } },
         { provide: ReservationsService, useValue: { getPolicySnapshot } },
+        { provide: AuditService, useValue: { recordInTransaction } },
         {
           provide: DatabaseService,
           useValue: {
@@ -1048,7 +1056,7 @@ describe('RebookService', () => {
     expect(JSON.stringify(result)).not.toContain('+33612345678');
   });
   describe('staff: changing dates for a guest', () => {
-    const STAFF = { id: 'staff-1', organizationId: 'org', fullName: 'Sam Owner', email: 'sam@example.com' };
+    const STAFF: StaffAccount = { id: 'staff-1', organizationId: 'org', fullName: 'Sam Owner', email: 'sam@example.com', role: 'admin', organizationName: 'Humphreys', canManageRefunds: true };
     const STAFF_DATES = { newCheckIn: '2027-08-01', newCheckOut: '2027-08-04', waiveFee: false };
     const STAFF_CHANGE = { ...STAFF_DATES, note: 'Guest called to ask', balanceSettledOutside: false };
 
@@ -1082,6 +1090,15 @@ describe('RebookService', () => {
       expect(copyExtras).toHaveBeenCalledWith(expect.anything(), ID, NEW_ID);
     });
 
+    it('refuses a change, for staff and for guests, on a booking made on another site (it moves there, not here)', async () => {
+      const channel = row({ payment_method: 'paid_by_channel' });
+
+      await expect(service.staffQuote(channel, STAFF_DATES)).rejects.toMatchObject({ status: 409, response: { code: 'BOOKED_ON_CHANNEL' } });
+      await expect(service.staffChange(channel, STAFF_CHANGE, STAFF)).rejects.toMatchObject({ response: { code: 'BOOKED_ON_CHANNEL' } });
+      expect(withClientCalls).toBe(0);
+      expect(markCancelled).not.toHaveBeenCalled();
+    });
+
     it('still refuses a staff change on a booking nobody has paid for', async () => {
       await expect(service.staffQuote(row({ payment_status: 'pending', paid_cents: 0 }), STAFF_DATES)).rejects.toMatchObject({ response: { code: 'PAYMENT_PENDING' } });
     });
@@ -1097,6 +1114,39 @@ describe('RebookService', () => {
       expect(insertChange).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ initiatedBy: 'staff', staffId: 'staff-1', note: 'Guest called to ask' }));
       expect(outcome).toMatchObject({ newBookingId: NEW_ID, refund: { id: 'refund-1', status: 'succeeded' } });
       expect(recordManualPayment).not.toHaveBeenCalled();
+    });
+
+    it('writes the audit row inside the swap transaction (after the replacement exists, before the commit): who, both references, the decisions and the refund', async () => {
+      await service.staffChange(row(), { ...STAFF_CHANGE, waiveFee: true }, STAFF);
+
+      expect(recordInTransaction).toHaveBeenCalledTimes(1);
+      const [, actor, action, details] = recordInTransaction.mock.calls[0] ?? [];
+      expect(actor).toEqual({ organizationId: 'org', staffUserId: 'staff-1' });
+      expect(action).toBe('booking.dates_changed_by_staff');
+      expect(details).toMatchObject({
+        targetType: 'booking',
+        targetId: ID,
+        metadata: { actorName: 'Sam Owner', actorRole: 'admin', waiveFee: true, balanceSettledOutside: false, refundIssued: true, refundReason: expect.any(String) },
+      });
+      expect(JSON.stringify(details)).not.toContain('Guest called to ask');
+      expect(log.indexOf('audit')).toBeGreaterThan(log.indexOf('insertRefund'));
+      expect(log.indexOf('audit')).toBeLessThan(log.indexOf('COMMIT'));
+    });
+
+    it('rolls the whole date change back when the audit row cannot be written: the old booking stays, nothing is refunded', async () => {
+      recordInTransaction.mockRejectedValue(new Error('audit insert failed'));
+
+      await expect(service.staffChange(row(), STAFF_CHANGE, STAFF)).rejects.toThrow('audit insert failed');
+
+      expect(log).toContain('ROLLBACK');
+      expect(log).not.toContain('COMMIT');
+      expect(issueRefund).not.toHaveBeenCalled();
+    });
+
+    it('writes no audit row for a change a guest makes online (that is not a staff action)', async () => {
+      await service.rebook({ reference: REFERENCE, email: EMAIL, newCheckIn: '2027-08-01', newCheckOut: '2027-08-03' } as never);
+
+      expect(recordInTransaction).not.toHaveBeenCalled();
     });
 
     it('with the fee waived, the refund is bigger by the fee', async () => {

@@ -8,6 +8,7 @@ import AccountBalanceWalletOutlinedIcon from '@mui/icons-material/AccountBalance
 import AutoAwesomeOutlinedIcon from '@mui/icons-material/AutoAwesomeOutlined';
 import BarChartOutlinedIcon from '@mui/icons-material/BarChartOutlined';
 import EventAvailableOutlinedIcon from '@mui/icons-material/EventAvailableOutlined';
+import HubOutlinedIcon from '@mui/icons-material/HubOutlined';
 import HolidayVillageOutlinedIcon from '@mui/icons-material/HolidayVillageOutlined';
 import InboxOutlinedIcon from '@mui/icons-material/InboxOutlined';
 import LocalOfferOutlinedIcon from '@mui/icons-material/LocalOfferOutlined';
@@ -36,6 +37,7 @@ const SECTION_LOOK: Record<SectionKey, { tone: AvatarTone; icon: ReactElement }>
   insights: { tone: 'secondary', icon: <AutoAwesomeOutlinedIcon /> },
   propertiesTable: { tone: 'info', icon: <HolidayVillageOutlinedIcon /> },
   bookingsTable: { tone: 'primary', icon: <EventAvailableOutlinedIcon /> },
+  bookingSources: { tone: 'info', icon: <HubOutlinedIcon /> },
   cancellationSummary: { tone: 'error', icon: <TableChartOutlinedIcon /> },
   cancellationReasons: { tone: 'error', icon: <TableChartOutlinedIcon /> },
   refundsList: { tone: 'secondary', icon: <ReplayOutlinedIcon /> },

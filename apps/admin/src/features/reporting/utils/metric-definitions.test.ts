@@ -62,7 +62,7 @@ function sentenceCount(text: string): number {
 describe('SECTION_CAPTIONS', () => {
   it('gives every section on the page a title and a caption', () => {
     expect(SECTIONS.sort()).toEqual(
-      ['atAGlance', 'attention', 'revenueChart', 'insights', 'propertiesTable', 'bookingsTable', 'cancellationSummary', 'cancellationReasons', 'refundsList', 'paymentMethods', 'discounts'].sort(),
+      ['atAGlance', 'attention', 'revenueChart', 'insights', 'propertiesTable', 'bookingsTable', 'bookingSources', 'cancellationSummary', 'cancellationReasons', 'refundsList', 'paymentMethods', 'discounts'].sort(),
     );
     for (const key of SECTIONS) {
       expect(SECTION_CAPTIONS[key].title.trim()).not.toBe('');

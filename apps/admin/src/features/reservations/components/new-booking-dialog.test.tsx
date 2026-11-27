@@ -58,7 +58,12 @@ async function fillGuest(): Promise<void> {
   await userEvent.type(screen.getByLabelText(/^Guest email/), 'grace@example.com');
 }
 
-const bookButton = (): HTMLButtonElement => screen.getByRole('button', { name: /Book it|Saving…/ });
+const bookButton = (): HTMLButtonElement => screen.getByRole('button', { name: /Book it|Add booking|Saving…/ });
+
+async function chooseSource(label: string): Promise<void> {
+  await userEvent.click(screen.getByRole('combobox', { name: /Where did the guest book/ }));
+  await userEvent.click(screen.getByRole('option', { name: label }));
+}
 
 describe('NewBookingDialog', () => {
   beforeEach(() => {
@@ -121,7 +126,7 @@ describe('NewBookingDialog', () => {
 
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith(created));
     expect(api.createStaffBooking).toHaveBeenCalledWith({
-      houseId: 'h1', checkIn: FUTURE, checkOut: '2999-07-12', guestCount: 2, paymentMethod: 'pay_at_hotel',
+      houseId: 'h1', checkIn: FUTURE, checkOut: '2999-07-12', guestCount: 2, paymentMethod: 'pay_at_hotel', bookingSource: 'phone_email', channelTotalCents: null,
       bookerName: 'Grace Hopper', bookerEmail: 'grace@example.com', bookerPhone: '', guestNote: 'late arrival',
     });
   });
@@ -179,6 +184,95 @@ describe('NewBookingDialog', () => {
     expect(api.quoteStaffBooking).not.toHaveBeenCalled();
     expect(screen.getByText('Choose a property and a stay.')).toBeTruthy();
   });
+  describe('where the guest booked', () => {
+    it('asks first, offers the six sources and starts on phone or email', async () => {
+      renderDialog();
+      await screen.findByLabelText('Price of the stay');
+
+      const picker = screen.getByRole('combobox', { name: /Where did the guest book/ });
+      expect(picker.textContent).toBe('Phone or email');
+      await userEvent.click(picker);
+      expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual(['Our website', 'Airbnb', 'Booking.com', 'Another website', 'Phone or email', 'Walk-in']);
+    });
+
+    it('saves a walk-in or a booking from our website as pay at hotel with that source and no typed total', async () => {
+      api.createStaffBooking.mockResolvedValue(staffReservation({ id: 'new-1' }));
+      renderDialog();
+      await screen.findByLabelText('Price of the stay');
+      await chooseSource('Walk-in');
+      await fillGuest();
+      await waitFor(() => expect(bookButton().disabled).toBe(false));
+
+      await userEvent.click(bookButton());
+
+      await waitFor(() => expect(api.createStaffBooking).toHaveBeenCalledWith(expect.objectContaining({ paymentMethod: 'pay_at_hotel', bookingSource: 'walk_in', channelTotalCents: null })));
+    });
+
+    describe('Airbnb, Booking.com or another website', () => {
+      it('swaps the price and the extras for a typed total, and says the guest already paid there', async () => {
+        api.fetchStaffBookingExtras.mockResolvedValue([offered()]);
+        renderDialog();
+        await screen.findByRole('checkbox', { name: /Breakfast basket/ });
+
+        await chooseSource('Airbnb');
+
+        expect(screen.queryByRole('checkbox', { name: /Breakfast basket/ })).toBeNull();
+        expect(screen.queryByLabelText('Price of the stay')).toBeNull();
+        expect(screen.getByLabelText(/Total the guest paid on Airbnb/)).toBeTruthy();
+        expect(screen.getByRole('radio', { name: /Paid through Airbnb/ })).toBeTruthy();
+        expect(screen.queryByRole('radio', { name: /Credit card/ })).toBeNull();
+        expect(screen.getByRole('button', { name: /Add booking · paid on Airbnb/ })).toBeTruthy();
+      });
+
+      it('keeps the button off until a valid total is typed, then saves it as paid by channel with the amount in cents', async () => {
+        api.createStaffBooking.mockResolvedValue(staffReservation({ id: 'new-1' }));
+        const { onCreated } = renderDialog();
+        await screen.findByLabelText('Price of the stay');
+        await chooseSource('Booking.com');
+        await fillGuest();
+        await waitFor(() => expect(screen.getByText('These dates are free.')).toBeTruthy());
+        expect(bookButton().disabled).toBe(true);
+
+        await userEvent.type(screen.getByLabelText(/Total the guest paid on Booking.com/), 'abc');
+        expect(screen.getByText('Enter an amount like 1200 or 1200,50.')).toBeTruthy();
+        expect(bookButton().disabled).toBe(true);
+        await userEvent.clear(screen.getByLabelText(/Total the guest paid on Booking.com/));
+        await userEvent.type(screen.getByLabelText(/Total the guest paid on Booking.com/), '1234,50');
+        expect(bookButton().disabled).toBe(false);
+
+        await userEvent.click(bookButton());
+
+        await waitFor(() => expect(onCreated).toHaveBeenCalled());
+        expect(api.createStaffBooking).toHaveBeenCalledWith(
+          expect.objectContaining({ paymentMethod: 'paid_by_channel', bookingSource: 'booking_com', channelTotalCents: 123450 }),
+        );
+        expect(api.createStaffBooking.mock.calls[0]?.[0]).not.toHaveProperty('extras');
+      });
+
+      it('still checks the dates against our calendar and blocks the save when they are taken', async () => {
+        api.quoteStaffBooking.mockResolvedValue(quote({ available: false }));
+        renderDialog();
+        await screen.findByText(/Those dates are not free for this stay|These dates are not free/);
+        await chooseSource('Another website');
+        await fillGuest();
+        await userEvent.type(screen.getByLabelText(/Total the guest paid on Another website/), '900');
+
+        expect(screen.getByText('These dates are not free. Pick other dates.')).toBeTruthy();
+        expect(bookButton().disabled).toBe(true);
+      });
+
+      it('goes back to pay at hotel and extras when the source changes back to one of your own', async () => {
+        renderDialog();
+        await screen.findByLabelText('Price of the stay');
+        await chooseSource('Airbnb');
+        await chooseSource('Phone or email');
+
+        expect(screen.getByRole('radio', { name: /Pay at hotel/ })).toBeTruthy();
+        expect(screen.queryByLabelText(/Total the guest paid/)).toBeNull();
+      });
+    });
+  });
+
   describe('extras', () => {
     const BREAKFAST = offered();
     const PILLOWS = offered({ id: 'x2', name: 'Extra pillows', kind: 'on_request', priceCents: 0 });

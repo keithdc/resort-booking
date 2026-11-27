@@ -155,6 +155,9 @@ export function classifyRoute(method: ProxyMethod, path: string): RouteKind | nu
   if (method === 'POST' && path === '/staff/logout') {
     return 'logout';
   }
+  if (method === 'POST' && path === '/staff/invites/preview') {
+    return 'public';
+  }
   if (method === 'GET' && PUBLIC_GET_PATTERNS.some((pattern: RegExp): boolean => pattern.test(path))) {
     return 'public';
   }

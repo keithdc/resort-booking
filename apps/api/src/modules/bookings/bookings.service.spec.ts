@@ -581,6 +581,51 @@ describe('BookingsService', () => {
     });
   });
 
+  describe('a booking made on another site (paid by channel)', () => {
+    it('shows the guest that it cannot be cancelled or changed here, in plain words, without naming the site', async () => {
+      findByReference.mockResolvedValue([row({ payment_method: 'paid_by_channel', payment_status: 'paid' })]);
+
+      const booking = await service.lookup(REQUEST);
+
+      expect(booking).toMatchObject({ canCancel: false, canChangeDates: false, refundQuote: null, rebookable: false });
+      expect(booking.cancelBlockedReason).toContain('another website');
+      expect(JSON.stringify(booking)).not.toMatch(/airbnb|booking_com|booking\.com|bookingSource|booking_source|paid_by_channel/i);
+    });
+
+    it('refuses a guest cancel with 409 BOOKED_ON_CHANNEL and touches nothing', async () => {
+      findByReference.mockResolvedValue([row({ payment_method: 'paid_by_channel', payment_status: 'paid' })]);
+
+      await expect(service.cancel(REQUEST)).rejects.toMatchObject({ status: 409, response: { code: 'BOOKED_ON_CHANNEL' } });
+      expect(withClientCalls).toBe(0);
+      expect(insertRefund).not.toHaveBeenCalled();
+      expect(issueRefund).not.toHaveBeenCalled();
+    });
+
+    it('records no refund row at all when staff cancel it (skipRefundRow)', async () => {
+      await service.cancelRow(row({ payment_method: 'paid_by_channel' }), {
+        refundCents: 0,
+        percent: 0,
+        label: 'Staff cancelled',
+        reasonCode: 'guest_request',
+        initiatedBy: 'staff',
+        staffId: 'staff-1',
+        note: 'n',
+        skipRefundRow: true,
+      });
+
+      expect(markCancelled).toHaveBeenCalled();
+      expect(insertRefund).not.toHaveBeenCalled();
+      expect(issueRefund).not.toHaveBeenCalled();
+      expect(log).toEqual(['BEGIN', 'lock', 'markCancelled', 'COMMIT']);
+    });
+  });
+
+  it('never shows a guest where a booking came from (a normal booking too)', async () => {
+    const booking = await service.lookup(REQUEST);
+
+    expect(JSON.stringify(booking)).not.toMatch(/bookingSource|booking_source|phone_email|walk_in/);
+  });
+
   describe('cancel: transaction and ordering', () => {
     it('does the cancel and the refund record in ONE transaction, and calls the provider only after it commits', async () => {
       await service.cancel(REQUEST);
@@ -597,6 +642,42 @@ describe('BookingsService', () => {
       expect(log).toContain('ROLLBACK');
       expect(log).not.toContain('COMMIT');
       expect(issueRefund).not.toHaveBeenCalled();
+    });
+
+    describe('the staff audit row (docs/13 R6-05)', () => {
+      const INPUT = { refundCents: 50000, percent: 50, label: 'Staff cancelled', reasonCode: 'guest_request' as const, initiatedBy: 'staff' as const, staffId: 'staff-1', note: 'note' };
+
+      it('is written inside the cancel transaction: after the refund row, before the commit and before the provider is asked', async () => {
+        const audit = jest.fn<Promise<void>, [PoolClient, { refundId: string | null }]>().mockImplementation(() => {
+          log.push('audit');
+          return Promise.resolve();
+        });
+
+        await service.cancelRow(row(), INPUT, audit);
+
+        expect(audit).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ refundId: 'refund-1' }));
+        expect(log).toEqual(['BEGIN', 'lock', 'markCancelled', 'insertRefund', 'audit', 'COMMIT', 'providerRefund', 'completeRefund']);
+      });
+
+      it('rolls the whole cancel back when the audit row cannot be written: still confirmed, nothing refunded', async () => {
+        const audit = jest.fn((): Promise<void> => Promise.reject(new Error('audit insert failed')));
+
+        await expect(service.cancelRow(row(), INPUT, audit)).rejects.toThrow('audit insert failed');
+
+        expect(log).toContain('ROLLBACK');
+        expect(log).not.toContain('COMMIT');
+        expect(issueRefund).not.toHaveBeenCalled();
+      });
+
+      it('is not written when someone else cancelled it first (nothing happened here)', async () => {
+        lockForCancel.mockResolvedValue('cancelled');
+        const audit = jest.fn((): Promise<void> => Promise.resolve());
+
+        const outcome = await service.cancelRow(row(), INPUT, audit);
+
+        expect(outcome.cancelledNow).toBe(false);
+        expect(audit).not.toHaveBeenCalled();
+      });
     });
 
     it('is harmless to repeat: an already-cancelled booking is returned with no new refund', async () => {

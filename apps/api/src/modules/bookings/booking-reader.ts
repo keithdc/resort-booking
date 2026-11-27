@@ -14,6 +14,7 @@ import { ReservationsService } from '../reservations/reservations.service';
 import { BookingsRepository, type BookingRow } from './bookings.repository';
 import {
   BOOKING_CANCELLED_MESSAGE,
+  CHANNEL_BOOKING_MESSAGE,
   checkCancellation,
   parseBookingReference,
   referenceIdRange,
@@ -129,6 +130,20 @@ export class BookingReader {
           replacedBy === null
             ? BOOKING_CANCELLED_SHORT_MESSAGE
             : `The dates of this booking were changed. Your new booking is ${replacedBy}.`,
+      };
+    }
+
+    if (row.payment_method === 'paid_by_channel') {
+      return {
+        ...base,
+        status: 'confirmed',
+        canCancel: false,
+        cancelBlockedReason: CHANNEL_BOOKING_MESSAGE,
+        refundQuote: null,
+        refund: null,
+        rebookable: false,
+        canChangeDates: false,
+        changeDatesBlockedReason: CHANNEL_BOOKING_MESSAGE,
       };
     }
 

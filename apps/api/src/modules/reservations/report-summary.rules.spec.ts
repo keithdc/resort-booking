@@ -12,6 +12,7 @@ import {
   occupancyPercent,
   previousRange,
   rangedRevenueCents,
+  summariseBookingSources,
 } from './report-summary.rules';
 
 function stay(checkIn: string, checkOut: string, totalCents: number, guestCount = 2): StaffReservation {
@@ -31,6 +32,7 @@ function stay(checkIn: string, checkOut: string, totalCents: number, guestCount 
     guestNote: '',
     paymentMethod: 'card',
     paymentStatus: 'paid',
+    bookingSource: 'website',
     paidAt: null,
     createdByName: null, notesCount: 0, lastNoteAt: null,
     status: 'confirmed',
@@ -182,5 +184,48 @@ describe('buildPeriodSummary', () => {
   it('can be negative net when refunds exceed what is kept in the period', () => {
     const summary = buildPeriodSummary({ ...base, cancellations: { cancelledCount: 1, paidCents: 0, refundedCents: 5000 } });
     expect(summary.netRevenueCents).toBe(100000 - 5000);
+  });
+});
+
+describe('summariseBookingSources', () => {
+  const from = '2027-07-01';
+  const to = '2027-08-01';
+  const from_ = (source: StaffReservation['bookingSource'], checkIn: string, checkOut: string, total: number): StaffReservation => ({ ...stay(checkIn, checkOut, total), bookingSource: source });
+
+  it('counts bookings, nights in the period and what those nights are worth, per source, biggest first', () => {
+    const slices = summariseBookingSources(
+      [from_('website', '2027-07-10', '2027-07-12', 20000), from_('airbnb', '2027-07-20', '2027-07-23', 30000), from_('website', '2027-07-25', '2027-07-26', 10000)],
+      from,
+      to,
+    );
+
+    expect(slices).toEqual([
+      { source: 'website', reservationCount: 2, occupiedNights: 3, revenueCents: 30000, sharePercent: 67 },
+      { source: 'airbnb', reservationCount: 1, occupiedNights: 3, revenueCents: 30000, sharePercent: 33 },
+    ]);
+  });
+
+  it('counts only the nights that fall inside the period (a stay across the edge is split)', () => {
+    const [slice] = summariseBookingSources([from_('walk_in', '2027-07-30', '2027-08-03', 40000)], from, to);
+
+    expect(slice).toMatchObject({ source: 'walk_in', reservationCount: 1, occupiedNights: 2, revenueCents: 20000, sharePercent: 100 });
+  });
+
+  it('keeps the shares at exactly 100 and leaves out sources with no booking', () => {
+    const thirds = summariseBookingSources(
+      [from_('website', '2027-07-01', '2027-07-02', 100), from_('airbnb', '2027-07-03', '2027-07-04', 100), from_('phone_email', '2027-07-05', '2027-07-06', 100)],
+      from,
+      to,
+    );
+
+    expect(thirds.map((slice) => slice.source)).toEqual(['website', 'airbnb', 'phone_email']);
+    expect(thirds.reduce((sum, slice) => sum + slice.sharePercent, 0)).toBe(100);
+  });
+
+  it('is empty for a period with no booking, and with only one source it is that source at 100 percent', () => {
+    expect(summariseBookingSources([], from, to)).toEqual([]);
+    expect(summariseBookingSources([from_('website', '2027-07-10', '2027-07-12', 20000)], from, to)).toEqual([
+      { source: 'website', reservationCount: 1, occupiedNights: 2, revenueCents: 20000, sharePercent: 100 },
+    ]);
   });
 });

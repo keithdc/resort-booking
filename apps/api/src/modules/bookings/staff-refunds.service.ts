@@ -6,11 +6,14 @@
 
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { RefundStatus, StaffProfile, StaffRefund } from '@resort-booking/shared-types';
+import { AuditService } from '../../shared/audit/audit.service';
+import type { StaffAccount } from '../../shared/roles/staff-role';
 import { PaymentsService } from '../payments/payments.service';
 import { allocateRefund } from './bookings.rules';
 import { RefundIssuer, type RefundPlan } from './refund-issuer';
 import { StaffRefundsRepository, type RefundActionRow } from './staff-refunds.repository';
-import { BookingsRepository } from './bookings.repository';
+import { BookingsRepository, type AuditInTransaction } from './bookings.repository';
+import { refundMarkedPaidAuditMetadata } from './staff-audit-details';
 import { RefundTimings } from './refund-timings';
 
 /** Which refunds the queue shows. The default is the ones a person still has to deal with. */
@@ -30,6 +33,7 @@ export class StaffRefundsService {
     private readonly bookings: BookingsRepository,
     private readonly payments: PaymentsService,
     private readonly timings: RefundTimings,
+    private readonly audit: AuditService,
   ) {}
 
   /**
@@ -96,12 +100,19 @@ export class StaffRefundsService {
   /**
    * Staff sent the money themselves (bank transfer, cash): the refund is done, with who and how.
    */
-  public async markPaid(staff: StaffProfile, refundId: string, note: string): Promise<StaffRefund> {
+  public async markPaid(staff: StaffAccount, refundId: string, note: string): Promise<StaffRefund> {
     const action = await this.requireRefund(staff, refundId);
     if (action.status === 'succeeded') {
       throw this.alreadySettled();
     }
-    const outcome = await this.refunds.markManualPaid(refundId, staff.id, note, this.timings.values.leaseSeconds);
+    // The audit row is written in the same transaction as the update: no "refunded" without its row, and no row without it.
+    const audit: AuditInTransaction = (client) =>
+      this.audit.recordInTransaction(client, { organizationId: staff.organizationId, staffUserId: staff.id }, 'refund.marked_paid', {
+        targetType: 'refund',
+        targetId: refundId,
+        metadata: refundMarkedPaidAuditMetadata(staff, action),
+      });
+    const outcome = await this.refunds.markManualPaid(refundId, staff.id, note, this.timings.values.leaseSeconds, audit);
     if (outcome === 'busy') {
       throw new ConflictException({
         message: 'The payment provider is still working on this refund. Wait a few minutes before marking it as refunded, or the guest could be paid twice.',

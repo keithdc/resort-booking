@@ -35,7 +35,10 @@ export function isLastAdminError(error: unknown): boolean {
   return error instanceof ApiRequestError && error.code === 'LAST_ADMIN';
 }
 
-/** The full invitation address to hand over. The origin is the admin app's own. */
+/**
+ * The full invitation address to hand over. The origin is the admin app's own. The token is after the `#`, so it is never
+ * sent to any server, written to an access log or passed on in a Referer header.
+ */
 export function inviteUrl(origin: string, token: string): string {
-  return `${origin}/invite/${token}`;
+  return `${origin}/invite#token=${token}`;
 }

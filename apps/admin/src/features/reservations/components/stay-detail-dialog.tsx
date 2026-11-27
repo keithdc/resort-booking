@@ -54,6 +54,8 @@ import {
   SAME_DAY_ADMIN_ONLY_MESSAGE,
 } from '../utils/stay-actions';
 import { CancellationBlock, HistoryBlock, RefundsBlock } from './booking-records';
+import { BookingSourceChip } from './booking-source-chip';
+import { BookingSourceControl } from './booking-source-control';
 import { PaymentStatusChip } from './payment-status-chip';
 import { StaffCancelDialog } from './staff-cancel-dialog';
 import { StaffChangeDatesDialog } from './staff-change-dates-dialog';
@@ -160,6 +162,7 @@ export function StayDetailDialog({ stay, onClose, onUpdated, onChanged }: StayDe
                     </Typography>
                     <StatusChip status={stayStatusStyle(stay)} label={statusLabel(stay)} />
                     {stay.kind === 'reservation' && stay.status === 'confirmed' ? <PaymentStatusChip stay={stay} showPaid /> : null}
+                    {stay.kind === 'reservation' ? <BookingSourceChip source={stay.bookingSource} /> : null}
                     <Chip size="small" variant="outlined" label={stay.reference} />
                   </Stack>
                   <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
@@ -213,6 +216,14 @@ export function StayDetailDialog({ stay, onClose, onUpdated, onChanged }: StayDe
                   <StayFact label="Stay" value={stay.houseName} />
                   <StayFact label="Property" value={stay.propertyName} />
                   {stay.createdByName !== null ? <StayFact label="Booked by" value={`${stay.createdByName} (staff)`} /> : null}
+                  {stay.kind === 'reservation' ? (
+                    <Box>
+                      <Typography variant="caption" color="text.secondary" display="block" sx={{ textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
+                        Where it came from
+                      </Typography>
+                      <BookingSourceControl stay={stay} onUpdated={onUpdated} />
+                    </Box>
+                  ) : null}
                   <StayFact
                     label="Cancellation terms"
                     value={

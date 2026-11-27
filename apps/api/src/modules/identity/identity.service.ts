@@ -6,6 +6,7 @@
 
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -14,6 +15,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import type { PoolClient } from 'pg';
 import type {
   ChangeStaffPasswordRequest,
   Organization,
@@ -58,6 +60,12 @@ export interface LoginContext {
 }
 
 /** What a new session records about where it was opened. */
+/** Who is saving the settings, and from where, for the password re-entry on bank and email changes. */
+export interface SettingsProof {
+  staff: StaffAccount;
+  context: { ip: string | undefined; requestId: string | undefined };
+}
+
 export type SessionOrigin = Pick<LoginContext, 'ip' | 'userAgent'>;
 
 @Injectable()
@@ -103,9 +111,17 @@ export class IdentityService implements OnModuleInit {
   public async updateSettings(
     input: UpdateOrganizationSettingsRequest,
     organizationId: string,
+    proof?: SettingsProof,
   ): Promise<{ settings: OrganizationSettings; audit: AuditMetadata }> {
     const current = await this.getSettings(organizationId);
     const change = diffOrganizationSettings(current, input);
+    if (change.sensitiveFields.length > 0) {
+      // Bank details and email addresses decide where money and guest mail go: a stolen session is not enough (docs/13 R6-06).
+      if (proof === undefined) {
+        throw new ForbiddenException({ message: 'Enter your current password to change this.', code: 'REAUTH_REQUIRED' });
+      }
+      await this.twoFactor.reauthenticate(proof.staff, input.currentPassword, input.twoFactorCode, proof.context, 'org_settings');
+    }
     const saved = await this.identity.updateSettings(current.id, input);
     if (saved === null) {
       throw new NotFoundException({ message: 'Organization not found', code: 'ORG_NOT_FOUND' });
@@ -289,8 +305,12 @@ export class IdentityService implements OnModuleInit {
    * Admin reset of a member's two-factor (lost phone): removes it and ends their sessions. The organization is
    * checked in SQL; a member of another workspace is "not found".
    */
-  public async resetTwoFactor(organizationId: string, staffUserId: string): Promise<{ hadTwoFactor: boolean }> {
-    const outcome = await this.twoFactor.resetForMember(organizationId, staffUserId);
+  public async resetTwoFactor(
+    organizationId: string,
+    staffUserId: string,
+    audit?: (client: PoolClient, outcome: { hadTwoFactor: boolean }) => Promise<void>,
+  ): Promise<{ hadTwoFactor: boolean }> {
+    const outcome = await this.twoFactor.resetForMember(organizationId, staffUserId, audit);
     await this.logoutAll(staffUserId);
     return outcome;
   }

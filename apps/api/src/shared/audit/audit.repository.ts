@@ -5,6 +5,7 @@
  */
 
 import { Injectable } from '@nestjs/common';
+import type { PoolClient } from 'pg';
 import { DatabaseService } from '../database/database.service';
 import type { AuditEntry, AuditRecord } from './audit.types';
 
@@ -38,27 +39,38 @@ export interface AuditPageRows {
   last: { createdAt: string; id: string } | null;
 }
 
+const INSERT_SQL = `
+  INSERT INTO audit_log (organization_id, staff_user_id, action, target_type, target_id, metadata, ip_hash, request_id)
+  VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)
+`;
+
+function insertParams(entry: AuditEntry): unknown[] {
+  return [
+    entry.organizationId,
+    entry.staffUserId,
+    entry.action,
+    entry.targetType ?? null,
+    entry.targetId ?? null,
+    JSON.stringify(entry.metadata ?? {}),
+    entry.ipHash ?? null,
+    entry.requestId ?? null,
+  ];
+}
+
 @Injectable()
 export class AuditRepository {
   public constructor(private readonly database: DatabaseService) {}
 
   public async insert(entry: AuditEntry): Promise<void> {
-    await this.database.query(
-      `
-      INSERT INTO audit_log (organization_id, staff_user_id, action, target_type, target_id, metadata, ip_hash, request_id)
-      VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)
-      `,
-      [
-        entry.organizationId,
-        entry.staffUserId,
-        entry.action,
-        entry.targetType ?? null,
-        entry.targetId ?? null,
-        JSON.stringify(entry.metadata ?? {}),
-        entry.ipHash ?? null,
-        entry.requestId ?? null,
-      ],
-    );
+    await this.database.query(INSERT_SQL, insertParams(entry));
+  }
+
+  /**
+   * The same row, written on the caller's own transaction client: it commits or rolls back together with the action
+   * (docs/13 R6-05). A failure THROWS, so the transaction is rolled back and the action does not happen.
+   */
+  public async insertWith(client: PoolClient, entry: AuditEntry): Promise<void> {
+    await client.query(INSERT_SQL, insertParams(entry));
   }
 
   /**

@@ -94,6 +94,7 @@ describe('InventoryRepository.insertStaffBooking', () => {
     organizationId: 'org', propertyId: 'prop', houseId: 'house', checkIn: '2027-08-01', checkOut: '2027-08-04', guestCount: 2,
     bookerName: 'Ada', bookerEmail: 'ada@example.com', bookerPhone: '', guestNote: '', totalCents: 96000, currencyCode: 'EUR',
     priceSnapshot: '{}', policySnapshot: '{}', createdByStaffId: 'staff-1',
+    paymentMethod: 'pay_at_hotel' as const, bookingSource: 'phone_email',
   };
 
   async function repositoryWith(clientQuery: jest.Mock): Promise<InventoryRepository> {
@@ -113,14 +114,28 @@ describe('InventoryRepository.insertStaffBooking', () => {
     expect(id).toBe('new-1');
     const [sql, params] = clientQuery.mock.calls[0] as [string, unknown[]];
     expect(sql).toContain("'reservation', 'confirmed'");
-    expect(sql).toContain("'pay_at_hotel', 'pending', NULL");
+    expect(sql).toContain("CASE WHEN $16 = 'paid_by_channel' THEN 'paid' ELSE 'pending' END");
     expect(sql).toMatch(/total_cents, paid_cents/);
-    expect(sql).toContain('$11, 0, $12');
+    expect(sql).toContain("CASE WHEN $16 = 'paid_by_channel' THEN $11 ELSE 0 END");
     expect(sql).not.toContain('terms_accepted_at');
-    expect(params).toHaveLength(15);
+    expect(params).toHaveLength(17);
     expect(params[14]).toBe('staff-1');
+    expect(params[15]).toBe('pay_at_hotel');
+    expect(params[16]).toBe('phone_email');
     // The guest's text only ever travels as a parameter.
     expect(sql).not.toContain('ada@example.com');
+  });
+
+  it('writes a booking made on another site as paid in full, with the source, from the same statement', async () => {
+    const clientQuery = jest.fn().mockResolvedValue({ rows: [{ id: 'new-2' }] });
+    const repository = await repositoryWith(clientQuery);
+
+    await repository.insertStaffBooking({ query: clientQuery } as never, { ...INPUT, paymentMethod: 'paid_by_channel', bookingSource: 'airbnb' });
+
+    const [sql, params] = clientQuery.mock.calls[0] as [string, unknown[]];
+    expect(sql).toContain("CASE WHEN $16 = 'paid_by_channel' THEN now() ELSE NULL END");
+    expect(params[15]).toBe('paid_by_channel');
+    expect(params[16]).toBe('airbnb');
   });
 
   it('fails loudly if nothing came back', async () => {

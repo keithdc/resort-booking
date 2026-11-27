@@ -599,6 +599,56 @@ describe('TwoFactorService', () => {
     });
   });
 
+  describe('reauthenticate (bank and email changes)', () => {
+    it('without two-factor, the current password is enough', async () => {
+      await expect(service.reauthenticate(STAFF, PASSWORD, undefined, CTX, 'org_settings')).resolves.toBeUndefined();
+      expect(recordSuccess).toHaveBeenCalledWith(ME);
+    });
+
+    it('asks for the password when none is given, and counts nothing', async () => {
+      await expect(service.reauthenticate(STAFF, undefined, undefined, CTX, 'org_settings')).rejects.toMatchObject({ status: 403, response: { code: 'REAUTH_REQUIRED' } });
+      await expect(service.reauthenticate(STAFF, '', undefined, CTX, 'org_settings')).rejects.toMatchObject({ response: { code: 'REAUTH_REQUIRED' } });
+      expect(recordFailure).not.toHaveBeenCalled();
+    });
+
+    it('a wrong password is refused and counted as a failure', async () => {
+      await expect(service.reauthenticate(STAFF, 'not-the-password', undefined, CTX, 'org_settings')).rejects.toMatchObject({ response: { code: 'STAFF_PASSWORD_MISMATCH' } });
+      expect(recordFailure).toHaveBeenCalledWith(ME, CTX.ip);
+    });
+
+    it('with two-factor on, the password alone is not enough: a code is required', async () => {
+      await enrolled();
+
+      await expect(service.reauthenticate(STAFF, undefined, undefined, CTX, 'org_settings')).rejects.toMatchObject({ response: { code: 'REAUTH_REQUIRED_2FA' } });
+      await expect(service.reauthenticate(STAFF, PASSWORD, undefined, CTX, 'org_settings')).rejects.toMatchObject({ response: { code: 'REAUTH_REQUIRED_2FA' } });
+    });
+
+    it('with two-factor on, a wrong code is refused, counted and audited without the code', async () => {
+      await enrolled();
+
+      await expect(service.reauthenticate(STAFF, PASSWORD, '000000', CTX, 'org_settings')).rejects.toMatchObject({ response: { code: 'TWO_FACTOR_CODE_INVALID' } });
+
+      expect(recordFailure).toHaveBeenCalledWith(ME, CTX.ip);
+      expect(audits.at(-1)).toMatchObject({ action: 'auth.two_factor_failed', metadata: { scope: 'org_settings' } });
+      expect(JSON.stringify(audits)).not.toContain('000000');
+    });
+
+    it('with two-factor on, the password and a valid code pass, and the same step cannot be used twice', async () => {
+      await enrolled();
+      const code = codeNow(ME, 1);
+
+      await expect(service.reauthenticate(STAFF, PASSWORD, code, CTX, 'org_settings')).resolves.toBeUndefined();
+      await expect(service.reauthenticate(STAFF, PASSWORD, code, CTX, 'org_settings')).rejects.toMatchObject({ response: { code: 'TWO_FACTOR_CODE_INVALID' } });
+    });
+
+    it('is blocked by the limiter before anything is checked', async () => {
+      assertAllowed.mockRejectedValueOnce(new RateLimitedException('TWO_FACTOR_RATE_LIMITED', 'slow down', 60));
+
+      await expect(service.reauthenticate(STAFF, PASSWORD, undefined, CTX, 'org_settings')).rejects.toBeInstanceOf(RateLimitedException);
+      expect(findStaffById).not.toHaveBeenCalled();
+    });
+  });
+
   describe('admin reset', () => {
     it('removes the member\'s two-factor in their own organization', async () => {
       await enrolled();
@@ -606,6 +656,15 @@ describe('TwoFactorService', () => {
       await expect(service.resetForMember(ORG, ME)).resolves.toEqual({ hadTwoFactor: true });
       await expect(service.resetForMember(ORG, ME)).resolves.toEqual({ hadTwoFactor: false });
       expect(await service.isEnabled(ME)).toBe(false);
+    });
+
+    it('hands the audit writer to the store, which saves the row in the same transaction as the removal', async () => {
+      await enrolled();
+      const audit = jest.fn().mockResolvedValue(undefined);
+
+      await service.resetForMember(ORG, ME, audit);
+
+      expect(store.removeForMember).toHaveBeenCalledWith(ORG, ME, audit);
     });
 
     it('is a 404 for a member of another organization, and leaves their two-factor alone (tenant isolation)', async () => {

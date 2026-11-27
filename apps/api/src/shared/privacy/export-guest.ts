@@ -42,7 +42,7 @@ export interface ExportCounts {
 
 const BOOKINGS_SQL = `
   SELECT ib.id, ib.kind, ib.status, ib.check_in::text AS check_in, ib.check_out::text AS check_out, ib.guest_count,
-         ib.payment_method, ib.payment_status, ib.paid_at, ib.booker_name, ib.booker_email, ib.booker_phone, ib.guest_note, ib.total_cents, ib.paid_cents,
+         ib.payment_method, ib.payment_status, ib.booking_source, ib.paid_at, ib.booker_name, ib.booker_email, ib.booker_phone, ib.guest_note, ib.total_cents, ib.paid_cents,
          ib.currency_code, ib.arrival_status, ib.price_snapshot, ib.policy_snapshot, ib.terms_accepted_at, ib.cancelled_at,
          ib.cancel_reason, ib.cancel_note, ib.rebook_of_id, ib.created_at, ib.anonymised_at, h.name AS stay_name, p.name AS property_name
   FROM inventory_blocks ib

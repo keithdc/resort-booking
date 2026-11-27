@@ -134,6 +134,7 @@ export type SectionKey =
   | 'insights'
   | 'propertiesTable'
   | 'bookingsTable'
+  | 'bookingSources'
   | 'cancellationSummary'
   | 'cancellationReasons'
   | 'refundsList'
@@ -173,6 +174,11 @@ export const SECTION_CAPTIONS: Record<SectionKey, SectionCaption> = {
   bookingsTable: {
     title: 'Bookings',
     caption: 'Every booking and unpaid hold with nights in this period. Search by guest or reference, filter by status, and select a row to open it.',
+  },
+  bookingSources: {
+    title: 'Where bookings come from',
+    caption:
+      'How many confirmed bookings in this period came from your website, from other sites such as Airbnb, and from phone, email or walk-ins, with the nights and the money they brought. Use it to see how much your own website brings.',
   },
   cancellationSummary: {
     title: 'Cancellations and refunds',

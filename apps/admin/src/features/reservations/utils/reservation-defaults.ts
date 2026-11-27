@@ -11,6 +11,7 @@ type NewerFields =
   | 'reference'
   | 'paidCents'
   | 'paymentStatus'
+  | 'bookingSource'
   | 'paidAt'
   | 'createdByName'
   | 'notesCount'
@@ -36,6 +37,7 @@ export function withReservationDefaults(raw: RawStaffReservation): StaffReservat
     reference: raw.reference ?? '',
     paidCents: raw.paidCents ?? 0,
     paymentStatus: raw.paymentStatus ?? 'paid',
+    bookingSource: raw.bookingSource ?? 'website',
     paidAt: raw.paidAt ?? null,
     createdByName: raw.createdByName ?? null,
     notesCount: raw.notesCount ?? 0,
@@ -60,7 +62,8 @@ type NewerReportFields =
   | 'refunds'
   | 'discountUsage'
   | 'unpaidAtHotelCount'
-  | 'unpaidAtHotelCents';
+  | 'unpaidAtHotelCents'
+  | 'bookingSources';
 
 /** The headline numbers of a period as an API from before pay at hotel sends them: no money still to collect. */
 type RawPeriodSummary = Omit<PeriodSummary, 'unpaidAtHotelCents'> & Partial<Pick<PeriodSummary, 'unpaidAtHotelCents'>>;
@@ -98,6 +101,7 @@ export function withReportDefaults(report: RawStaffReport): StaffReport {
     discountUsage: report.discountUsage ?? [],
     unpaidAtHotelCount: report.unpaidAtHotelCount ?? 0,
     unpaidAtHotelCents: report.unpaidAtHotelCents ?? 0,
+    bookingSources: report.bookingSources ?? [],
     attention: {
       unpaidHoldCount: 0,
       refundsToPayCount: 0,

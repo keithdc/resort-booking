@@ -6,7 +6,7 @@ The API can email staff invitation and access-reset links through [Resend](https
 
 - Team > Invite someone, "Email new link" on a pending invitation, and "Reset access" on a member each offer **Email the link to them**. The link is always shown in the admin app too (with a Copy button), whatever happens to the email.
 - The invitation or reset is created FIRST, then the email is attempted. A mail problem never fails the invite: the response carries `emailStatus` (`sent`, `failed`, `not_configured`; absent when the admin did not ask for an email) and the screen says what happened.
-- The email is plain HTML plus text. Every value (names, workspace) is HTML-escaped. The link is `${ADMIN_APP_URL}/invite/${token}`, works once, and the email says when it expires and "if you did not expect this, ignore it".
+- The email is plain HTML plus text. Every value (names, workspace) is HTML-escaped. The link is `${ADMIN_APP_URL}/invite#token=${token}` (the token after the `#`, so no server or Referer header ever sees it; docs/13 R6-03), works once, and the email says when it expires and "if you did not expect this, ignore it".
 - Code: `apps/api/src/shared/mail/` (provider-agnostic `MailService`, `ResendMailer`, a no-op `NotConfiguredMailer`) and `apps/api/src/modules/team/team-mail.ts` (templates).
 
 ## Settings (`apps/api/.env`)

@@ -240,9 +240,10 @@ export class IdentityController {
   public async patchOrganization(
     @CurrentStaff() staff: StaffAccount,
     @Body() body: UpdateOrganizationDto,
-    @Req() request: AuditChangeCarrier,
+    @Req() request: AuditChangeCarrier & RequestWithId,
   ): Promise<ApiOkBody<OrganizationSettings>> {
-    const saved = await this.identity.updateSettings(body, staff.organizationId);
+    const proof = { staff, context: { ip: clientIp(request), requestId: request.requestId } };
+    const saved = await this.identity.updateSettings(body, staff.organizationId, proof);
     // The audit row names what really changed (never the values) and carries the bank-details signal.
     request.auditChanges = saved.audit;
     return { status: 'ok', data: saved.settings };

@@ -16,7 +16,9 @@ import { AuditInterceptor } from '../../shared/audit/audit.interceptor';
 import { AuditService } from '../../shared/audit/audit.service';
 import type { AuditActor } from '../../shared/audit/audit.types';
 import type { StaffAccount } from '../../shared/roles/staff-role';
+import { AUDITED } from '../../shared/audit/audited.decorator';
 import { StaffBookingsController } from './staff-bookings.controller';
+import { cancelAuditMetadata, changeDatesAuditMetadata, createBookingAuditMetadata, markPaidAuditMetadata, refundMarkedPaidAuditMetadata } from './staff-audit-details';
 
 const BOOKING_ID = '1a2b3c4d-5e6f-4a8b-9c0d-1e2f3a4b5c6d';
 const EMPLOYEE_WITH_ACCESS: StaffAccount = {
@@ -71,79 +73,64 @@ describe('audit rows of the staff money actions', () => {
     await firstValueFrom(interceptor.intercept(context, { handle: () => of(answer) }));
   }
 
-  it('cancel: who (id, name, role), booking reference, reason, refund amount/percent/status', async () => {
-    await run(
-      StaffBookingsController.prototype.cancel,
-      EMPLOYEE_WITH_ACCESS,
-      { params: { id: BOOKING_ID }, body: { reason: 'goodwill', refundCents: 25000, note: 'private words' } },
-      { status: 'ok', data: { reservation: {}, refund: REFUND } },
-    );
+  it('cancel: who (name, role), booking reference, reason, refund amount/percent/status (written by the service, in the cancel\'s transaction)', () => {
+    const metadata = cancelAuditMetadata(EMPLOYEE_WITH_ACCESS, BOOKING_ID, 'goodwill', { amountCents: 25000, percent: 25, reason: 'goodwill', status: 'pending', currencyCode: 'EUR' });
 
-    expect(recordBy).toHaveBeenCalledTimes(1);
-    const [actor, action, details] = recordBy.mock.calls[0] ?? [];
-    expect(actor).toEqual({ organizationId: 'org-1', staffUserId: 'staff-9', ip: '203.0.113.7', requestId: 'req-7' });
-    expect(action).toBe('booking.cancelled_by_staff');
-    expect(details).toEqual({
-      targetType: 'booking',
-      targetId: BOOKING_ID,
-      metadata: {
-        actorName: 'Pat Permitted',
-        actorRole: 'employee',
-        viaRefundAccess: true,
-        bookingReference: 'BK-1A2B3C4D5E',
-        reason: 'goodwill',
-        refundIssued: true,
-        refundCents: 25000,
-        refundPercent: 25,
-        refundReason: 'goodwill',
-        refundStatus: 'succeeded',
-        refundCurrency: 'EUR',
-      },
+    expect(metadata).toEqual({
+      actorName: 'Pat Permitted',
+      actorRole: 'employee',
+      viaRefundAccess: true,
+      bookingReference: 'BK-1A2B3C4D5E',
+      reason: 'goodwill',
+      refundIssued: true,
+      refundCents: 25000,
+      refundPercent: 25,
+      refundReason: 'goodwill',
+      refundStatus: 'pending',
+      refundCurrency: 'EUR',
     });
-    const written = JSON.stringify(recordBy.mock.calls);
-    expect(written).not.toContain('private words');
-    expect(written).not.toContain('guest@example.com');
-    expect(written).not.toContain('FR76');
+    expect(JSON.stringify(metadata)).not.toMatch(/@|private words|FR76/);
   });
 
-  it('cancel without a refund records refundCents 0 and that nothing was issued; an admin is not "via refund access"', async () => {
-    await run(
-      StaffBookingsController.prototype.cancel,
-      ADMIN,
-      { params: { id: BOOKING_ID }, body: { reason: 'guest_request', refundCents: null, note: 'abc' } },
-      { status: 'ok', data: { reservation: {}, refund: null } },
-    );
-
-    expect(recordBy.mock.calls[0]?.[2]).toMatchObject({
-      metadata: { actorRole: 'admin', actorName: 'Ada Admin', viaRefundAccess: false, refundIssued: false, refundCents: 0, reason: 'guest_request' },
+  it('cancel without a refund records refundCents 0 and that nothing was issued; an admin is not "via refund access"', () => {
+    expect(cancelAuditMetadata(ADMIN, BOOKING_ID, 'guest_request', null)).toMatchObject({
+      actorRole: 'admin',
+      actorName: 'Ada Admin',
+      viaRefundAccess: false,
+      refundIssued: false,
+      refundCents: 0,
+      reason: 'guest_request',
     });
   });
 
-  it('change dates: old and new reference, fee waiver, outside settlement and the difference refund', async () => {
-    await run(
-      StaffBookingsController.prototype.changeDates,
+  it('cancel is no longer written by the interceptor (the service does it inside the transaction): no double row', () => {
+    expect(Reflect.getMetadata(AUDITED, StaffBookingsController.prototype.cancel) ?? null).toBeNull();
+  });
+
+  it('change dates: old and new reference, fee waiver, outside settlement and the difference refund (written by the service, in the swap\'s transaction)', () => {
+    const metadata = changeDatesAuditMetadata(
       EMPLOYEE_WITH_ACCESS,
-      { params: { id: BOOKING_ID }, body: { newCheckIn: '2027-08-01', newCheckOut: '2027-08-04', waiveFee: true, balanceSettledOutside: true, note: 'private words' } },
-      { status: 'ok', data: { reservation: { reference: 'BK-NEW0000001' }, refund: { ...REFUND, reason: 'dates_changed', amountCents: 4000, percent: 0 } } },
+      BOOKING_ID,
+      '2a3b4c5d-6e7f-4a8b-9c0d-1e2f3a4b5c6d',
+      { waiveFee: true, balanceSettledOutside: true },
+      { amountCents: 4000, percent: 0, reason: 'dates_changed', status: 'pending', currencyCode: 'EUR' },
     );
 
-    const [actor, action, details] = recordBy.mock.calls[0] ?? [];
-    expect(actor).toMatchObject({ staffUserId: 'staff-9' });
-    expect(action).toBe('booking.dates_changed_by_staff');
-    expect(details).toMatchObject({
-      targetType: 'booking',
-      targetId: BOOKING_ID,
-      metadata: {
-        actorRole: 'employee',
-        bookingReference: 'BK-1A2B3C4D5E',
-        newBookingReference: 'BK-NEW0000001',
-        waiveFee: true,
-        balanceSettledOutside: true,
-        refundCents: 4000,
-        refundReason: 'dates_changed',
-      },
+    expect(metadata).toMatchObject({
+      actorRole: 'employee',
+      bookingReference: 'BK-1A2B3C4D5E',
+      newBookingReference: 'BK-2A3B4C5D6E',
+      waiveFee: true,
+      balanceSettledOutside: true,
+      refundIssued: true,
+      refundCents: 4000,
+      refundReason: 'dates_changed',
     });
-    expect(JSON.stringify(recordBy.mock.calls)).not.toContain('private words');
+    expect(JSON.stringify(metadata)).not.toMatch(/private words|@/);
+  });
+
+  it('change dates is no longer written by the interceptor (the service does it inside the transaction): no double row', () => {
+    expect(Reflect.getMetadata(AUDITED, StaffBookingsController.prototype.changeDates) ?? null).toBeNull();
   });
 
   it('refund retry: the refund id as target, its booking reference, amount, reason and the outcome', async () => {
@@ -168,17 +155,15 @@ describe('audit rows of the staff money actions', () => {
     });
   });
 
-  it('mark paid: audited with who, the refund and its amount, but not the note the person wrote', async () => {
-    await run(
-      StaffBookingsController.prototype.markPaid,
-      ADMIN,
-      { params: { id: 'refund-1' }, body: { note: 'bank transfer FR76 secret' } },
-      { status: 'ok', data: { ...REFUND, status: 'succeeded' } },
-    );
+  it('refund mark paid: who, the refund and its amount, but not the note the person wrote (written by the service, in its transaction)', () => {
+    const metadata = refundMarkedPaidAuditMetadata(ADMIN, { inventory_block_id: BOOKING_ID, amount_cents: 25000, reason: 'goodwill', currency_code: 'EUR' });
 
-    expect(recordBy.mock.calls[0]?.[1]).toBe('refund.marked_paid');
-    expect(recordBy.mock.calls[0]?.[2]).toMatchObject({ targetId: 'refund-1', metadata: { actorRole: 'admin', refundCents: 25000, bookingReference: 'BK-1A2B3C4D5E' } });
-    expect(JSON.stringify(recordBy.mock.calls)).not.toContain('FR76 secret');
+    expect(metadata).toMatchObject({ actorRole: 'admin', refundCents: 25000, refundReason: 'goodwill', refundStatus: 'succeeded', refundCurrency: 'EUR', bookingReference: 'BK-1A2B3C4D5E' });
+    expect(JSON.stringify(metadata)).not.toContain('FR76');
+  });
+
+  it('refund mark paid is no longer written by the interceptor (the service does it inside the transaction): no double row', () => {
+    expect(Reflect.getMetadata(AUDITED, StaffBookingsController.prototype.markPaid) ?? null).toBeNull();
   });
 
   it('writes no row when the action was refused (the interceptor only logs success)', async () => {
@@ -192,89 +177,64 @@ describe('audit rows of the staff money actions', () => {
     expect(() => interceptor.intercept(context, failing)).toThrow('refused');
     expect(recordBy).not.toHaveBeenCalled();
   });
-  it('create booking: who, reference, stay, dates, price and method; never the guest\'s name, email, phone or note', async () => {
-    await run(
-      StaffBookingsController.prototype.create,
-      ADMIN,
-      { body: { houseId: 'house-1', bookerName: 'Grace Hopper', bookerEmail: 'grace@example.com', bookerPhone: '+33612345678', guestNote: 'allergic to nuts' } },
-      {
-        status: 'ok',
-        data: {
-          id: BOOKING_ID,
-          reference: 'BK-1A2B3C4D5E',
-          houseId: 'house-1',
-          checkIn: '2027-08-01',
-          checkOut: '2027-08-04',
-          guestCount: 2,
-          totalCents: 96000,
-          currencyCode: 'EUR',
-          paymentMethod: 'pay_at_hotel',
-          paymentStatus: 'pending',
-          bookerName: 'Grace Hopper',
-          bookerEmail: 'grace@example.com',
-          bookerPhone: '+33612345678',
-          guestNote: 'allergic to nuts',
-          extras: [
-            { name: 'Breakfast basket', kind: 'instant', quantity: 2, unitPriceCents: 1800, lineCents: 3600, status: 'confirmed' },
-            { name: 'Extra pillows', kind: 'on_request', quantity: 1, unitPriceCents: 0, lineCents: 0, status: 'pending' },
-          ],
-        },
-      },
-    );
-
-    const [, action, details] = recordBy.mock.calls[0] ?? [];
-    expect(action).toBe('booking.created_by_staff');
-    expect(details).toEqual({
-      targetType: 'booking',
-      targetId: BOOKING_ID,
-      metadata: {
-        actorName: 'Ada Admin',
-        actorRole: 'admin',
-        viaRefundAccess: false,
-        bookingReference: 'BK-1A2B3C4D5E',
-        houseId: 'house-1',
-        checkIn: '2027-08-01',
-        checkOut: '2027-08-04',
-        guestCount: 2,
-        totalCents: 96000,
-        currency: 'EUR',
-        paymentMethod: 'pay_at_hotel',
-        paymentStatus: 'pending',
-        extrasCount: 2,
-        extrasCents: 3600,
-        extraNames: ['Breakfast basket', 'Extra pillows'],
-      },
+  it('create booking: who, reference, stay, dates, price and method; never the guest\'s name, email, phone or note (written by the creator, in its transaction)', () => {
+    const metadata = createBookingAuditMetadata(ADMIN, {
+      id: BOOKING_ID,
+      houseId: 'house-1',
+      checkIn: '2027-08-01',
+      checkOut: '2027-08-04',
+      guestCount: 2,
+      totalCents: 96000,
+      currencyCode: 'EUR',
+      extras: [
+        { name: 'Breakfast basket', lineCents: 3600 },
+        { name: 'Extra pillows', lineCents: 0 },
+      ],
+      bookingSource: 'phone_email',
+      paymentMethod: 'pay_at_hotel',
+      paymentStatus: 'pending',
     });
-    const written = JSON.stringify(recordBy.mock.calls);
-    expect(written).not.toContain('Grace');
-    expect(written).not.toContain('grace@example.com');
-    expect(written).not.toContain('allergic');
-    expect(written).not.toContain('+336');
+
+    expect(metadata).toEqual({
+      actorName: 'Ada Admin',
+      actorRole: 'admin',
+      viaRefundAccess: false,
+      bookingReference: 'BK-1A2B3C4D5E',
+      houseId: 'house-1',
+      checkIn: '2027-08-01',
+      checkOut: '2027-08-04',
+      guestCount: 2,
+      totalCents: 96000,
+      currency: 'EUR',
+      paymentMethod: 'pay_at_hotel',
+      paymentStatus: 'pending',
+      bookingSource: 'phone_email',
+      extrasCount: 2,
+      extrasCents: 3600,
+      extraNames: ['Breakfast basket', 'Extra pillows'],
+    });
   });
 
-  it('mark paid: who ticked it, the booking and the amount recorded as received', async () => {
-    await run(
-      StaffBookingsController.prototype.markBookingPaid,
-      EMPLOYEE_WITH_ACCESS,
-      { params: { id: BOOKING_ID } },
-      { status: 'ok', data: { reference: 'BK-1A2B3C4D5E', paidCents: 96000, currencyCode: 'EUR', paymentMethod: 'pay_at_hotel', bookerEmail: 'guest@example.com' } },
-    );
+  it('create booking is no longer written by the interceptor (the creator does it inside the transaction): no double row', () => {
+    expect(Reflect.getMetadata(AUDITED, StaffBookingsController.prototype.create) ?? null).toBeNull();
+  });
 
-    const [, action, details] = recordBy.mock.calls[0] ?? [];
-    expect(action).toBe('booking.marked_paid');
-    expect(details).toEqual({
-      targetType: 'booking',
-      targetId: BOOKING_ID,
-      metadata: {
-        actorName: 'Pat Permitted',
-        actorRole: 'employee',
-        viaRefundAccess: true,
-        bookingReference: 'BK-1A2B3C4D5E',
-        paidCents: 96000,
-        currency: 'EUR',
-        paymentMethod: 'pay_at_hotel',
-      },
+  it('mark paid: who ticked it, the booking and the amount recorded as received (written by the service, in its transaction)', () => {
+    const metadata = markPaidAuditMetadata(EMPLOYEE_WITH_ACCESS, { id: BOOKING_ID, total_cents: 96000, currency_code: 'EUR' });
+
+    expect(metadata).toEqual({
+      actorName: 'Pat Permitted',
+      actorRole: 'employee',
+      viaRefundAccess: true,
+      bookingReference: 'BK-1A2B3C4D5E',
+      paidCents: 96000,
+      currency: 'EUR',
+      paymentMethod: 'pay_at_hotel',
     });
-    expect(JSON.stringify(recordBy.mock.calls)).not.toContain('guest@example.com');
+    expect(JSON.stringify(metadata)).not.toMatch(/@|phone|note/i);
+  });
+
+  it('mark paid is no longer written by the interceptor (the service does it inside the transaction): no double row', () => {
+    expect(Reflect.getMetadata(AUDITED, StaffBookingsController.prototype.markBookingPaid) ?? null).toBeNull();
   });
 });

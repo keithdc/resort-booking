@@ -33,6 +33,7 @@ export function redactReportForEmployee(report: StaffReport): RoleAwareReport {
     })),
     daily: report.daily.map((point) => ({ ...point, revenueCents: 0 })),
     paymentMethods: report.paymentMethods.map((slice) => ({ ...slice, revenueCents: 0 })),
+    bookingSources: report.bookingSources.map((slice) => ({ ...slice, revenueCents: 0 })),
     cancellationReasons: report.cancellationReasons.map((row) => ({ ...row, paidCents: 0, refundedCents: 0 })),
     refunds: [],
     discountUsage: report.discountUsage.map((row) => ({ ...row, discountCents: 0 })),

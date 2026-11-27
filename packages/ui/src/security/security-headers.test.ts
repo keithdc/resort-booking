@@ -128,6 +128,12 @@ describe('buildStaticSecurityHeaders', () => {
   const production = Object.fromEntries(buildStaticSecurityHeaders({ isProduction: true }).map((h) => [h.key, h.value]));
   const development = Object.fromEntries(buildStaticSecurityHeaders({ isProduction: false }).map((h) => [h.key, h.value]));
 
+  it('lets the admin app send no Referer at all, so an invitation page never leaks its address', () => {
+    const admin = Object.fromEntries(buildStaticSecurityHeaders({ isProduction: true, referrerPolicy: 'no-referrer' }).map((h) => [h.key, h.value]));
+
+    expect(admin['Referrer-Policy']).toBe('no-referrer');
+  });
+
   it('sets the fixed headers', () => {
     expect(production['X-Content-Type-Options']).toBe('nosniff');
     expect(production['X-Frame-Options']).toBe('DENY');

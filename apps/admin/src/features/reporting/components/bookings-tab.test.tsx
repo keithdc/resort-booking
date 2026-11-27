@@ -36,6 +36,50 @@ function renderTab(overrides: Partial<Parameters<typeof BookingsTab>[0]> = {}): 
   return { onStatusChange, onChanged };
 }
 
+describe('BookingsTab: where bookings come from', () => {
+  afterEach(cleanup);
+
+  const mixed = (): ReturnType<typeof staffReport> =>
+    staffReport({
+      bookingSources: [
+        { source: 'website', reservationCount: 2, occupiedNights: 3, revenueCents: 60000, sharePercent: 67 },
+        { source: 'airbnb', reservationCount: 1, occupiedNights: 2, revenueCents: 40000, sharePercent: 33 },
+      ],
+      pipeline: [
+        staffReservation({ id: 'w1', reference: 'BK-WEB0000001', bookerName: 'Ada Lovelace', bookingSource: 'website' }),
+        staffReservation({ id: 'w2', reference: 'BK-WEB0000002', bookerName: 'Grace Hopper', bookingSource: 'website' }),
+        staffReservation({ id: 'a1', reference: 'BK-ABB0000003', bookerName: 'Alan Turing', bookingSource: 'airbnb', paymentMethod: 'paid_by_channel' }),
+      ],
+    });
+
+  it('puts the source section above the bookings and shows a Source column', () => {
+    renderTab({ report: mixed() });
+
+    expect(screen.getByRole('heading', { name: 'Where bookings come from' })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: 'Source' })).toBeTruthy();
+    expect(within(screen.getByRole('table', { name: 'Bookings in this period' })).getAllByText('Airbnb')).toHaveLength(1);
+  });
+
+  it('filters by source with chips that show how many each has, and clears again', () => {
+    renderTab({ report: mixed() });
+    const group = screen.getByRole('group', { name: 'Filter by source' });
+
+    fireEvent.click(within(group).getByRole('button', { name: 'Airbnb (1)' }));
+    const table = screen.getByRole('table', { name: 'Bookings in this period' });
+    expect(within(table).getByText('Alan Turing')).toBeTruthy();
+    expect(within(table).queryByText('Ada Lovelace')).toBeNull();
+
+    fireEvent.click(within(group).getByRole('button', { name: 'Any source' }));
+    expect(within(screen.getByRole('table', { name: 'Bookings in this period' })).getByText('Ada Lovelace')).toBeTruthy();
+  });
+
+  it('shows no source filter when every booking came from one source', () => {
+    renderTab();
+
+    expect(screen.queryByRole('group', { name: 'Filter by source' })).toBeNull();
+  });
+});
+
 describe('BookingsTab', () => {
   afterEach(cleanup);
 

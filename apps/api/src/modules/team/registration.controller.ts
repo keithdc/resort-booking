@@ -11,6 +11,7 @@ import { clientIp } from '../../shared/http/client-ip';
 import type { RequestWithId } from '../../shared/http/request-id';
 import type { StaffSessionResult } from '../../shared/roles/staff-role';
 import { AcceptInviteDto } from './dto/accept-invite.dto';
+import { PreviewInviteDto } from './dto/preview-invite.dto';
 import { RegisterDto } from './dto/register.dto';
 import { TeamService, type PublicContext } from './team.service';
 import type { InvitePreview, RegistrationStatus } from './team.types';
@@ -42,7 +43,18 @@ export class RegistrationController {
   }
 
   /**
-   * What the invitation page shows. The same 404 for an unknown, used, revoked or expired link.
+   * What the invitation page shows. The token is in the BODY (the link keeps it after a `#`, which no server or Referer
+   * header ever sees). The same 404 for an unknown, used, revoked or expired link.
+   */
+  @Post('invites/preview')
+  public async previewByBody(@Body() body: PreviewInviteDto, @Req() request: RequestWithId): Promise<ApiOkBody<InvitePreview>> {
+    return { status: 'ok', data: await this.team.preview(body.token, contextOf(request)) };
+  }
+
+  /**
+   * DEPRECATED: the older link shape `/invite/<token>` put the token in the address. Kept for one release so links that
+   * were already handed out still open; links are single-use and expire, and new ones use the POST above.
+   * Remove with the admin route `/invite/[token]` (docs/17).
    */
   @Get('invites/:token/preview')
   public async preview(@Param('token') token: string, @Req() request: RequestWithId): Promise<ApiOkBody<InvitePreview>> {

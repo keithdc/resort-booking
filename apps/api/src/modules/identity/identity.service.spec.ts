@@ -232,8 +232,17 @@ describe('IdentityService', () => {
 
       await expect(service.resetTwoFactor(ORG, STAFF_ID)).resolves.toEqual({ hadTwoFactor: true });
 
-      expect(resetForMember).toHaveBeenCalledWith(ORG, STAFF_ID);
+      expect(resetForMember).toHaveBeenCalledWith(ORG, STAFF_ID, undefined);
       expect(deleteSessionsExcept).toHaveBeenCalledWith(STAFF_ID, null);
+    });
+
+    it('hands the audit writer on, so the row is saved in the same transaction as the removal', async () => {
+      resetForMember.mockResolvedValue({ hadTwoFactor: true });
+      const audit = jest.fn().mockResolvedValue(undefined);
+
+      await service.resetTwoFactor(ORG, STAFF_ID, audit);
+
+      expect(resetForMember).toHaveBeenCalledWith(ORG, STAFF_ID, audit);
     });
 
     it('a member of another organization is not found and nobody is signed out', async () => {
@@ -269,7 +278,7 @@ describe('IdentityService', () => {
       expect(updateStaffPassword).toHaveBeenCalledTimes(1);
       const upgraded = updateStaffPassword.mock.calls[0]?.[1] ?? '';
       expect(updateStaffPassword.mock.calls[0]?.[0]).toBe(STAFF_ID);
-      expect(upgraded).toMatch(/^scrypt[$]16384[$]8[$]1[$]/);
+      expect(upgraded).toMatch(/^scrypt[$]131072[$]8[$]1[$]/);
       expect(upgraded).not.toContain('Correct-horse-9');
     });
 
@@ -728,7 +737,7 @@ describe('IdentityService', () => {
 
       await service.onModuleInit();
 
-      expect(insertStaffUser).toHaveBeenCalledWith(ORG, 'Owner', 'boss@example.com', expect.stringMatching(/^scrypt[$]16384[$]8[$]1[$][0-9a-f]{32}[$]/));
+      expect(insertStaffUser).toHaveBeenCalledWith(ORG, 'Owner', 'boss@example.com', expect.stringMatching(/^scrypt[$]131072[$]8[$]1[$][0-9a-f]{32}[$]/));
     });
 
     it('has no fallback password: it stops with a clear message when the environment gives none', async () => {

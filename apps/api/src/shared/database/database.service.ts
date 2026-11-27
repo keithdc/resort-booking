@@ -55,6 +55,24 @@ export class DatabaseService implements OnModuleDestroy {
   }
 
   /**
+   * Runs `fn` in one transaction: COMMIT when it returns, ROLLBACK when it throws (the error is passed on). Use it when
+   * an action and its audit row must be saved together or not at all (docs/13 R6-05).
+   */
+  public async withTransaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
+    return this.withClient(async (client): Promise<T> => {
+      await client.query('BEGIN');
+      try {
+        const result = await fn(client);
+        await client.query('COMMIT');
+        return result;
+      } catch (error: unknown) {
+        await client.query('ROLLBACK').catch((): void => undefined);
+        throw error;
+      }
+    });
+  }
+
+  /**
    * True when Postgres accepts a connection.
    */
   public async ping(): Promise<boolean> {

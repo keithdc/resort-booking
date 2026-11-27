@@ -17,6 +17,7 @@ import { ReservationsService } from '../reservations/reservations.service';
 import { InventoryRepository } from './inventory.repository';
 import { InventoryService } from './inventory.service';
 import { StaffBookingCreator } from './staff-booking-creator';
+import { AuditService } from '../../shared/audit/audit.service';
 import { StaffBookingLimiter } from './staff-booking-limiter';
 
 const STAFF: StaffAccount = { id: 'staff-1', organizationId: 'org', fullName: 'Sam', email: 's@example.com', role: 'employee', organizationName: 'Org', canManageRefunds: false };
@@ -30,6 +31,8 @@ const REQUEST: StaffCreateBookingRequest = {
   checkOut: inDays(33),
   guestCount: 2,
   paymentMethod: 'pay_at_hotel',
+  bookingSource: 'phone_email',
+  channelTotalCents: null,
   bookerName: '  Ada Lovelace ',
   bookerEmail: ' ada@example.com ',
   bookerPhone: '',
@@ -65,6 +68,7 @@ describe('StaffBookingCreator', () => {
   const checkQuote = jest.fn();
   const checkCreate = jest.fn();
   const clientQuery = jest.fn();
+  const recordInTransaction = jest.fn();
   let creator: StaffBookingCreator;
   const statements = (): string[] => statementsOf(clientQuery.mock.calls);
 
@@ -81,6 +85,7 @@ describe('StaffBookingCreator', () => {
     getPolicySnapshot.mockResolvedValue({ tiers: [], rebookable: false, rebookFeeType: 'none', rebookFeeValue: 0 });
     getReservation.mockResolvedValue({ id: 'new-1', paymentStatus: 'pending' } as StaffReservation);
     clientQuery.mockResolvedValue({ rows: [] });
+    recordInTransaction.mockResolvedValue(undefined);
     const moduleRef = await Test.createTestingModule({
       providers: [
         StaffBookingCreator,
@@ -93,6 +98,7 @@ describe('StaffBookingCreator', () => {
         { provide: ExtrasRepository, useValue: { listPublishedForBooking } },
         { provide: ReservationExtrasRepository, useValue: { insertAll: insertAllExtras } },
         { provide: StaffBookingLimiter, useValue: { checkQuote, checkCreate } },
+        { provide: AuditService, useValue: { recordInTransaction } },
       ],
     }).compile();
     creator = moduleRef.get(StaffBookingCreator);
@@ -223,6 +229,72 @@ describe('StaffBookingCreator', () => {
       expect(JSON.parse(String(input.priceSnapshot))).toMatchObject({ totalCents: 86400, discountCents: 9600 });
       expect(JSON.parse(String(input.policySnapshot))).toMatchObject({ rebookable: false });
       expect(statements()).toEqual(['BEGIN', 'EXPIRE_HOLDS', 'COMMIT']);
+    });
+
+    it('writes the audit row on the same transaction, before the commit: who, the reference, the stay, the dates and the price, never a guest detail', async () => {
+      await creator.create(STAFF, { ...REQUEST, extras: [{ extraId: 'ex-1', quantity: 2 }] });
+
+      expect(recordInTransaction).toHaveBeenCalledTimes(1);
+      const [client, actor, action, details] = recordInTransaction.mock.calls[0] ?? [];
+      expect(client).toEqual({ query: clientQuery });
+      expect(actor).toEqual({ organizationId: STAFF.organizationId, staffUserId: STAFF.id });
+      expect(action).toBe('booking.created_by_staff');
+      expect(details).toMatchObject({
+        targetType: 'booking',
+        targetId: 'new-1',
+        metadata: { bookingReference: expect.stringMatching(/^BK-/), houseId: 'house', checkIn: REQUEST.checkIn, checkOut: REQUEST.checkOut, guestCount: 2, paymentMethod: 'pay_at_hotel', paymentStatus: 'pending', bookingSource: 'phone_email', extrasCount: 1 },
+      });
+      expect(JSON.stringify(details)).not.toMatch(/ada@example|Ada Lovelace|late arrival/);
+      expect(statements()).toEqual(['BEGIN', 'EXPIRE_HOLDS', 'COMMIT']);
+    });
+
+    describe('a booking made on another site (Airbnb, Booking.com, another website)', () => {
+      const CHANNEL = { ...REQUEST, bookingSource: 'airbnb' as const, paymentMethod: 'paid_by_channel' as const, channelTotalCents: 123400 };
+
+      it('is saved as paid by channel with the TYPED total (not our rates), no extras, no discounts, and says so in the audit row', async () => {
+        await creator.create(STAFF, CHANNEL);
+
+        const input = insertStaffBooking.mock.calls[0]?.[1] as Record<string, unknown>;
+        expect(input).toMatchObject({ paymentMethod: 'paid_by_channel', bookingSource: 'airbnb', totalCents: 123400 });
+        expect(JSON.parse(String(input.priceSnapshot))).toMatchObject({ totalCents: 123400, discountCents: 0, discounts: [], extrasCents: 0 });
+        expect(insertAllExtras.mock.calls[0]?.[1]).toMatchObject({ lines: [] });
+        expect(recordInTransaction.mock.calls[0]?.[3]).toMatchObject({ metadata: { bookingSource: 'airbnb', paymentMethod: 'paid_by_channel', paymentStatus: 'paid', totalCents: 123400 } });
+        expect(statements()).toEqual(['BEGIN', 'EXPIRE_HOLDS', 'COMMIT']);
+      });
+
+      it('still refuses dates that are taken, and keeps our own calendar the judge of that', async () => {
+        getQuote.mockResolvedValue(quote({ available: false }));
+
+        await expect(creator.create(STAFF, CHANNEL)).rejects.toMatchObject({ status: 409, response: { code: 'DATES_UNAVAILABLE' } });
+        expect(insertStaffBooking).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        ['a total is required', { channelTotalCents: null }, 'CHANNEL_TOTAL_REQUIRED'],
+        ['a total of zero is refused', { channelTotalCents: 0 }, 'CHANNEL_TOTAL_REQUIRED'],
+        ['pay at hotel does not fit a channel source', { paymentMethod: 'pay_at_hotel' as const }, 'SOURCE_PAYMENT_MISMATCH'],
+        ['extras are not added to a channel booking', { extras: [{ extraId: 'ex-1', quantity: 1 }] }, 'CHANNEL_NO_EXTRAS'],
+      ])('refuses (%s) before pricing or saving anything', async (_label, change, code) => {
+        await expect(creator.create(STAFF, { ...CHANNEL, ...change })).rejects.toMatchObject({ status: 400, response: { code } });
+        expect(getQuote).not.toHaveBeenCalled();
+        expect(insertStaffBooking).not.toHaveBeenCalled();
+      });
+    });
+
+    it.each([
+      ['paid by channel does not fit our own sources', { paymentMethod: 'paid_by_channel' as const, channelTotalCents: 1000 }, 'SOURCE_PAYMENT_MISMATCH'],
+      ['a typed total is only for another site', { channelTotalCents: 1000 }, 'CHANNEL_TOTAL_NOT_ALLOWED'],
+    ])('refuses on our own source (%s)', async (_label, change, code) => {
+      await expect(creator.create(STAFF, { ...REQUEST, ...change })).rejects.toMatchObject({ status: 400, response: { code } });
+      expect(insertStaffBooking).not.toHaveBeenCalled();
+    });
+
+    it('rolls the booking back when the audit row cannot be written: no booking without its row', async () => {
+      recordInTransaction.mockRejectedValue(new Error('audit insert failed'));
+
+      await expect(creator.create(STAFF, REQUEST)).rejects.toThrow('audit insert failed');
+      expect(statements()).toEqual(['BEGIN', 'EXPIRE_HOLDS', 'ROLLBACK']);
+      expect(getReservation).not.toHaveBeenCalled();
     });
 
     it('saves the extras in the same transaction, with the whole total (stay plus instant extras) on the booking', async () => {

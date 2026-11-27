@@ -57,6 +57,7 @@ describe('ReportSummaryRepository.cancellationsByReason', () => {
     expect(sql).toContain("ib.status = 'cancelled'");
     expect(sql).toContain("<> 'dates_changed'");
     expect(sql).toContain('rebook_of_id = ib.id');
+    expect(sql).toContain("CASE WHEN ib.payment_method = 'paid_by_channel' THEN 0");
     expect(query.mock.calls[0]?.[1]).toEqual(['2027-07-01', '2027-08-01', null, 'org-1']);
   });
 
@@ -200,5 +201,35 @@ describe('ReportSummaryRepository scopes every statement to one organization', (
     expect(query.mock.calls[0]?.[1]).toEqual(['2027-07-01', null, 'org-1']);
     expect(query.mock.calls[1]?.[0]).toContain('r.organization_id = $2');
     expect(query.mock.calls[1]?.[1]).toEqual([null, 'org-1']);
+  });
+});
+
+describe('ReportSummaryRepository: 64-bit sums', () => {
+  it('sums money as bigint in SQL and keeps totals above 32 bits exact', async () => {
+    const { repository, query } = await build([
+      [{ reason: 'guest_request', cancelled_count: 3, paid_cents: '3000000000', refunded_cents: '2500000000' }],
+      [{ discount_id: 'd1', label: 'Early bird', redemption_count: 2, discount_cents: '2200000000' }],
+      [{ unpaid_hold_count: 0, arrivals_today_count: 0, arrivals_next_7_days_count: 0, unpaid_at_hotel_count: 1, unpaid_at_hotel_cents: '4000000000', unpaid_at_hotel_arrivals_next_7_days_count: 0, unpaid_at_hotel_past_count: 0 }],
+      [{ refund_count: 1, refund_cents: '2147483648' }],
+    ]);
+
+    expect(await repository.cancellationsByReason('2027-07-01', '2027-08-01', null, 'org-1')).toEqual([
+      { reason: 'guest_request', cancelledCount: 3, paidCents: 3_000_000_000, refundedCents: 2_500_000_000 },
+    ]);
+    expect(await repository.discountUsage('2027-07-01', '2027-08-01', null, 'org-1')).toEqual([
+      { discountId: 'd1', label: 'Early bird', redemptionCount: 2, discountCents: 2_200_000_000 },
+    ]);
+    const attention = await repository.attention('2027-07-01', null, 'org-1');
+    expect(attention.unpaidAtHotelCents).toBe(4_000_000_000);
+    expect(attention.refundsToPayCents).toBe(2_147_483_648);
+
+    for (const call of query.mock.calls) {
+      expect(call[0]).not.toMatch(/SUM\([^)]*\)[^,]*\)::int\b|\), 0\)::int AS \w*cents/);
+    }
+  });
+
+  it('throws instead of showing a total a number cannot hold', async () => {
+    const { repository } = await build([[{ reason: 'guest_request', cancelled_count: 1, paid_cents: '9007199254740993', refunded_cents: '0' }]]);
+    await expect(repository.cancellationsByReason('2027-07-01', '2027-08-01', null, 'org-1')).rejects.toThrow('too large');
   });
 });

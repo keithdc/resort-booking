@@ -164,3 +164,11 @@ export function isPgUniqueViolation(error: unknown): boolean {
   const candidate = error as PgErrorLike;
   return candidate.code === '23P01' || candidate.code === '23505';
 }
+
+/** Sources where another site collected the money (the booking is `paid_by_channel`); the others are the property's own. */
+export const CHANNEL_SOURCES: readonly string[] = ['airbnb', 'booking_com', 'other_site'];
+
+/** True for a booking made on Airbnb, Booking.com or another site. */
+export function isChannelSource(source: string): boolean {
+  return CHANNEL_SOURCES.includes(source);
+}

@@ -6,6 +6,8 @@
 
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import type { PoolClient } from 'pg';
+import { AuditService } from '../../shared/audit/audit.service';
 import type { StaffAccount } from '../../shared/roles/staff-role';
 import { StaffNoteLimiter } from './staff-note-limiter';
 import { NOTES_PER_BOOKING_CAP, StaffNotesRepository, type NoteRow } from './staff-notes.repository';
@@ -24,10 +26,11 @@ describe('StaffNotesService', () => {
     findBookingProperty: jest.fn<Promise<string | null>, [string, string]>(),
     list: jest.fn<Promise<NoteRow[]>, [string, string]>(),
     count: jest.fn<Promise<number>, [string, string]>(),
-    insert: jest.fn<Promise<NoteRow>, [Parameters<StaffNotesRepository['insert']>[0]]>(),
+    insert: jest.fn<Promise<NoteRow>, [Parameters<StaffNotesRepository['insert']>[0], ((client: PoolClient) => Promise<void>)?]>(),
     find: jest.fn<Promise<NoteRow | null>, [string, string, string]>(),
-    hide: jest.fn<Promise<boolean>, [string, string, string, string]>(),
+    hide: jest.fn<Promise<boolean>, [string, string, string, string, ((client: PoolClient) => Promise<void>)?]>(),
   };
+  const recordInTransaction = jest.fn<Promise<void>, [PoolClient, { organizationId: string; staffUserId: string }, string, Record<string, unknown>?]>();
   const limiter = { check: jest.fn<Promise<void>, [string]>() };
   let service: StaffNotesService;
 
@@ -36,11 +39,13 @@ describe('StaffNotesService', () => {
     repo.findBookingProperty.mockResolvedValue('prop-1');
     repo.count.mockResolvedValue(0);
     limiter.check.mockResolvedValue(undefined);
+    recordInTransaction.mockResolvedValue(undefined);
     const moduleRef = await Test.createTestingModule({
       providers: [
         StaffNotesService,
         { provide: StaffNotesRepository, useValue: repo },
         { provide: StaffNoteLimiter, useValue: limiter },
+        { provide: AuditService, useValue: { recordInTransaction } },
       ],
     }).compile();
     service = moduleRef.get(StaffNotesService);
@@ -69,12 +74,40 @@ describe('StaffNotesService', () => {
   });
 
   describe('add', () => {
+    it('hands the repository an audit writer for the SAME transaction: who, the booking and the length, never the text', async () => {
+      const client = Object.create(null) as PoolClient;
+      repo.insert.mockImplementation(async (_input, audit) => {
+        await audit?.(client);
+        return row();
+      });
+
+      await service.add(EMPLOYEE, 'b1', 'Deposit 50 EUR paid, card 4242');
+
+      expect(recordInTransaction).toHaveBeenCalledTimes(1);
+      const [usedClient, actor, action, details] = recordInTransaction.mock.calls[0] ?? [];
+      expect(usedClient).toBe(client);
+      expect(actor).toEqual({ organizationId: 'org-1', staffUserId: 'emp-1' });
+      expect(action).toBe('booking.note_added');
+      expect(details).toMatchObject({ targetType: 'booking', targetId: 'b1', metadata: { actorRole: 'employee', bookingId: 'b1', noteLength: 'Deposit 50 EUR paid, card 4242'.length } });
+      expect(JSON.stringify(details)).not.toMatch(/Deposit|4242/);
+    });
+
+    it('does not save the note when its audit row cannot be written', async () => {
+      recordInTransaction.mockRejectedValue(new Error('audit insert failed'));
+      repo.insert.mockImplementation(async (_input, audit) => {
+        await audit?.(Object.create(null) as PoolClient);
+        return row();
+      });
+
+      await expect(service.add(EMPLOYEE, 'b1', 'x')).rejects.toThrow('audit insert failed');
+    });
+
     it('saves the note under the signed-in person and the booking\'s own property', async () => {
       repo.insert.mockResolvedValue(row());
 
       const note = await service.add(EMPLOYEE, 'b1', 'Deposit 50 EUR paid');
 
-      expect(repo.insert).toHaveBeenCalledWith({ organizationId: 'org-1', propertyId: 'prop-1', bookingId: 'b1', body: 'Deposit 50 EUR paid', staffId: 'emp-1' });
+      expect(repo.insert).toHaveBeenCalledWith({ organizationId: 'org-1', propertyId: 'prop-1', bookingId: 'b1', body: 'Deposit 50 EUR paid', staffId: 'emp-1' }, expect.any(Function));
       expect(note).toMatchObject({ id: 'n1', canDelete: true });
       expect(limiter.check).toHaveBeenCalledWith('emp-1');
     });
@@ -110,7 +143,26 @@ describe('StaffNotesService', () => {
 
       await service.remove(EMPLOYEE, 'b1', 'n1');
 
-      expect(repo.hide).toHaveBeenCalledWith('org-1', 'b1', 'n1', 'emp-1');
+      expect(repo.hide).toHaveBeenCalledWith('org-1', 'b1', 'n1', 'emp-1', expect.any(Function));
+    });
+
+    it('hands the repository an audit writer for the SAME transaction: who, the booking and the note id, never the text', async () => {
+      repo.find.mockResolvedValue(row());
+      const client = Object.create(null) as PoolClient;
+      repo.hide.mockImplementation(async (_org, _booking, _note, _staff, audit) => {
+        await audit?.(client);
+        return true;
+      });
+
+      await service.remove(EMPLOYEE, 'b1', 'n1');
+
+      expect(recordInTransaction).toHaveBeenCalledTimes(1);
+      const [usedClient, actor, action, details] = recordInTransaction.mock.calls[0] ?? [];
+      expect(usedClient).toBe(client);
+      expect(actor).toEqual({ organizationId: 'org-1', staffUserId: 'emp-1' });
+      expect(action).toBe('booking.note_removed');
+      expect(details).toMatchObject({ targetType: 'booking', targetId: 'b1', metadata: { bookingId: 'b1', noteId: 'n1' } });
+      expect(JSON.stringify(details)).not.toContain('Deposit');
     });
 
     it('answers 404 (not 403) when an employee tries to hide a colleague\'s note, and hides nothing', async () => {
@@ -126,7 +178,7 @@ describe('StaffNotesService', () => {
 
       await service.remove(ADMIN, 'b1', 'n1');
 
-      expect(repo.hide).toHaveBeenCalledWith('org-1', 'b1', 'n1', 'admin-1');
+      expect(repo.hide).toHaveBeenCalledWith('org-1', 'b1', 'n1', 'admin-1', expect.any(Function));
     });
 
     it('answers 404 for a missing or already hidden note, and when two people hide it at once', async () => {

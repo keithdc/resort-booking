@@ -8,6 +8,7 @@
  */
 
 import type { StaffReport, StaffReservation } from '@resort-booking/shared-types';
+import { bookingSourceLabel } from '@/shared/utils/booking-source';
 import { bookingNights, bookingPaymentStatusLabel, bookingStatusLabel, paymentMethodLabel } from './report-labels';
 
 export type CsvCell = string | number;
@@ -67,10 +68,14 @@ export function buildReportCsv(report: StaffReport, context: CsvContext): string
     ...(withMoney ? [['Average nightly rate', money(report.averageNightlyCents)]] : []),
     ['Unpaid at hotel (bookings in the period)', report.unpaidAtHotelCount],
     ...(withMoney ? [['Unpaid at hotel (still to collect)', money(report.unpaidAtHotelCents)]] : []),
+    ...report.bookingSources.flatMap((slice): CsvCell[][] => [
+      [`Bookings from ${bookingSourceLabel(slice.source)}`, slice.reservationCount],
+      ...(withMoney ? [[`Revenue from ${bookingSourceLabel(slice.source)}`, money(slice.revenueCents)]] : []),
+    ]),
     ['Cancelled bookings', report.cancellationReasons.reduce((sum: number, row): number => sum + row.cancelledCount, 0)],
     ['Cancellation rate (%)', report.cancellationRatePercent],
     [],
-    ['Reference', 'Guest', 'Email', 'Property', 'Stay', 'Check-in', 'Check-out', 'Nights', 'Guests', ...(withMoney ? ['Amount'] : []), 'Payment method', 'Payment status', 'Paid on', 'Status'],
+    ['Reference', 'Guest', 'Email', 'Property', 'Stay', 'Check-in', 'Check-out', 'Nights', 'Guests', 'Source', ...(withMoney ? ['Amount'] : []), 'Payment method', 'Payment status', 'Paid on', 'Status'],
     ...report.pipeline.map((booking: StaffReservation): CsvCell[] => [
       booking.reference,
       booking.bookerName,
@@ -81,6 +86,7 @@ export function buildReportCsv(report: StaffReport, context: CsvContext): string
       booking.checkOut,
       bookingNights(booking),
       booking.guestCount,
+      booking.kind === 'reservation' ? bookingSourceLabel(booking.bookingSource) : '',
       ...(withMoney ? [money(booking.totalCents)] : []),
       paymentMethodLabel(booking.paymentMethod),
       bookingPaymentStatusLabel(booking),

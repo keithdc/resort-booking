@@ -73,6 +73,38 @@ describe('buildReportCsv', () => {
     expect(csv).toContain('Cancellation rate (%),25');
   });
 
+  it('adds a Source column to every booking and the bookings (and money) from each source to the summary', () => {
+    const withSources = staffReport({
+      bookingSources: [
+        { source: 'website', reservationCount: 2, occupiedNights: 5, revenueCents: 80000, sharePercent: 67 },
+        { source: 'airbnb', reservationCount: 1, occupiedNights: 3, revenueCents: 40000, sharePercent: 33 },
+      ],
+      pipeline: [
+        staffReservation({ reference: 'BK-WEB0000001', bookingSource: 'website' }),
+        staffReservation({ id: 'r2', reference: 'BK-ABB0000002', bookingSource: 'airbnb', paymentMethod: 'paid_by_channel' }),
+        staffReservation({ id: 'h1', reference: 'BK-HOLD000003', kind: 'hold', status: 'active' }),
+      ],
+    });
+
+    const csv = buildReportCsv(withSources, context);
+
+    expect(csv).toContain('Reference,Guest,Email,Property,Stay,Check-in,Check-out,Nights,Guests,Source,Amount,Payment method');
+    expect(csv).toMatch(/BK-WEB0000001,.*,Our website,/);
+    expect(csv).toMatch(/BK-ABB0000002,.*,Airbnb,.*Paid on another site/);
+    expect(csv).toMatch(/BK-HOLD000003,.*,,\d/);
+    expect(csv).toContain('Bookings from Our website,2');
+    expect(csv).toContain('Revenue from Airbnb,400');
+  });
+
+  it('leaves the money per source out of the file when money is hidden, and keeps the counts', () => {
+    const hidden = staffReport({ bookingSources: [{ source: 'airbnb', reservationCount: 1, occupiedNights: 3, revenueCents: 0, sharePercent: 100 }] });
+
+    const csv = buildReportCsv(hidden, { ...context, moneyHidden: true });
+
+    expect(csv).toContain('Bookings from Airbnb,1');
+    expect(csv).not.toContain('Revenue from');
+  });
+
   it('says how much is unpaid at the hotel in the summary, and leaves the money out when it is hidden', () => {
     const unpaid = { ...report, unpaidAtHotelCount: 2, unpaidAtHotelCents: 150000 };
 
@@ -99,7 +131,7 @@ describe('buildReportCsv', () => {
   it('writes one row per booking, quoted and guarded', () => {
     const lines = buildReportCsv(report, context).trimEnd().split('\r\n');
     const header = lines.findIndex((line) => line.startsWith('Reference,Guest'));
-    expect(lines[header + 1]).toContain('BK-ABC1234567,"Ada, Countess",ada@example.com,Alpine Lake,Lake Chalet,2027-07-10,2027-07-12,2,2,960,Card / wallets,Paid,,Confirmed');
+    expect(lines[header + 1]).toContain('BK-ABC1234567,"Ada, Countess",ada@example.com,Alpine Lake,Lake Chalet,2027-07-10,2027-07-12,2,2,Our website,960,Card / wallets,Paid,,Confirmed');
     expect(lines[header + 2]).toContain("'=cmd|calc");
     expect(lines[header + 2]).toContain('Not recorded,,,Cancelled');
   });

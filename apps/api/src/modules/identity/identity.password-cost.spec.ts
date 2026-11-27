@@ -18,7 +18,7 @@ function legacyHash(password: string): string {
 /** A hash with chosen parameters in the current format. */
 function parameterised(password: string, n: number, r: number, p: number): string {
   const salt = randomBytes(16);
-  const key = scryptSync(password, salt, 64, { N: n, r, p, maxmem: 256 * 1024 * 1024 });
+  const key = scryptSync(password, salt, 64, { N: n, r, p, maxmem: 700 * 1024 * 1024 });
   return ['scrypt', String(n), String(r), String(p), salt.toString('hex'), key.toString('hex')].join('$');
 }
 
@@ -40,7 +40,7 @@ describe('stored hash format and cost (docs/13 R2-27)', (): void => {
   });
 
   it('verifies a hash made with a higher cost than the target and does not flag it', async (): Promise<void> => {
-    const stored = parameterised('AtlanticOwner1!', 32768, 8, 1);
+    const stored = parameterised('AtlanticOwner1!', 262144, 8, 1);
 
     await expect(verifyPassword('AtlanticOwner1!', stored)).resolves.toBe(true);
     await expect(verifyPassword('wrong-pass1', stored)).resolves.toBe(false);
@@ -49,6 +49,13 @@ describe('stored hash format and cost (docs/13 R2-27)', (): void => {
 
   it('flags a hash made with a lower cost than the target', (): void => {
     expect(passwordNeedsRehash(parameterised('AtlanticOwner1!', 8192, 8, 1))).toBe(true);
+  });
+
+  it('raises the cost to N=2^17 (128 MiB per hash) and flags every hash made with the earlier default (N=2^14)', async (): Promise<void> => {
+    expect(TARGET_SCRYPT_PARAMS).toEqual({ N: 131072, r: 8, p: 1 });
+    const earlier = parameterised('AtlanticOwner1!', 16384, 8, 1);
+    await expect(verifyPassword('AtlanticOwner1!', earlier)).resolves.toBe(true);
+    expect(passwordNeedsRehash(earlier)).toBe(true);
   });
 
   it.each([

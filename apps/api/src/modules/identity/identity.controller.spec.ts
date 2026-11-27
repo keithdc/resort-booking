@@ -157,12 +157,13 @@ describe('IdentityController', () => {
     const settings = { id: 'o1', name: 'Humphreys' };
     const audit = { fields: ['iban'], bankDetailsChanged: true, notice: 'bank_details_changed' };
     updateSettings.mockResolvedValue({ settings, audit });
-    const request: AuditChangeCarrier = {};
-    const body = { name: 'Humphreys', iban: 'FR76 0000' } as UpdateOrganizationDto;
+    const request = Object.assign(Object.create(null) as AuditChangeCarrier & RequestWithId, { ip: '203.0.113.9', requestId: 'req-1' });
+    const body = { name: 'Humphreys', iban: 'FR76 0000', currentPassword: 'old-pass-1' } as UpdateOrganizationDto;
 
     const answer = await controller.patchOrganization(RESULT.staff, body, request);
 
-    expect(updateSettings).toHaveBeenCalledWith(body, 'o1');
+    expect(updateSettings).toHaveBeenCalledWith(body, 'o1', { staff: RESULT.staff, context: { ip: '203.0.113.9', requestId: 'req-1' } });
+    expect(JSON.stringify(request.auditChanges)).not.toContain('old-pass-1');
     expect(request.auditChanges).toEqual(audit);
     expect(answer).toEqual({ status: 'ok', data: settings });
   });

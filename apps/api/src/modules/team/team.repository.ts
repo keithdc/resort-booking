@@ -60,6 +60,9 @@ export type MemberChangeOutcome =
   | { kind: 'changed'; before: MemberState; after: { role: StaffRole; active: boolean; canManageRefunds: boolean } }
   | { kind: 'refused'; code: MemberRefusal };
 
+/** Writes the audit row(s) inside the member change's own transaction, after the update and before the commit. */
+export type MemberChangeAudit = (client: PoolClient, done: { before: MemberState; after: { role: StaffRole; active: boolean; canManageRefunds: boolean }; memberName: string }) => Promise<void>;
+
 const MEMBER_COLUMNS = 'id, full_name, email, role, active, can_manage_refunds, last_login_at, created_at';
 
 @Injectable()
@@ -180,7 +183,7 @@ export class TeamRepository {
     expiresAt: Date;
     createdBy: string;
     now: Date;
-  }): Promise<TeamInvite> {
+  }, audit?: (client: PoolClient, invite: TeamInvite) => Promise<void>): Promise<TeamInvite> {
     return this.database.withClient(async (client): Promise<TeamInvite> => {
       await client.query('BEGIN');
       try {
@@ -214,12 +217,15 @@ export class TeamRepository {
             input.role === 'employee' && input.canManageRefunds,
           ],
         );
-        await client.query('COMMIT');
         const row = inserted.rows[0];
         if (row === undefined) {
           throw new Error('Invite insert returned no row');
         }
-        return mapInvite(row, input.now);
+        const invite = mapInvite(row, input.now);
+        // Same transaction: the link exists and its audit row exists, or neither (docs/13 R6-05).
+        await audit?.(client, invite);
+        await client.query('COMMIT');
+        return invite;
       } catch (error: unknown) {
         await client.query('ROLLBACK');
         throw error;
@@ -227,17 +233,31 @@ export class TeamRepository {
     });
   }
 
-  /** Revokes an open invitation of this organization. True when one was revoked. */
-  public async revokeInvite(organizationId: string, inviteId: string): Promise<{ email: string } | null> {
-    const result = await this.database.query<{ email: string }>(
-      `
+  /**
+   * Revokes an open invitation of this organization. Null when there was none to revoke. With `audit` the audit row is
+   * saved in the same transaction, and only when an invitation really was revoked (docs/13 R6-05).
+   */
+  public async revokeInvite(
+    organizationId: string,
+    inviteId: string,
+    audit?: (client: PoolClient) => Promise<void>,
+  ): Promise<{ email: string } | null> {
+    const sql = `
       UPDATE staff_invites SET revoked_at = now()
       WHERE id = $1 AND organization_id = $2 AND accepted_at IS NULL AND revoked_at IS NULL
       RETURNING email
-      `,
-      [inviteId, organizationId],
-    );
-    return result.rows[0] ?? null;
+      `;
+    const params = [inviteId, organizationId];
+    if (audit === undefined) {
+      return (await this.database.query<{ email: string }>(sql, params)).rows[0] ?? null;
+    }
+    return this.database.withTransaction(async (client): Promise<{ email: string } | null> => {
+      const revoked = (await client.query<{ email: string }>(sql, params)).rows[0] ?? null;
+      if (revoked !== null) {
+        await audit(client);
+      }
+      return revoked;
+    });
   }
 
   /** Looks an invitation up by the hash of its token (an indexed equality on a secret hash: nothing to time). */
@@ -332,12 +352,13 @@ export class TeamRepository {
     actorId: string,
     targetId: string,
     change: MemberChange,
+    audit?: MemberChangeAudit,
   ): Promise<MemberChangeOutcome> {
     return this.database.withClient(async (client): Promise<MemberChangeOutcome> => {
       await client.query('BEGIN');
       try {
-        const rows = await client.query<{ id: string; role: string; active: boolean; can_manage_refunds: boolean }>(
-          'SELECT id, role, active, can_manage_refunds FROM staff_users WHERE organization_id = $1 FOR UPDATE',
+        const rows = await client.query<{ id: string; full_name: string; role: string; active: boolean; can_manage_refunds: boolean }>(
+          'SELECT id, full_name, role, active, can_manage_refunds FROM staff_users WHERE organization_id = $1 FOR UPDATE',
           [organizationId],
         );
         const members: MemberState[] = rows.rows.map(
@@ -360,8 +381,11 @@ export class TeamRepository {
         if (!verdict.active) {
           await client.query('DELETE FROM staff_sessions WHERE staff_user_id = $1', [targetId]);
         }
+        const after = { role: verdict.role, active: verdict.active, canManageRefunds: verdict.canManageRefunds };
+        // Same transaction: the change and its audit row(s) both happen, or neither (docs/13 R6-05).
+        await audit?.(client, { before, after, memberName: rows.rows.find((row) => row.id === targetId)?.full_name ?? '' });
         await client.query('COMMIT');
-        return { kind: 'changed', before, after: { role: verdict.role, active: verdict.active, canManageRefunds: verdict.canManageRefunds } };
+        return { kind: 'changed', before, after };
       } catch (error: unknown) {
         await client.query('ROLLBACK');
         throw error;

@@ -6,10 +6,11 @@
 
 import { ConflictException, Injectable } from '@nestjs/common';
 import type { ActionInitiator, GuestBooking, GuestBookingLookupRequest, RefundStatus } from '@resort-booking/shared-types';
+import type { PoolClient } from 'pg';
 import { DatabaseService } from '../../shared/database/database.service';
 import { BookingReader } from './booking-reader';
 import { BookingsRepository, type BookingRow, type CancelReasonCode } from './bookings.repository';
-import { checkCancellation } from './bookings.rules';
+import { CHANNEL_BOOKING_MESSAGE, checkCancellation } from './bookings.rules';
 import { RefundIssuer, type RefundPlan } from './refund-issuer';
 
 /** What the shared cancel needs, whoever is cancelling. */
@@ -24,7 +25,12 @@ export interface CancelInput {
   /** The staff member, when staff cancel. */
   staffId: string | null;
   note: string | null;
+  /** A booking made on another site: nothing was paid here, so no refund row of any size is recorded. */
+  skipRefundRow?: boolean;
 }
+
+/** Writes the audit row inside the cancel's own transaction, after the refund is recorded and before it commits. */
+export type CancelAudit = (client: PoolClient, done: { refundId: string | null; plan: RefundPlan }) => Promise<void>;
 
 export interface CancelOutcome {
   /** False when someone else had already cancelled it (nothing was changed or refunded here). */
@@ -65,6 +71,9 @@ export class BookingsService {
       return this.reader.present(row);
     }
 
+    if (row.payment_method === 'paid_by_channel') {
+      throw new ConflictException({ message: CHANNEL_BOOKING_MESSAGE, code: 'BOOKED_ON_CHANNEL' });
+    }
     const policy = await this.reader.policyFor(row);
     const paidCents = this.reader.paidCentsOf(row);
     const check = checkCancellation(paidCents, row.check_in, this.reader.todayFor(row), policy.tiers);
@@ -91,9 +100,9 @@ export class BookingsService {
    * asks the provider to move the money. A booking cancelled a moment ago by someone else is reported
    * as `cancelledNow: false` and never refunds twice.
    */
-  public async cancelRow(row: BookingRow, input: CancelInput): Promise<CancelOutcome> {
+  public async cancelRow(row: BookingRow, input: CancelInput, audit?: CancelAudit): Promise<CancelOutcome> {
     const plan = this.refunds.plan(row, input.refundCents, input.percent, input.label);
-    const { cancelledNow, refundId } = await this.cancelInTransaction(row, plan, input);
+    const { cancelledNow, refundId } = await this.cancelInTransaction(row, plan, input, audit);
     let status = plan.status;
     if (refundId !== null && plan.viaProvider) {
       status = await this.refunds.settle(refundId, row.id, plan);
@@ -105,6 +114,7 @@ export class BookingsService {
     row: BookingRow,
     plan: RefundPlan,
     input: CancelInput,
+    audit: CancelAudit | undefined,
   ): Promise<{ cancelledNow: boolean; refundId: string | null }> {
     return this.database.withClient(async (client): Promise<{ cancelledNow: boolean; refundId: string | null }> => {
       await client.query('BEGIN');
@@ -124,7 +134,7 @@ export class BookingsService {
           note: input.note,
           expectedPaymentStatus: row.payment_status,
         });
-        const refundId = await this.bookings.insertRefund(client, {
+        const refundId = input.skipRefundRow === true ? null : await this.bookings.insertRefund(client, {
           organizationId: row.organization_id,
           propertyId: row.property_id,
           bookingId: row.id,
@@ -139,6 +149,8 @@ export class BookingsService {
           initiatedBy: input.initiatedBy,
           createdByStaffId: input.staffId,
         });
+        // Same transaction: the booking is cancelled and the row exists, or neither (docs/13 R6-05).
+        await audit?.(client, { refundId, plan });
         await client.query('COMMIT');
         return { cancelledNow: true, refundId };
       } catch (error: unknown) {

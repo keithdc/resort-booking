@@ -191,6 +191,32 @@ Start the web app with `SITE_URL=https://www.example.com npm run dev:web` (any a
 10. In the browser tab, **Expected:** the dark "H" icon.
 11. After the site is public, run the page through Google's Rich Results Test (search.google.com/test/rich-results) and PageSpeed Insights (pagespeed.web.dev), mobile. Note any red items.
 
+## 17. Hardening round 6 (links, hashing, bank changes, audit)
+
+1. **New invitation links.** Team, invite a test email, copy the link. **Expected:** it looks like `http://localhost:3001/invite#token=...` (the token after the `#`). Open it in a private window: the page loads and the address bar immediately becomes `/invite` with no token. Accept it and sign in. **Expected:** the same flow as before.
+2. **Reset links** (Team, Reset access) have the same shape and the same behaviour.
+3. **Old links still work once.** A link of the older shape (`/invite/<64 hex>`) still opens the page, and the address bar is cleaned the same way. A used, expired or revoked link of either shape shows "This link is not valid".
+4. **No Referer.** Browser dev tools, Network, any admin page, Response headers. **Expected:** `Referrer-Policy: no-referrer`.
+5. **Stronger password hashing.** Sign in with an account made before this round. **Expected:** it works as before (a little slower, about a tenth of a second). Then in a terminal: `docker exec -i resort-booking-postgres-1 psql -U resort -d resort_booking -c "select email, split_part(password_hash,'$',2) as cost from staff_users"`. **Expected:** the accounts you signed in with now show `131072`; others still show `16384` until they sign in.
+6. **Bank and email changes ask for your password.** Configuration, change the IBAN (or the booking notifications email), Save. **Expected:** a "Confirm it is you" dialog. A wrong password is refused and nothing is saved. The right password saves. If two-step verification is on for you, the dialog then asks for a code. Changing only the owner name, the phone or the VAT number saves with no dialog. Retyping the same IBAN with other spaces or lower case saves with no dialog.
+7. **Audit rows are written with the action.** Mark a pay-at-hotel booking paid, cancel a booking and give an employee refund access, then open the Audit log. **Expected:** one row for each, with your name. (The proof that a failed audit row undoes the action is automated: `npm run test:db`.)
+8. **The maintenance switch (needs the least-privilege roles of `docs/11`).** As `resort_app`: `begin; set local resort.record_maintenance='on'; update booking_staff_notes set body='x';` **Expected:** an error even with the switch on. `npm run test:db` proves this and the owner path.
+9. **Big report totals.** Automated (`checked-number.spec.ts`, the report repository spec). Nothing to click.
+
+## 18. Where a booking came from (booking source)
+
+Use test data. Needs the API restarted so migration 045 runs.
+
+1. **Existing bookings.** Reports, Bookings tab. **Expected:** a "Where bookings come from" section above the bookings, and a Source column. Bookings you made by hand earlier show "Phone or email", the guest checkouts show "Our website".
+2. **New booking, your own source.** Calendar, New booking. **Expected:** the first question is "Where did the guest book?", starting on "Phone or email". Pick "Walk-in", fill the guest, save. **Expected:** pay at hotel, Pending, a "Walk-in" chip on the booking.
+3. **New booking from Airbnb.** Pick "Airbnb". **Expected:** the price box and the extras disappear; a field "Total the guest paid on Airbnb (€)" appears; the payment shows "Paid through Airbnb"; the button reads "Add booking · paid on Airbnb". The button stays off until the total is a valid amount (try `abc`, then `1234,50`). Taken dates are still refused.
+4. **After saving.** The booking card shows an "Airbnb" chip, "Paid on the other website", total 1.234,50 € paid in full, and **no** "Mark as paid". The booking is not in "Unpaid at hotel".
+5. **Cancel it.** **Expected:** the cancel dialog says refunds are handled on that website and offers no refund amount; after cancelling, the Refunds page shows **no** new refund, and the audit log says no refund was issued. The Reports cancellations tab counts it with 0,00 € paid and refunded.
+6. **Change dates** on a channel booking: **Expected:** refused with "This booking was made on another website...". Guest side: look it up on `/manage` (reference + email): **Expected:** no Cancel and no Change dates button and the same sentence, and the page never says Airbnb.
+7. **Correct the source (admin only).** On an Airbnb booking: Where it came from, Change. **Expected:** only "Booking.com" and "Another website" are offered. On a "Phone or email" booking only "Our website" and "Walk-in". Save. **Expected:** the chip changes; the audit log has "booking.source_changed" with who, from and to. An employee sees no Change button.
+8. **Report.** Reports, Bookings tab, period with several sources. **Expected:** one bar per source with bookings, nights, money and share (about 100 in total); source chips filter the list; with one source only there are no source chips. As an employee without refund access: counts, nights and shares but no money. Download the CSV: a Source column, and lines "Bookings from ..." (and "Revenue from ..." only with money access).
+9. **Database guard (optional).** `docker exec -i resort-booking-postgres-1 psql -U resort -d resort_booking -c "begin; update inventory_blocks set booking_source='airbnb' where payment_method='card' and kind='reservation'; rollback;"` **Expected:** an error (a channel reservation must be paid by channel); nothing changes.
+
 ## Automated checks you can trigger yourself
 
 Run from the repository root. Start Docker first (`npm run db:up`) for the database tests.

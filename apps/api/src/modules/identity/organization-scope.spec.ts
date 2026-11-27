@@ -5,7 +5,7 @@
  * Bank and legal details belong to ONE organization: staff reach only their own.
  */
 
-import { Logger, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import type { OrganizationSettings, UpdateOrganizationSettingsRequest } from '@resort-booking/shared-types';
@@ -15,6 +15,7 @@ import { AuditService } from '../../shared/audit/audit.service';
 import { IdentityService } from './identity.service';
 import { LoginLimiter } from './login-limiter';
 import { TwoFactorService } from './two-factor.service';
+import type { StaffAccount } from '../../shared/roles/staff-role';
 
 const SETTINGS: OrganizationSettings = {
   id: 'org-B',
@@ -49,9 +50,15 @@ function asRequest(settings: OrganizationSettings): UpdateOrganizationSettingsRe
   };
 }
 
+const PROOF = {
+  staff: { id: 's1', organizationId: 'org-B', role: 'admin' } as StaffAccount,
+  context: { ip: '203.0.113.9', requestId: 'req-1' },
+};
+
 describe('IdentityService organization settings are scoped to the caller', () => {
   const getSettings = jest.fn<Promise<OrganizationSettings | null>, [(string | null)?]>();
   const updateSettings = jest.fn<Promise<OrganizationSettings | null>, [string, Omit<OrganizationSettings, 'id'>]>();
+  const reauthenticate = jest.fn<Promise<void>, [unknown, string | undefined, string | undefined, unknown, string]>();
   let service: IdentityService;
 
   beforeEach(async () => {
@@ -62,7 +69,7 @@ describe('IdentityService organization settings are scoped to the caller', () =>
         { provide: IdentityRepository, useValue: { getSettings, updateSettings } },
         { provide: ConfigService, useValue: { get: (): undefined => undefined } },
         { provide: LoginLimiter, useValue: {} },
-        { provide: TwoFactorService, useValue: {} },
+        { provide: TwoFactorService, useValue: { reauthenticate } },
         { provide: AuditService, useValue: {} },
       ],
     }).compile();
@@ -115,12 +122,43 @@ describe('IdentityService organization settings are scoped to the caller', () =>
     const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation((): void => undefined);
     const unchanged = asRequest(SETTINGS);
 
-    const saved = await service.updateSettings({ ...unchanged, iban: 'DE89 3704 0044 0532 0130 00', ownerName: 'Grace' }, 'org-B');
+    reauthenticate.mockResolvedValue(undefined);
+    const saved = await service.updateSettings({ ...unchanged, iban: 'DE89 3704 0044 0532 0130 00', ownerName: 'Grace', currentPassword: 'old-pass-1' }, 'org-B', PROOF);
 
     expect(saved.audit).toMatchObject({ fields: ['iban', 'ownerName'], sensitiveFields: ['iban'], bankDetailsChanged: true, notice: 'bank_details_changed' });
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('sensitive fields: iban'));
     expect(JSON.stringify(warn.mock.calls)).not.toContain('3704');
     warn.mockRestore();
+  });
+
+  it('asks for the current password before bank details or an email address change, and saves nothing without it', async () => {
+    getSettings.mockResolvedValue(SETTINGS);
+    const unchanged = asRequest(SETTINGS);
+
+    await expect(service.updateSettings({ ...unchanged, iban: 'DE89 3704 0044 0532 0130 00' }, 'org-B')).rejects.toMatchObject({ response: { code: 'REAUTH_REQUIRED' } });
+    reauthenticate.mockRejectedValueOnce(new ForbiddenException({ message: 'x', code: 'REAUTH_REQUIRED' }));
+    await expect(service.updateSettings({ ...unchanged, bookingEmail: 'new@example.com' }, 'org-B', PROOF)).rejects.toBeInstanceOf(ForbiddenException);
+
+    expect(updateSettings).not.toHaveBeenCalled();
+  });
+
+  it('proves it is the signed-in person with the password and the code, for the staff member making the change', async () => {
+    getSettings.mockResolvedValue(SETTINGS);
+    updateSettings.mockResolvedValue({ ...SETTINGS, guestReplyEmail: 'new@example.com' });
+    reauthenticate.mockResolvedValue(undefined);
+
+    await service.updateSettings({ ...asRequest(SETTINGS), guestReplyEmail: 'new@example.com', currentPassword: 'old-pass-1', twoFactorCode: '123456' }, 'org-B', PROOF);
+
+    expect(reauthenticate).toHaveBeenCalledWith(PROOF.staff, 'old-pass-1', '123456', PROOF.context, 'org_settings');
+  });
+
+  it('does not ask again for a change that touches neither bank details nor an email address', async () => {
+    getSettings.mockResolvedValue(SETTINGS);
+    updateSettings.mockResolvedValue({ ...SETTINGS, ownerName: 'Grace' });
+
+    await service.updateSettings({ ...asRequest(SETTINGS), ownerName: 'Grace' }, 'org-B');
+
+    expect(reauthenticate).not.toHaveBeenCalled();
   });
 
   it('does not save and does not log when the organization is gone', async () => {

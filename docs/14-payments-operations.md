@@ -153,4 +153,16 @@ The audit write is still fire and forget (R2-05 note): if the audit table is unr
 ## Retention and erasure
 
 `audit_log`, `payments`, `refunds` and `booking_changes` are append-only (docs/11). A retention job runs as the owner role inside one
-transaction with `SET LOCAL resort.record_maintenance = 'on'`. Keep a written record of every such run.
+transaction with `SET LOCAL resort.record_maintenance = 'on'` (honoured only for the table's owner role since migration 044). Keep a written record of every such run.
+
+**Audit rows are written with the action (docs/13 R6-05).** Marking a booking or a refund paid, cancelling, changing dates and creating a booking save their audit row in the SAME database transaction. If the audit row cannot be written, the action does not happen and the person sees an error: a stuck audit table therefore stops those actions on purpose. Watch for `Could not write audit row` and 500s on these routes in the alerts.
+
+## Bookings paid on another site (`paid_by_channel`)
+
+A booking staff add from Airbnb, Booking.com or another website is saved as `payment_method = 'paid_by_channel'`, `payment_status = 'paid'`, `paid_cents` = the total staff typed (what the guest paid there, commission not tracked), `paid_at` = when it was added. No `payments` row exists and none is ever created: the money never passed through this app. Therefore:
+
+- there is **no refund row** for a cancellation, **no Retry / Mark as refunded**, nothing in the Refunds queue, no webhook, no reconciler work (`docs/07`);
+- the booking is **not** in "Unpaid at hotel" (it is paid) and cannot be marked paid (409 `NOT_PAY_AT_HOTEL`);
+- the owner report counts its value as revenue and as "Paid by guests" like any paid booking (it is real income of the property, before that site's commission), and shows it as its own source ("Where bookings come from");
+- changing dates is refused (`BOOKED_ON_CHANNEL`).
+Reconcile it with the channel's own payout statement, not with Stripe. A wrong source is corrected by an admin, within the same group only (docs/04).

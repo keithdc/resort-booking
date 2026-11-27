@@ -7,6 +7,7 @@
  */
 
 import { Injectable } from '@nestjs/common';
+import type { PoolClient, QueryResult } from 'pg';
 import { DatabaseService } from '../../shared/database/database.service';
 
 export interface NoteRow {
@@ -59,17 +60,29 @@ export class StaffNotesRepository {
     return result.rows[0]?.n ?? 0;
   }
 
-  /** Saves a note and returns it with the author's name. */
-  public async insert(input: { organizationId: string; propertyId: string; bookingId: string; body: string; staffId: string }): Promise<NoteRow> {
-    const result = await this.database.query<NoteRow>(
-      `WITH n AS (
+  /**
+   * Saves a note and returns it with the author's name. With `audit` the audit row is saved in the same transaction:
+   * the note and its row both exist or neither does (docs/13 R6-05).
+   */
+  public async insert(
+    input: { organizationId: string; propertyId: string; bookingId: string; body: string; staffId: string },
+    audit?: (client: PoolClient) => Promise<void>,
+  ): Promise<NoteRow> {
+    const sql = `WITH n AS (
          INSERT INTO booking_staff_notes (organization_id, property_id, inventory_block_id, body, created_by_staff_id)
          VALUES ($1, $2, $3, $4, $5)
          RETURNING *
        )
-       SELECT ${NOTE_COLUMNS} FROM n LEFT JOIN staff_users su ON su.id = n.created_by_staff_id`,
-      [input.organizationId, input.propertyId, input.bookingId, input.body, input.staffId],
-    );
+       SELECT ${NOTE_COLUMNS} FROM n LEFT JOIN staff_users su ON su.id = n.created_by_staff_id`;
+    const params = [input.organizationId, input.propertyId, input.bookingId, input.body, input.staffId];
+    const result =
+      audit === undefined
+        ? await this.database.query<NoteRow>(sql, params)
+        : await this.database.withTransaction(async (client): Promise<QueryResult<NoteRow>> => {
+            const inserted = await client.query<NoteRow>(sql, params);
+            await audit(client);
+            return inserted;
+          });
     const row = result.rows[0];
     if (row === undefined) {
       throw new Error('Note insert returned no row');
@@ -89,13 +102,23 @@ export class StaffNotesRepository {
     return result.rows[0] ?? null;
   }
 
-  /** Hides a note, once. False when it was already hidden or is not this organization's. */
-  public async hide(organizationId: string, bookingId: string, noteId: string, staffId: string): Promise<boolean> {
-    const result = await this.database.query(
-      `UPDATE booking_staff_notes SET deleted_at = now(), deleted_by_staff_id = $4
-       WHERE id = $1 AND inventory_block_id = $2 AND organization_id = $3 AND deleted_at IS NULL`,
-      [noteId, bookingId, organizationId, staffId],
-    );
-    return (result.rowCount ?? 0) > 0;
+  /**
+   * Hides a note, once. False when it was already hidden or is not this organization's. With `audit` the audit row is
+   * saved in the same transaction, and only when the note really was hidden now (docs/13 R6-05).
+   */
+  public async hide(organizationId: string, bookingId: string, noteId: string, staffId: string, audit?: (client: PoolClient) => Promise<void>): Promise<boolean> {
+    const sql = `UPDATE booking_staff_notes SET deleted_at = now(), deleted_by_staff_id = $4
+       WHERE id = $1 AND inventory_block_id = $2 AND organization_id = $3 AND deleted_at IS NULL`;
+    const params = [noteId, bookingId, organizationId, staffId];
+    if (audit === undefined) {
+      return ((await this.database.query(sql, params)).rowCount ?? 0) > 0;
+    }
+    return this.database.withTransaction(async (client): Promise<boolean> => {
+      const hidden = ((await client.query(sql, params)).rowCount ?? 0) > 0;
+      if (hidden) {
+        await audit(client);
+      }
+      return hidden;
+    });
   }
 }

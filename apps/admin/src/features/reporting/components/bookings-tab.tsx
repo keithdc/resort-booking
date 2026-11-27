@@ -25,14 +25,17 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import type { StaffReport, StaffReservation } from '@resort-booking/shared-types';
+import type { BookingSource, StaffReport, StaffReservation } from '@resort-booking/shared-types';
 import { useMemo, useState } from 'react';
 import { StayDetailDialog } from '@/features/reservations/components/stay-detail-dialog';
 import { StatusChip, statusIcon } from '@/shared/components/status-chip';
 import { bookingFilterStyle } from '@/shared/utils/status-style';
 import { formatCents } from '@/shared/utils/money';
 import { formatIsoDate } from '@/shared/utils/format-date';
-import { countByStatus, filterBookings, withReportRefunds } from '../utils/bookings-filter';
+import { countBySource, countByStatus, filterBookings, withReportRefunds } from '../utils/bookings-filter';
+import { BookingSourceChip } from '@/features/reservations/components/booking-source-chip';
+import { BOOKING_SOURCES, bookingSourceLabel } from '@/shared/utils/booking-source';
+import { BookingSourcesSection } from './booking-sources-section';
 import {
   BOOKING_FILTER_OPTIONS,
   bookingNights,
@@ -68,8 +71,10 @@ export function BookingsTab({ report, status, onStatusChange, onChanged }: Booki
   const [search, setSearch] = useState('');
   const [shown, setShown] = useState(PAGE_SIZE);
   const [selected, setSelected] = useState<StaffReservation | null>(null);
+  const [source, setSource] = useState<BookingSource | null>(null);
+  const sourceCounts = useMemo(() => countBySource(report.pipeline), [report.pipeline]);
   const counts = useMemo(() => countByStatus(report.pipeline), [report.pipeline]);
-  const rows = useMemo((): StaffReservation[] => filterBookings(report.pipeline, status, search), [report.pipeline, status, search]);
+  const rows = useMemo((): StaffReservation[] => filterBookings(report.pipeline, status, search, source), [report.pipeline, status, search, source]);
   const visible = rows.slice(0, shown);
   const unpaidCount = report.unpaidAtHotelCount;
 
@@ -78,6 +83,8 @@ export function BookingsTab({ report, status, onStatusChange, onChanged }: Booki
   };
 
   return (
+    <>
+    <BookingSourcesSection report={report} />
     <ReportSection section="bookingsTable">
       {unpaidCount > 0 ? (
         <Alert
@@ -154,6 +161,27 @@ export function BookingsTab({ report, status, onStatusChange, onChanged }: Booki
           ))}
         </Stack>
       </Stack>
+      {Object.values(sourceCounts).filter((count: number): boolean => count > 0).length > 1 ? (
+        <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" role="group" aria-label="Filter by source" sx={{ mb: 2 }} data-print="hide">
+          <Chip
+            label="Any source"
+            color={source === null ? 'primary' : 'default'}
+            variant={source === null ? 'filled' : 'outlined'}
+            aria-pressed={source === null}
+            onClick={(): void => setSource(null)}
+          />
+          {BOOKING_SOURCES.filter((option: BookingSource): boolean => sourceCounts[option] > 0).map((option: BookingSource): React.JSX.Element => (
+            <Chip
+              key={option}
+              label={`${bookingSourceLabel(option)} (${sourceCounts[option]})`}
+              color={source === option ? 'primary' : 'default'}
+              variant={source === option ? 'filled' : 'outlined'}
+              aria-pressed={source === option}
+              onClick={(): void => setSource(source === option ? null : option)}
+            />
+          ))}
+        </Stack>
+      ) : null}
 
       {report.pipeline.length === 0 ? (
         <EmptyNote state="noBookings" />
@@ -188,6 +216,7 @@ export function BookingsTab({ report, status, onStatusChange, onChanged }: Booki
                   <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" alignItems="center" sx={{ mt: 1 }}>
                     <StatusChip status={bookingFilterStyle(bookingStatusKey(row))} label={bookingStatusLabel(row)} />
                     <Chip size="small" variant="outlined" label={bookingPaymentLabel(row)} />
+                    {row.kind === 'reservation' ? <BookingSourceChip source={row.bookingSource} /> : null}
                     <ArrivalHintChip row={row} today={report.asOfDate} />
                   </Stack>
                   <Button
@@ -215,6 +244,7 @@ export function BookingsTab({ report, status, onStatusChange, onChanged }: Booki
                   <TableCell align="right">Nights</TableCell>
                   <TableCell align="right">Guests</TableCell>
                   {moneyHidden ? null : <TableCell align="right">Amount</TableCell>}
+                  <TableCell>Source</TableCell>
                   <TableCell>Payment</TableCell>
                   <TableCell>Status</TableCell>
                 </TableRow>
@@ -245,6 +275,7 @@ export function BookingsTab({ report, status, onStatusChange, onChanged }: Booki
                     <TableCell align="right">{bookingNights(row)}</TableCell>
                     <TableCell align="right">{row.guestCount}</TableCell>
                     {moneyHidden ? null : <TableCell align="right">{formatCents(row.totalCents, row.currencyCode)}</TableCell>}
+                    <TableCell>{row.kind === 'reservation' ? bookingSourceLabel(row.bookingSource) : ''}</TableCell>
                     <TableCell>
                       {bookingPaymentLabel(row)}
                       <ArrivalHintChip row={row} today={report.asOfDate} />
@@ -272,6 +303,7 @@ export function BookingsTab({ report, status, onStatusChange, onChanged }: Booki
         onChanged={onChanged}
       />
     </ReportSection>
+    </>
   );
 }
 

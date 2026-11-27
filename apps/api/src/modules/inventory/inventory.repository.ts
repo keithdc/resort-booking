@@ -93,6 +93,10 @@ export interface InsertStaffBookingInput {
   /** JSON text of the cancellation policy in force when staff made the booking. */
   policySnapshot: string;
   createdByStaffId: string;
+  /** Where the booking came from. A channel source goes with 'paid_by_channel' (the database checks it). */
+  bookingSource: string;
+  /** 'pay_at_hotel': pending, nothing paid. 'paid_by_channel': the other site collected it, so it is paid in full. */
+  paymentMethod: 'pay_at_hotel' | 'paid_by_channel';
 }
 
 /** How many unpaid holds a caller keeps open right now. */
@@ -349,14 +353,17 @@ export class InventoryRepository {
       `
       INSERT INTO inventory_blocks (
         organization_id, property_id, house_id, kind, status,
-        check_in, check_out, guest_count, payment_method, payment_status, expires_at,
+        check_in, check_out, guest_count, payment_method, payment_status, paid_at, expires_at,
         booker_name, booker_email, booker_phone, guest_note,
-        total_cents, paid_cents, currency_code, price_snapshot, policy_snapshot, created_by_staff_id
+        total_cents, paid_cents, currency_code, price_snapshot, policy_snapshot, created_by_staff_id, booking_source
       ) VALUES (
         $1, $2, $3, 'reservation', 'confirmed',
-        $4, $5, $6, 'pay_at_hotel', 'pending', NULL,
+        $4, $5, $6, $16,
+        CASE WHEN $16 = 'paid_by_channel' THEN 'paid' ELSE 'pending' END,
+        CASE WHEN $16 = 'paid_by_channel' THEN now() ELSE NULL END,
+        NULL,
         $7, $8, $9, $10,
-        $11, 0, $12, $13::jsonb, $14::jsonb, $15
+        $11, CASE WHEN $16 = 'paid_by_channel' THEN $11 ELSE 0 END, $12, $13::jsonb, $14::jsonb, $15, $17
       )
       RETURNING id
       `,
@@ -376,6 +383,8 @@ export class InventoryRepository {
         input.priceSnapshot,
         input.policySnapshot,
         input.createdByStaffId,
+        input.paymentMethod,
+        input.bookingSource,
       ],
     );
     const row = result.rows[0];

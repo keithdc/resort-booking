@@ -4,7 +4,7 @@
  * @dependencies class-validator, class-transformer
  */
 
-import type { StaffBookingExtraChoice, StaffBookingQuoteRequest, StaffCreateBookingRequest } from '@resort-booking/shared-types';
+import type { BookingSource, StaffBookingExtraChoice, StaffBookingQuoteRequest, StaffCreateBookingRequest } from '@resort-booking/shared-types';
 import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
@@ -28,6 +28,7 @@ import { LIMITS } from '../../../shared/validation/limits';
 import { UUID_LIKE } from '../../../shared/validation/uuid-like';
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const BOOKING_SOURCES: readonly BookingSource[] = ['website', 'airbnb', 'booking_com', 'other_site', 'phone_email', 'walk_in'];
 
 /** Trims a string and leaves anything else exactly as sent, so a wrong type is refused instead of converted. */
 function Trimmed(): PropertyDecorator {
@@ -78,9 +79,23 @@ export class StaffBookingQuoteDto implements StaffBookingQuoteRequest {
  * here: staff speak for the guest, and the booking records that no guest accepted terms online.
  */
 export class StaffCreateBookingDto extends StaffBookingQuoteDto implements StaffCreateBookingRequest {
-  /** Only pay at hotel is open for now. A card payment link will add a second value. */
-  @IsIn(['pay_at_hotel'])
-  public paymentMethod!: 'pay_at_hotel';
+  /**
+   * Pay at hotel for the property's own bookings; paid by channel for a booking made on Airbnb, Booking.com or another
+   * site. Which one fits the source is checked by the creator (a mismatch is a 400 with a plain message).
+   */
+  @IsIn(['pay_at_hotel', 'paid_by_channel'])
+  public paymentMethod!: 'pay_at_hotel' | 'paid_by_channel';
+
+  /** Where the booking came from. */
+  @IsIn(BOOKING_SOURCES)
+  public bookingSource!: BookingSource;
+
+  /** Only for a channel booking: what the guest paid on that site, in cents (whole, 1 up to the booking ceiling). Null otherwise. */
+  @ValidateIf((_object: object, value: unknown): boolean => value !== null && value !== undefined)
+  @IsInt()
+  @Min(1)
+  @Max(LIMITS.maxCents)
+  public channelTotalCents: number | null = null;
 
   @Trimmed()
   @IsString()

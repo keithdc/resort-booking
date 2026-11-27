@@ -265,16 +265,78 @@ describe('OrganizationSettingsForm', () => {
     expect(screen.getByText('All changes saved')).toBeTruthy();
   });
 
-  it('saves every field and confirms', async () => {
+  it('saves a change that is not about money or mail straight away, with no password', async () => {
+    api.saveOrganizationSettings.mockImplementation((body) => Promise.resolve(organizationSettings(body)));
+    render(<OrganizationSettingsForm initial={organizationSettings()} />);
+
+    type('Owner name', 'Someone');
+    fireEvent.click(screen.getByRole('button', { name: 'Save business details' }));
+
+    await waitFor(() => expect(screen.getByText('Organization saved')).toBeTruthy());
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(api.saveOrganizationSettings).toHaveBeenCalledWith(expect.objectContaining({ ownerName: 'Someone', name: 'Humphreys' }));
+    expect(api.saveOrganizationSettings.mock.calls[0]?.[0]).not.toHaveProperty('currentPassword');
+  });
+
+  it('asks for the current password before bank details change, then saves with it and confirms', async () => {
     api.saveOrganizationSettings.mockImplementation((body) => Promise.resolve(organizationSettings(body)));
     render(<OrganizationSettingsForm initial={organizationSettings()} />);
 
     type('IBAN', 'FR7600000000000000000000000');
     fireEvent.click(screen.getByRole('button', { name: 'Save business details' }));
+    expect(api.saveOrganizationSettings).not.toHaveBeenCalled();
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText(/Current password/), { target: { value: 'My-pass-1234' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm and save' }));
 
     await waitFor(() => expect(screen.getByText('Organization saved')).toBeTruthy());
-    expect(api.saveOrganizationSettings).toHaveBeenCalledWith(expect.objectContaining({ iban: 'FR7600000000000000000000000', name: 'Humphreys' }));
+    expect(api.saveOrganizationSettings).toHaveBeenCalledWith(expect.objectContaining({ iban: 'FR7600000000000000000000000', currentPassword: 'My-pass-1234' }));
     expect(screen.getByText('All changes saved')).toBeTruthy();
+  });
+
+  it('asks for the code when the server says two-step verification is on, and sends it with the password', async () => {
+    api.saveOrganizationSettings
+      .mockRejectedValueOnce(new ApiRequestError('Enter a code', 403, { code: 'REAUTH_REQUIRED_2FA' }))
+      .mockImplementation((body) => Promise.resolve(organizationSettings(body)));
+    render(<OrganizationSettingsForm initial={organizationSettings()} />);
+
+    type('Booking notifications email', 'new@example.com');
+    fireEvent.click(screen.getByRole('button', { name: 'Save business details' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText(/Current password/), { target: { value: 'My-pass-1234' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm and save' }));
+
+    const code = await within(dialog).findByLabelText(/Authenticator or recovery code/);
+    fireEvent.change(code, { target: { value: '123456' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm and save' }));
+
+    await waitFor(() => expect(screen.getByText('Organization saved')).toBeTruthy());
+    expect(api.saveOrganizationSettings).toHaveBeenLastCalledWith(expect.objectContaining({ currentPassword: 'My-pass-1234', twoFactorCode: '123456' }));
+  });
+
+  it('shows a wrong password in the dialog and saves nothing', async () => {
+    api.saveOrganizationSettings.mockRejectedValue(new ApiRequestError('Current password is wrong', 401, { code: 'STAFF_PASSWORD_MISMATCH' }));
+    render(<OrganizationSettingsForm initial={organizationSettings()} />);
+
+    type('BIC', 'NEWBIC22');
+    fireEvent.click(screen.getByRole('button', { name: 'Save business details' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText(/Current password/), { target: { value: 'nope' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm and save' }));
+
+    expect(await within(dialog).findByText('Current password is wrong')).toBeTruthy();
+    expect(screen.queryByText('Organization saved')).toBeNull();
+  });
+
+  it('does not ask for a password when an IBAN only changes in spacing or case', async () => {
+    api.saveOrganizationSettings.mockImplementation((body) => Promise.resolve(organizationSettings(body)));
+    render(<OrganizationSettingsForm initial={organizationSettings({ iban: 'FR7600000000000000000000000' })} />);
+
+    type('IBAN', 'fr76 0000 0000 0000 0000 0000 000');
+    fireEvent.click(screen.getByRole('button', { name: 'Save business details' }));
+
+    await waitFor(() => expect(screen.getByText('Organization saved')).toBeTruthy());
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   it('blocks saving while an email is invalid and says so', () => {

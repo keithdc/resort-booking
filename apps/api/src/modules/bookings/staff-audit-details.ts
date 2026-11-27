@@ -9,6 +9,7 @@
 
 import type { AuditDetailsInput } from '../../shared/audit/audited.decorator';
 import type { AuditMetadata } from '../../shared/audit/audit.types';
+import type { StaffAccount } from '../../shared/roles/staff-role';
 import { referenceFor } from '../inventory/inventory.rules';
 
 /** The `data` object of an `{ status: "ok", data }` answer, or null. */
@@ -33,12 +34,16 @@ function whole(value: unknown): number | null {
 }
 
 /** Who acted: name and role (the id is the row's own staff_user_id), and whether money access came from the permission. */
-function actor({ staff }: AuditDetailsInput): AuditMetadata {
+export function actorFacts(staff: StaffAccount): AuditMetadata {
   return {
     actorName: staff.fullName.slice(0, 120),
     actorRole: staff.role,
     viaRefundAccess: staff.role !== 'admin' && staff.canManageRefunds,
   };
+}
+
+function actor({ staff }: AuditDetailsInput): AuditMetadata {
+  return actorFacts(staff);
 }
 
 /** The refund that came back with the answer: amount, percent, reason, status, and the booking's own reference. */
@@ -56,28 +61,62 @@ function refundFacts(refund: unknown): AuditMetadata {
   };
 }
 
-/** Staff cancelled a booking: the booking reference, the reason, and what was refunded. */
-export function cancelAuditDetails(input: AuditDetailsInput): AuditMetadata {
-  const id = text(input.params.id);
+/**
+ * Staff cancelled a booking, built from what the cancel decided (the refund as planned when the booking was cancelled):
+ * the booking reference, the reason and the refund amount. Written inside the cancel's own transaction (docs/13 R6-05).
+ * The refund's status here is the planned one; the refund list shows how it ended.
+ */
+export function cancelAuditMetadata(
+  staff: StaffAccount,
+  bookingId: string,
+  reason: string,
+  refund: { amountCents: number; percent: number; reason: string; status: string; currencyCode: string } | null,
+): AuditMetadata {
   return {
-    ...actor(input),
-    bookingReference: id === null ? null : referenceFor(id),
-    reason: text(field(input.body, 'reason')),
-    ...refundFacts(dataOf(input.result)?.refund),
+    ...actorFacts(staff),
+    bookingReference: referenceFor(bookingId),
+    reason: reason.slice(0, 80),
+    ...refundFacts(refund),
   };
 }
 
-/** Staff moved a booking's dates: old and new reference, the fee and settlement decisions, and any refund. */
-export function changeDatesAuditDetails(input: AuditDetailsInput): AuditMetadata {
-  const id = text(input.params.id);
-  const data = dataOf(input.result);
+/**
+ * Staff moved a booking's dates: old and new reference, the fee and settlement decisions, and any refund. Built from what
+ * the swap knows inside its own transaction (docs/13 R6-05); the refund's status is the planned one.
+ */
+export function changeDatesAuditMetadata(
+  staff: StaffAccount,
+  oldBookingId: string,
+  newBookingId: string,
+  decisions: { waiveFee: boolean; balanceSettledOutside: boolean },
+  refund: { amountCents: number; percent: number; reason: string; status: string; currencyCode: string } | null,
+): AuditMetadata {
   return {
-    ...actor(input),
-    bookingReference: id === null ? null : referenceFor(id),
-    newBookingReference: text(field(data?.reservation, 'reference')),
-    waiveFee: field(input.body, 'waiveFee') === true,
-    balanceSettledOutside: field(input.body, 'balanceSettledOutside') === true,
-    ...refundFacts(data?.refund),
+    ...actorFacts(staff),
+    bookingReference: referenceFor(oldBookingId),
+    newBookingReference: referenceFor(newBookingId),
+    waiveFee: decisions.waiveFee,
+    balanceSettledOutside: decisions.balanceSettledOutside,
+    ...refundFacts(refund),
+  };
+}
+
+/**
+ * Staff sent a refund themselves and marked it paid: who, the refund, its booking reference, amount and reason. Built from
+ * the refund as it was just before the update, so the service writes it in the update's own transaction (docs/13 R6-05).
+ * Never the note the person wrote.
+ */
+export function refundMarkedPaidAuditMetadata(
+  staff: StaffAccount,
+  refund: { inventory_block_id: string; amount_cents: number; reason: string; currency_code: string },
+): AuditMetadata {
+  return {
+    ...actorFacts(staff),
+    bookingReference: referenceFor(refund.inventory_block_id),
+    refundCents: refund.amount_cents,
+    refundReason: refund.reason.slice(0, 80),
+    refundStatus: 'succeeded',
+    refundCurrency: refund.currency_code.slice(0, 80),
   };
 }
 
@@ -94,21 +133,39 @@ export function refundActionAuditDetails(input: AuditDetailsInput): AuditMetadat
   };
 }
 
-/** Staff made a booking for a guest: its reference, stay, dates, party size, price and how it will be paid. No guest details. */
-export function createBookingAuditDetails(input: AuditDetailsInput): AuditMetadata {
-  const booking = dataOf(input.result);
+/**
+ * Staff made a booking for a guest, built from what the creator knows inside its own transaction (docs/13 R6-05): the
+ * reference, stay, dates, party size, price and method, and the extras by name. Never a guest detail.
+ */
+export function createBookingAuditMetadata(
+  staff: StaffAccount,
+  booking: {
+    id: string;
+    houseId: string;
+    checkIn: string;
+    checkOut: string;
+    guestCount: number;
+    totalCents: number;
+    currencyCode: string;
+    extras: ReadonlyArray<{ name: string; lineCents: number }>;
+    bookingSource: string;
+    paymentMethod: string;
+    paymentStatus: string;
+  },
+): AuditMetadata {
   return {
-    ...actor(input),
-    bookingReference: text(booking?.reference),
-    houseId: text(booking?.houseId),
-    checkIn: text(booking?.checkIn),
-    checkOut: text(booking?.checkOut),
-    guestCount: whole(booking?.guestCount),
-    totalCents: whole(booking?.totalCents),
-    currency: text(booking?.currencyCode),
-    paymentMethod: text(booking?.paymentMethod),
-    paymentStatus: text(booking?.paymentStatus),
-    ...extrasFacts(booking?.extras),
+    ...actorFacts(staff),
+    bookingReference: referenceFor(booking.id),
+    houseId: booking.houseId.slice(0, 80),
+    checkIn: booking.checkIn,
+    checkOut: booking.checkOut,
+    guestCount: booking.guestCount,
+    totalCents: booking.totalCents,
+    currency: booking.currencyCode.slice(0, 80),
+    paymentMethod: booking.paymentMethod.slice(0, 80),
+    paymentStatus: booking.paymentStatus.slice(0, 80),
+    bookingSource: booking.bookingSource.slice(0, 80),
+    ...extrasFacts(booking.extras),
   };
 }
 
@@ -120,34 +177,32 @@ function extrasFacts(extras: unknown): AuditMetadata {
   return { extrasCount: list.length, extrasCents: addedCents, extraNames: names.slice(0, 10) };
 }
 
-/** Staff ticked a pay-at-hotel booking as paid: the booking reference and the amount recorded as received. */
-export function markBookingPaidAuditDetails(input: AuditDetailsInput): AuditMetadata {
-  const booking = dataOf(input.result);
+/**
+ * Staff ticked a pay-at-hotel booking as paid: who, the booking reference and the amount recorded as received. Built from
+ * what is known BEFORE the answer exists, so the service writes it inside the transaction that marks the booking paid
+ * (docs/13 R6-05).
+ */
+export function markPaidAuditMetadata(staff: StaffAccount, booking: { id: string; total_cents: number | null; currency_code: string | null }): AuditMetadata {
   return {
-    ...actor(input),
-    bookingReference: text(booking?.reference),
-    paidCents: whole(booking?.paidCents),
-    currency: text(booking?.currencyCode),
-    paymentMethod: text(booking?.paymentMethod),
+    ...actorFacts(staff),
+    bookingReference: referenceFor(booking.id),
+    paidCents: booking.total_cents ?? 0,
+    currency: (booking.currency_code ?? 'EUR').slice(0, 80),
+    paymentMethod: 'pay_at_hotel',
   };
 }
 
-/** Staff added a note: which booking, how long it is. Never the text. */
-export function noteAddedAuditDetails(input: AuditDetailsInput): AuditMetadata {
-  const note = dataOf(input.result);
-  const body = field(note, 'body');
-  return {
-    ...actor(input),
-    bookingId: text(input.params.id),
-    noteLength: typeof body === 'string' ? body.length : null,
-  };
+/** Staff added a note: which booking, how long it is. Never the text. Written in the note's own transaction (docs/13 R6-05). */
+export function noteAddedAuditMetadata(staff: StaffAccount, bookingId: string, noteLength: number): AuditMetadata {
+  return { ...actorFacts(staff), bookingId: bookingId.slice(0, 80), noteLength };
 }
 
-/** Staff hid a note: which booking and which note. Never the text. */
-export function noteRemovedAuditDetails(input: AuditDetailsInput): AuditMetadata {
-  return {
-    ...actor(input),
-    bookingId: text(input.params.id),
-    noteId: text(input.params.noteId),
-  };
+/** Staff hid a note: which booking and which note. Never the text. Written in the same transaction as the hiding. */
+export function noteRemovedAuditMetadata(staff: StaffAccount, bookingId: string, noteId: string): AuditMetadata {
+  return { ...actorFacts(staff), bookingId: bookingId.slice(0, 80), noteId: noteId.slice(0, 80) };
+}
+
+/** An admin corrected where a booking came from: who, the booking, the old and the new source. */
+export function sourceChangedAuditMetadata(staff: StaffAccount, bookingId: string, from: string, to: string): AuditMetadata {
+  return { ...actorFacts(staff), bookingReference: referenceFor(bookingId), fromSource: from.slice(0, 80), toSource: to.slice(0, 80) };
 }

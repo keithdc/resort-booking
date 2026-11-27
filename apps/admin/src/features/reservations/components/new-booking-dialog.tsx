@@ -32,6 +32,7 @@ import {
 } from '@mui/material';
 import { useNewBooking } from '../hooks/use-new-booking';
 import { extraPriceText, NEW_BOOKING_MAX_EXTRA_QUANTITY, NEW_BOOKING_MAX_NIGHTS, NEW_BOOKING_MAX_NOTE, NEW_BOOKING_PAYMENT_OPTIONS } from '../utils/new-booking';
+import { bookingSourceLabel, PICKABLE_SOURCES } from '@/shared/utils/booking-source';
 import { formatCents } from '@/shared/utils/money';
 import { NewBookingQuoteSummary } from './new-booking-quote-summary';
 
@@ -70,6 +71,30 @@ export function NewBookingDialog({ open, properties, defaultPropertyId, defaultD
           }}
         >
           <Typography variant="subtitle2" component="h3">
+            Where did the guest book?
+          </Typography>
+          <FormControl fullWidth size="small" required>
+            <InputLabel id="new-booking-source">Where did the guest book?</InputLabel>
+            <Select
+              labelId="new-booking-source"
+              label="Where did the guest book?"
+              value={state.bookingSource}
+              onChange={(event): void => state.setBookingSource(event.target.value as typeof state.bookingSource)}
+            >
+              {PICKABLE_SOURCES.map((source): React.JSX.Element => (
+                <MenuItem key={source} value={source}>
+                  {bookingSourceLabel(source)}
+                </MenuItem>
+              ))}
+            </Select>
+            <FormHelperText>
+              {state.isChannel
+                ? `The guest booked and paid on ${bookingSourceLabel(state.bookingSource)}. Here it only holds the dates and counts in your reports.`
+                : 'Used in your reports to show where bookings come from.'}
+            </FormHelperText>
+          </FormControl>
+
+          <Typography variant="subtitle2" component="h3" sx={{ pt: 1 }}>
             Stay and dates
           </Typography>
           <FormControl fullWidth size="small" required>
@@ -149,7 +174,7 @@ export function NewBookingDialog({ open, properties, defaultPropertyId, defaultD
           ) : null}
           {state.quoteError !== null ? <Alert severity="error">{state.quoteError}</Alert> : null}
 
-          {state.extras.length > 0 ? (
+          {!state.isChannel && state.extras.length > 0 ? (
             <Box component="fieldset" sx={{ border: 0, m: 0, p: 0, minWidth: 0 }}>
               <Typography variant="subtitle2" component="legend" sx={{ pb: 0.5 }}>
                 Extras
@@ -201,7 +226,32 @@ export function NewBookingDialog({ open, properties, defaultPropertyId, defaultD
             </Box>
           ) : null}
 
-          {quote !== null ? <NewBookingQuoteSummary quote={quote} /> : null}
+          {state.isChannel ? (
+            <Stack spacing={1}>
+              {quote !== null ? (
+                <Typography variant="body2" color={quote.available ? 'text.secondary' : 'error'}>
+                  {quote.available ? 'These dates are free.' : 'These dates are not free. Pick other dates.'}
+                </Typography>
+              ) : null}
+              <TextField
+                label={`Total the guest paid on ${bookingSourceLabel(state.bookingSource)} (€)`}
+                size="small"
+                value={state.channelTotal}
+                onChange={(event): void => state.setChannelTotal(event.target.value)}
+                error={state.channelTotal !== '' && state.channelTotalCents === null}
+                helperText={
+                  state.channelTotal !== '' && state.channelTotalCents === null
+                    ? 'Enter an amount like 1200 or 1200,50.'
+                    : 'Type what the guest paid there. The commission that site keeps is not tracked here.'
+                }
+                slotProps={{ htmlInput: { inputMode: 'decimal' } }}
+                required
+                fullWidth
+              />
+            </Stack>
+          ) : quote !== null ? (
+            <NewBookingQuoteSummary quote={quote} />
+          ) : null}
 
           <Typography variant="subtitle2" component="h3" sx={{ pt: 1 }}>
             Guest
@@ -233,8 +283,25 @@ export function NewBookingDialog({ open, properties, defaultPropertyId, defaultD
           <Typography variant="subtitle2" component="h3" sx={{ pt: 1 }} id="new-booking-payment">
             Payment
           </Typography>
-          <RadioGroup aria-labelledby="new-booking-payment" value="pay_at_hotel">
-            {NEW_BOOKING_PAYMENT_OPTIONS.map((option): React.JSX.Element => (
+          <RadioGroup aria-labelledby="new-booking-payment" value={state.isChannel ? 'paid_by_channel' : 'pay_at_hotel'}>
+            {state.isChannel ? (
+              <FormControlLabel
+                value="paid_by_channel"
+                control={<Radio size="small" />}
+                label={
+                  <>
+                    <Typography component="span" variant="body2" sx={{ display: 'block' }}>
+                      Paid through {bookingSourceLabel(state.bookingSource)}
+                    </Typography>
+                    <Typography component="span" variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                      The guest already paid there, so this is saved as paid. Refunds for it are handled on that site.
+                    </Typography>
+                  </>
+                }
+                sx={{ alignItems: 'flex-start', mb: 0.5 }}
+              />
+            ) : null}
+            {(state.isChannel ? [] : NEW_BOOKING_PAYMENT_OPTIONS).map((option): React.JSX.Element => (
               <FormControlLabel
                 key={option.value}
                 value={option.value}
@@ -266,7 +333,7 @@ export function NewBookingDialog({ open, properties, defaultPropertyId, defaultD
           Cancel
         </Button>
         <Button type="submit" form="new-booking-form" variant="contained" disabled={!state.canSave}>
-          {state.saving ? 'Saving…' : 'Book it · pay at hotel'}
+          {state.saving ? 'Saving…' : state.isChannel ? `Add booking · paid on ${bookingSourceLabel(state.bookingSource)}` : 'Book it · pay at hotel'}
         </Button>
       </DialogActions>
     </Dialog>

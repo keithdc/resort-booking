@@ -21,7 +21,7 @@ describe('BookingsRepository', () => {
     query.mockResolvedValue({ rows: [] });
     clientQuery.mockResolvedValue({ rows: [] });
     const moduleRef = await Test.createTestingModule({
-      providers: [BookingsRepository, { provide: DatabaseService, useValue: { query } }],
+      providers: [BookingsRepository, { provide: DatabaseService, useValue: { query, withTransaction: <T>(fn: (c: PoolClient) => Promise<T>): Promise<T> => fn(client) } }],
     }).compile();
     repository = moduleRef.get(BookingsRepository);
     client = Object.assign(new Client(), { release: (): void => undefined, query: clientQuery });
@@ -225,6 +225,52 @@ describe('BookingsRepository', () => {
     expect(sql).toContain("payment_status = 'pending'");
     expect(sql).toContain("payment_method = 'pay_at_hotel'");
     expect(sql).toContain("status = 'confirmed'");
+  });
+
+  it('marks paid and writes the audit row on ONE transaction client, and writes no row when nothing matched', async () => {
+    const audit = jest.fn<Promise<void>, [PoolClient]>().mockResolvedValue(undefined);
+    clientQuery.mockResolvedValueOnce({ rows: [], rowCount: 1 }).mockResolvedValueOnce({ rows: [], rowCount: 0 });
+
+    expect(await repository.markPaid('booking-1', 'staff-1', 'org-1', audit)).toBe(true);
+    expect(audit).toHaveBeenCalledTimes(1);
+    expect(audit).toHaveBeenCalledWith(client);
+    expect(query).not.toHaveBeenCalled();
+
+    expect(await repository.markPaid('booking-1', 'staff-1', 'org-1', audit)).toBe(false);
+    expect(audit).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets a failing audit row fail the whole mark-paid (the transaction rolls back), instead of swallowing it', async () => {
+    clientQuery.mockResolvedValueOnce({ rows: [], rowCount: 1 });
+    const audit = jest.fn<Promise<void>, [PoolClient]>().mockRejectedValue(new Error('audit insert failed'));
+
+    await expect(repository.markPaid('booking-1', 'staff-1', 'org-1', audit)).rejects.toThrow('audit insert failed');
+  });
+
+  it('reads where a booking came from only for a reservation of the organization', async () => {
+    query.mockResolvedValueOnce({ rows: [{ booking_source: 'airbnb' }] }).mockResolvedValueOnce({ rows: [] });
+
+    expect(await repository.sourceOf('org-1', 'booking-1')).toBe('airbnb');
+    expect(await repository.sourceOf('org-1', 'nope')).toBeNull();
+    const [sql, params] = query.mock.calls[0] as [string, unknown[]];
+    expect(sql).toContain('organization_id = $2');
+    expect(sql).toContain("kind = 'reservation'");
+    expect(params).toEqual(['booking-1', 'org-1']);
+  });
+
+  it('changes the source from the value that was seen, inside the organization, with the audit row on the same transaction', async () => {
+    const audit = jest.fn<Promise<void>, [PoolClient]>().mockResolvedValue(undefined);
+    clientQuery.mockResolvedValueOnce({ rows: [], rowCount: 1 }).mockResolvedValueOnce({ rows: [], rowCount: 0 });
+
+    expect(await repository.changeSource('org-1', 'booking-1', 'airbnb', 'booking_com', audit)).toBe(true);
+    const [sql, params] = clientQuery.mock.calls[0] as [string, unknown[]];
+    expect(sql).toContain('booking_source = $3');
+    expect(sql).toContain('organization_id = $2');
+    expect(params).toEqual(['booking-1', 'org-1', 'airbnb', 'booking_com']);
+    expect(audit).toHaveBeenCalledWith(client);
+
+    expect(await repository.changeSource('org-1', 'booking-1', 'airbnb', 'booking_com', audit)).toBe(false);
+    expect(audit).toHaveBeenCalledTimes(1);
   });
 
   it('notes an unknown outcome on a pending refund only', async () => {

@@ -7,7 +7,7 @@
  * after refunds, the cancellation rate, and the headline numbers of a period. No database here.
  */
 
-import type { CancellationReasonRow, PeriodSummary, StaffReservation } from '@resort-booking/shared-types';
+import type { BookingSource, BookingSourceSlice, CancellationReasonRow, PeriodSummary, StaffReservation } from '@resort-booking/shared-types';
 import { addDaysIso } from '../../shared/dates/iso-date';
 import { nightsBetween } from '../inventory/inventory.rules';
 import { overlapNights } from './reservations.rules';
@@ -54,6 +54,38 @@ export function nightlyCents(stay: StaffReservation): number {
  */
 export function rangedRevenueCents(stay: StaffReservation, from: string, to: string): number {
   return nightlyCents(stay) * overlapNights(stay.checkIn, stay.checkOut, from, to);
+}
+
+const SOURCE_ORDER: readonly BookingSource[] = ['website', 'airbnb', 'booking_com', 'other_site', 'phone_email', 'walk_in'];
+
+/**
+ * Where the confirmed bookings of [from, to) came from: how many, how many nights fall in the period and what those
+ * nights are worth (the same measure as the rest of the report), with each source's share of the bookings. Biggest
+ * first; a source with no booking is left out. The shares are rounded to whole percents and the biggest source takes
+ * the rounding difference, so they add up to 100.
+ */
+export function summariseBookingSources(stays: readonly StaffReservation[], from: string, to: string): BookingSourceSlice[] {
+  const bySource = new Map<BookingSource, BookingSourceSlice>();
+  for (const stay of stays) {
+    const slice = bySource.get(stay.bookingSource) ?? { source: stay.bookingSource, reservationCount: 0, occupiedNights: 0, revenueCents: 0, sharePercent: 0 };
+    slice.reservationCount += 1;
+    slice.occupiedNights += overlapNights(stay.checkIn, stay.checkOut, from, to);
+    slice.revenueCents += rangedRevenueCents(stay, from, to);
+    bySource.set(stay.bookingSource, slice);
+  }
+  const slices = [...bySource.values()].sort(
+    (a, b): number => b.reservationCount - a.reservationCount || SOURCE_ORDER.indexOf(a.source) - SOURCE_ORDER.indexOf(b.source),
+  );
+  const total = slices.reduce((sum: number, slice: BookingSourceSlice): number => sum + slice.reservationCount, 0);
+  for (const slice of slices) {
+    slice.sharePercent = total === 0 ? 0 : Math.round((slice.reservationCount / total) * 100);
+  }
+  const first = slices[0];
+  if (first !== undefined && total > 0) {
+    const sum = slices.reduce((acc: number, slice: BookingSourceSlice): number => acc + slice.sharePercent, 0);
+    first.sharePercent += 100 - sum;
+  }
+  return slices;
 }
 
 /**

@@ -28,6 +28,7 @@ const BODY = {
   checkOut: '2027-07-12',
   guestCount: 2,
   paymentMethod: 'pay_at_hotel',
+  bookingSource: 'phone_email',
   bookerName: 'Ada Lovelace',
   bookerEmail: 'ada@example.com',
   bookerPhone: '+33612345678',
@@ -50,9 +51,31 @@ describe('StaffCreateBookingDto', () => {
     expect(result).toMatchObject({ bookerName: 'Ada', bookerEmail: 'ada@example.com', guestNote: 'hi' });
   });
 
-  it('only accepts pay at hotel for now (a card link is a later step), never the guest methods or other text', async () => {
+  it('accepts pay at hotel and paid by channel, never the guest methods or other text', async () => {
     for (const value of ['card', 'bank_transfer', '', 'PAY_AT_HOTEL', null, 5, {}, [], undefined]) {
       expect(accepted(await run(StaffCreateBookingDto, { ...BODY, paymentMethod: value }))).toBe(false);
+    }
+    expect(accepted(await run(StaffCreateBookingDto, { ...BODY, paymentMethod: 'paid_by_channel', bookingSource: 'airbnb', channelTotalCents: 120000 }))).toBe(true);
+  });
+
+  it('needs a source, and only one of the six', async () => {
+    for (const source of ['website', 'airbnb', 'booking_com', 'other_site', 'phone_email', 'walk_in']) {
+      expect(accepted(await run(StaffCreateBookingDto, { ...BODY, bookingSource: source }))).toBe(true);
+    }
+    for (const value of ['', 'Airbnb', 'expedia', null, 5, {}, [], undefined]) {
+      expect(accepted(await run(StaffCreateBookingDto, { ...BODY, bookingSource: value }))).toBe(false);
+    }
+  });
+
+  it('takes the total typed for a channel booking as whole cents from 1 up to the ceiling, null or absent otherwise', async () => {
+    expect(await run(StaffCreateBookingDto, BODY)).toMatchObject({ channelTotalCents: null });
+    expect(accepted(await run(StaffCreateBookingDto, { ...BODY, channelTotalCents: null }))).toBe(true);
+    const channel = { ...BODY, paymentMethod: 'paid_by_channel', bookingSource: 'airbnb' };
+    for (const value of [1, 120000, 100_000_000]) {
+      expect(accepted(await run(StaffCreateBookingDto, { ...channel, channelTotalCents: value }))).toBe(true);
+    }
+    for (const value of [0, -5, 1.5, 100_000_001, '120000', true, {}, []]) {
+      expect(accepted(await run(StaffCreateBookingDto, { ...channel, channelTotalCents: value }))).toBe(false);
     }
   });
 
@@ -150,9 +173,15 @@ describe('extras on a staff booking', () => {
 });
 
 describe('the public hold form', () => {
-  it('never accepts pay at hotel: a guest cannot pick it', async () => {
-    const hold = { ...BODY, termsAccepted: true };
+  it('never accepts pay at hotel, paid by channel or a source: a guest cannot pick them', async () => {
+    const own: Record<string, unknown> = { ...BODY };
+    delete own.bookingSource;
+    const hold = { ...own, termsAccepted: true };
     expect(accepted(await run(CreateHoldDto, { ...hold, paymentMethod: 'card' }))).toBe(true);
     expect(accepted(await run(CreateHoldDto, hold))).toBe(false);
+    expect(accepted(await run(CreateHoldDto, { ...hold, paymentMethod: 'paid_by_channel' }))).toBe(false);
+    // The source is not a field of the public form at all: an unknown field is refused, so it cannot be smuggled in.
+    expect(accepted(await run(CreateHoldDto, { ...hold, paymentMethod: 'card', bookingSource: 'airbnb' }))).toBe(false);
+    expect(accepted(await run(CreateHoldDto, { ...hold, paymentMethod: 'card', channelTotalCents: 100 }))).toBe(false);
   });
 });

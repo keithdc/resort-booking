@@ -248,6 +248,7 @@ function stubStay(propertyId: string): StaffReservation {
     guestNote: '',
     paymentMethod: 'card',
     paymentStatus: 'paid',
+    bookingSource: 'website',
     paidAt: null,
     createdByName: null, notesCount: 0, lastNoteAt: null,
     status: 'confirmed',

@@ -6,6 +6,7 @@
 
 import {
   IsEmail,
+  IsOptional,
   IsPhoneNumber,
   IsString,
   Matches,
@@ -69,4 +70,16 @@ export class UpdateOrganizationDto {
   @IsEmail()
   @MaxLength(LIMITS.email)
   public guestReplyEmail!: string;
+
+  // Only read when the save changes bank details or an email address (docs/13 R6-06).
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(LIMITS.password)
+  public currentPassword?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  public twoFactorCode?: string;
 }

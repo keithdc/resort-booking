@@ -16,7 +16,8 @@ import { PasswordTooWeakException } from '../../shared/validation/password-too-w
 import { hashSessionToken } from '../identity/identity.password';
 import { IdentityService } from '../identity/identity.service';
 import { TeamLimiter } from './team-limiter';
-import { TeamRepository, type InviteRecord, type MemberChangeOutcome } from './team.repository';
+import type { PoolClient } from 'pg';
+import { TeamRepository, type MemberChangeAudit, type InviteRecord, type MemberChangeOutcome } from './team.repository';
 import { TeamService, type PublicContext, type TeamActor } from './team.service';
 import type { TeamInvite, TeamMember } from './team.types';
 
@@ -77,19 +78,37 @@ describe('TeamService', () => {
     listOpenInvites: jest.fn<Promise<TeamInvite[]>, [string, Date]>(),
     findMember: jest.fn<Promise<{ id: string; role: 'admin' | 'employee'; active: boolean; canManageRefunds: boolean; email: string; fullName: string } | null>, [string, string]>(),
     emailInUse: jest.fn<Promise<boolean>, [string]>(),
-    issueInvite: jest.fn<Promise<TeamInvite>, [Record<string, unknown>]>(),
-    revokeInvite: jest.fn<Promise<{ email: string } | null>, [string, string]>(),
+    issueInvite: jest.fn<Promise<TeamInvite>, [Record<string, unknown>, ((client: PoolClient, invite: TeamInvite) => Promise<void>)?]>(),
+    revokeInvite: jest.fn<Promise<{ email: string } | null>, [string, string, ((client: PoolClient) => Promise<void>)?]>(),
     findInviteByTokenHash: jest.fn<Promise<InviteRecord | null>, [string]>(),
     acceptInvite: jest.fn<Promise<{ account: StaffAccount; inviteId: string; reset: boolean } | null>, [Record<string, unknown>]>(),
-    changeMember: jest.fn<Promise<MemberChangeOutcome>, [string, string, string, Record<string, unknown>]>(),
+    changeMember: jest.fn<Promise<MemberChangeOutcome>, [string, string, string, Record<string, unknown>, MemberChangeAudit?]>(),
   };
   const identity = {
     assertPasswordAcceptable: jest.fn<void, [string, string]>(),
     startSession: jest.fn<Promise<StaffSessionResult>, [StaffAccount, unknown?]>(),
     logoutAll: jest.fn<Promise<number>, [string]>(),
-    resetTwoFactor: jest.fn<Promise<{ hadTwoFactor: boolean }>, [string, string]>(),
+    resetTwoFactor: jest.fn<Promise<{ hadTwoFactor: boolean }>, [string, string, ((client: PoolClient, outcome: { hadTwoFactor: boolean }) => Promise<void>)?]>(),
   };
   const recordBy = jest.fn<Promise<boolean>, [AuditActor, string, Record<string, unknown>?]>();
+  /** A transaction-bound audit write: recorded here too, so each test reads one list of rows (and see 'in the same transaction' below). */
+  const recordInTransaction = jest.fn<Promise<void>, [PoolClient, AuditActor, string, Record<string, unknown>?]>();
+  const fakeClient = Object.create(null) as PoolClient;
+
+  /** The repository answers a member change AND runs the audit hook the service hands it, like the real transaction does. */
+  function changeMemberAs(outcome: MemberChangeOutcome, once = false): void {
+    const run = async (_org: string, _actor: string, _target: string, _change: Record<string, unknown>, audit?: MemberChangeAudit): Promise<MemberChangeOutcome> => {
+      if (outcome.kind === 'changed') {
+        await audit?.(fakeClient, { before: outcome.before, after: outcome.after, memberName: 'Eve' });
+      }
+      return outcome;
+    };
+    if (once) {
+      repo.changeMember.mockImplementationOnce(run);
+    } else {
+      repo.changeMember.mockImplementation(run);
+    }
+  }
   const limiter = {
     checkRegistration: jest.fn<Promise<void>, [string | undefined, string]>(),
     checkInviteAccept: jest.fn<Promise<void>, [string | undefined]>(),
@@ -106,7 +125,7 @@ describe('TeamService', () => {
         TeamService,
         { provide: TeamRepository, useValue: repo },
         { provide: IdentityService, useValue: identity },
-        { provide: AuditService, useValue: { recordBy } },
+        { provide: AuditService, useValue: { recordBy, recordInTransaction } },
         { provide: TeamLimiter, useValue: limiter },
         { provide: MailService, useValue: mail },
         { provide: ConfigService, useValue: { get: (name: string): string | undefined => env[name] } },
@@ -135,10 +154,22 @@ describe('TeamService', () => {
     mail.send.mockResolvedValue({ status: 'sent', providerId: 'abc' });
     limiter.allowInviteEmail.mockResolvedValue(true);
     repo.emailInUse.mockResolvedValue(false);
-    repo.issueInvite.mockResolvedValue(INVITE);
+    repo.issueInvite.mockImplementation(async (_input, audit) => {
+      await audit?.(fakeClient, INVITE);
+      return INVITE;
+    });
+    repo.revokeInvite.mockImplementation(async (_org, _id, audit) => {
+      await audit?.(fakeClient);
+      return { email: 'new@example.com' };
+    });
+    identity.resetTwoFactor.mockImplementation(async (_org, _id, audit) => {
+      await audit?.(fakeClient, { hadTwoFactor: true });
+      return { hadTwoFactor: true };
+    });
     identity.startSession.mockImplementation((account) => Promise.resolve(sessionFor(account)));
     identity.logoutAll.mockResolvedValue(1);
     recordBy.mockResolvedValue(true);
+    recordInTransaction.mockImplementation((_client, actor, action, details) => recordBy(actor, action, details).then((): void => undefined));
     limiter.checkRegistration.mockResolvedValue(undefined);
     limiter.checkInviteAccept.mockResolvedValue(undefined);
     limiter.checkInvitePreview.mockResolvedValue(undefined);
@@ -319,7 +350,7 @@ describe('TeamService', () => {
       expect(recordBy).toHaveBeenCalledWith(
         { organizationId: ORG, staffUserId: 'admin-1', ip: '203.0.113.7', requestId: 'req-2' },
         'team.invite_created',
-        { targetType: 'staff_invite', targetId: 'inv-1', metadata: { role: 'employee', canManageRefunds: false, emailed: false } },
+        { targetType: 'staff_invite', targetId: 'inv-1', metadata: { role: 'employee', canManageRefunds: false, emailRequested: false } },
       );
       expect(JSON.stringify(recordBy.mock.calls)).not.toContain('example.com');
     });
@@ -388,19 +419,19 @@ describe('TeamService', () => {
       const message = mail.send.mock.calls[0]?.[0];
       expect(message?.to).toBe('new@example.com');
       expect(message?.requestId).toBe('req-2');
-      expect(message?.text).toContain(`https://admin.example.com/invite/${issued.inviteToken}`);
-      expect(message?.html).toContain(`https://admin.example.com/invite/${issued.inviteToken}`);
+      expect(message?.text).toContain(`https://admin.example.com/invite#token=${issued.inviteToken}`);
+      expect(message?.html).toContain(`https://admin.example.com/invite#token=${issued.inviteToken}`);
       expect(message?.text).toContain('Ada');
       expect(message?.text).toContain('Humphreys');
     });
 
-    it('audits emailed true/false and never the token', async () => {
+    it('audits whether the email was ASKED for (it is written in the invitation\'s transaction, before sending) and never the token', async () => {
       const sent = await service.createInvite(ACTOR, input);
       mail.send.mockResolvedValue({ status: 'failed', errorClass: 'timeout' });
-      const failed = await service.createInvite(ACTOR, input);
+      const failed = await service.createInvite(ACTOR, { ...input, sendEmail: false });
 
-      expect(recordBy.mock.calls[0]?.[2]).toMatchObject({ metadata: { role: 'employee', emailed: true } });
-      expect(recordBy.mock.calls[1]?.[2]).toMatchObject({ metadata: { role: 'employee', emailed: false } });
+      expect(recordBy.mock.calls[0]?.[2]).toMatchObject({ metadata: { role: 'employee', emailRequested: true } });
+      expect(recordBy.mock.calls[1]?.[2]).toMatchObject({ metadata: { role: 'employee', emailRequested: false } });
       expect(JSON.stringify(recordBy.mock.calls)).not.toContain(sent.inviteToken);
       expect(JSON.stringify(recordBy.mock.calls)).not.toContain(failed.inviteToken);
     });
@@ -460,8 +491,8 @@ describe('TeamService', () => {
       const message = mail.send.mock.calls[0]?.[0];
       expect(message?.to).toBe('eve@example.com');
       expect(message?.subject).toContain('Reset your access');
-      expect(message?.text).toContain(`/invite/${issued.inviteToken}`);
-      expect(recordBy.mock.calls[0]?.[2]).toMatchObject({ metadata: { inviteId: 'inv-1', emailed: true } });
+      expect(message?.text).toContain(`/invite#token=${issued.inviteToken}`);
+      expect(recordBy.mock.calls[0]?.[2]).toMatchObject({ metadata: { inviteId: 'inv-1', emailRequested: true } });
     });
 
     it('keeps the reset (sessions ended, token returned) when the email fails', async () => {
@@ -478,11 +509,9 @@ describe('TeamService', () => {
 
   describe('revokeInvite', () => {
     it('revokes inside the caller\'s organization and audits it', async () => {
-      repo.revokeInvite.mockResolvedValue({ email: 'new@example.com' });
-
       await service.revokeInvite(ACTOR, 'inv-1');
 
-      expect(repo.revokeInvite).toHaveBeenCalledWith(ORG, 'inv-1');
+      expect(repo.revokeInvite).toHaveBeenCalledWith(ORG, 'inv-1', expect.any(Function));
       expect(recordBy.mock.calls[0]?.[1]).toBe('team.invite_revoked');
     });
 
@@ -509,31 +538,31 @@ describe('TeamService', () => {
     });
 
     it('promotes, audits the role change and answers with the updated member', async () => {
-      repo.changeMember.mockResolvedValue({ kind: 'changed', before, after: { role: 'admin', active: true, canManageRefunds: false } });
+      changeMemberAs({ kind: 'changed', before, after: { role: 'admin', active: true, canManageRefunds: false } });
 
       const member = await service.updateMember(ACTOR, 'eve-1', { role: 'admin' });
 
-      expect(repo.changeMember).toHaveBeenCalledWith(ORG, 'admin-1', 'eve-1', { role: 'admin' });
+      expect(repo.changeMember).toHaveBeenCalledWith(ORG, 'admin-1', 'eve-1', { role: 'admin' }, expect.any(Function));
       expect(recordBy.mock.calls.map((call) => call[1])).toEqual(['team.role_changed']);
       expect(member).toMatchObject({ id: 'eve-1', role: 'admin' });
     });
 
     it('audits a switch off as team.deactivated and a switch on as team.reactivated', async () => {
-      repo.changeMember.mockResolvedValueOnce({ kind: 'changed', before, after: { role: 'employee', active: false, canManageRefunds: false } });
+      changeMemberAs({ kind: 'changed', before, after: { role: 'employee', active: false, canManageRefunds: false } }, true);
       await service.updateMember(ACTOR, 'eve-1', { active: false });
-      repo.changeMember.mockResolvedValueOnce({ kind: 'changed', before: { ...before, active: false }, after: { role: 'employee', active: true, canManageRefunds: false } });
+      changeMemberAs({ kind: 'changed', before: { ...before, active: false }, after: { role: 'employee', active: true, canManageRefunds: false } }, true);
       await service.updateMember(ACTOR, 'eve-1', { active: true });
 
       expect(recordBy.mock.calls.map((call) => call[1])).toEqual(['team.deactivated', 'team.reactivated']);
     });
 
     it('grants refund access: audits WHO changed WHOSE access, with the new value and no secrets', async () => {
-      repo.changeMember.mockResolvedValue({ kind: 'changed', before, after: { role: 'employee', active: true, canManageRefunds: true } });
+      changeMemberAs({ kind: 'changed', before, after: { role: 'employee', active: true, canManageRefunds: true } });
       repo.listMembers.mockResolvedValue([{ ...MEMBER, role: 'employee', canManageRefunds: true }]);
 
       const member = await service.updateMember(ACTOR, 'eve-1', { canManageRefunds: true });
 
-      expect(repo.changeMember).toHaveBeenCalledWith(ORG, 'admin-1', 'eve-1', { canManageRefunds: true });
+      expect(repo.changeMember).toHaveBeenCalledWith(ORG, 'admin-1', 'eve-1', { canManageRefunds: true }, expect.any(Function));
       expect(recordBy.mock.calls).toHaveLength(1);
       expect(recordBy.mock.calls[0]?.[0]).toMatchObject({ organizationId: ORG, staffUserId: 'admin-1' });
       expect(recordBy.mock.calls[0]?.[1]).toBe('team.refund_access_granted');
@@ -546,7 +575,7 @@ describe('TeamService', () => {
     });
 
     it('removes refund access and audits it as team.refund_access_removed', async () => {
-      repo.changeMember.mockResolvedValue({
+      changeMemberAs({
         kind: 'changed',
         before: { ...before, canManageRefunds: true },
         after: { role: 'employee', active: true, canManageRefunds: false },
@@ -609,13 +638,46 @@ describe('TeamService', () => {
     });
   });
 
+  describe('audit rows are written in the same transaction as the change (docs/13 R6-05)', () => {
+    it('a member change hands the repository ONE hook that writes every row through the transaction client, with the member\'s name from the locked row', async () => {
+      repo.listMembers.mockResolvedValue([{ ...MEMBER, role: 'employee', active: false, canManageRefunds: false }]);
+      changeMemberAs({ kind: 'changed', before: { id: 'eve-1', role: 'admin', active: true, canManageRefunds: true }, after: { role: 'employee', active: false, canManageRefunds: false } });
+
+      await service.updateMember(ACTOR, 'eve-1', { role: 'employee', active: false });
+
+      expect(recordInTransaction.mock.calls.map((call) => call[2]).sort()).toEqual(['team.deactivated', 'team.refund_access_removed', 'team.role_changed']);
+      expect(recordInTransaction.mock.calls.every((call) => call[0] === fakeClient)).toBe(true);
+      for (const call of recordInTransaction.mock.calls) {
+        expect(call[3]).toMatchObject({ metadata: { memberName: 'Eve', changedByName: ACTOR.staff.fullName } });
+      }
+    });
+
+    it('refuses the change when the audit row cannot be written (the repository rolls back and the error reaches the caller)', async () => {
+      recordInTransaction.mockRejectedValue(new Error('audit insert failed'));
+      changeMemberAs({ kind: 'changed', before: { id: 'eve-1', role: 'employee', active: true, canManageRefunds: false }, after: { role: 'employee', active: true, canManageRefunds: true } });
+
+      await expect(service.updateMember(ACTOR, 'eve-1', { canManageRefunds: true })).rejects.toThrow('audit insert failed');
+    });
+
+    it('does not create an invitation when its audit row cannot be written', async () => {
+      recordInTransaction.mockRejectedValue(new Error('audit insert failed'));
+
+      await expect(service.createInvite(ACTOR, { email: 'new@example.com', fullName: 'New Person', role: 'employee', sendEmail: false })).rejects.toThrow('audit insert failed');
+      expect(mail.send).not.toHaveBeenCalled();
+    });
+
+    it('does not remove two-factor when its audit row cannot be written', async () => {
+      recordInTransaction.mockRejectedValue(new Error('audit insert failed'));
+
+      await expect(service.resetTwoFactor(ACTOR, 'eve-1')).rejects.toThrow('audit insert failed');
+    });
+  });
+
   describe('resetTwoFactor', () => {
     it('removes the member\'s two-factor in the admin\'s organization (which also ends their sessions) and audits it', async () => {
-      identity.resetTwoFactor.mockResolvedValue({ hadTwoFactor: true });
-
       await expect(service.resetTwoFactor(ACTOR, 'eve-1')).resolves.toEqual({ hadTwoFactor: true });
 
-      expect(identity.resetTwoFactor).toHaveBeenCalledWith(ORG, 'eve-1');
+      expect(identity.resetTwoFactor).toHaveBeenCalledWith(ORG, 'eve-1', expect.any(Function));
       expect(recordBy).toHaveBeenCalledWith(expect.objectContaining({ organizationId: ORG, staffUserId: 'admin-1' }), 'team.two_factor_reset', {
         targetType: 'staff_user',
         targetId: 'eve-1',
@@ -635,7 +697,7 @@ describe('TeamService', () => {
 
       await expect(service.resetTwoFactor(ACTOR, 'stranger')).rejects.toMatchObject({ status: 404 });
 
-      expect(identity.resetTwoFactor).toHaveBeenCalledWith(ORG, 'stranger');
+      expect(identity.resetTwoFactor).toHaveBeenCalledWith(ORG, 'stranger', expect.any(Function));
       expect(recordBy).not.toHaveBeenCalled();
     });
   });

@@ -7,7 +7,13 @@
 /** What a guest can pick at checkout. */
 export type PaymentMethod = 'card' | 'bank_transfer';
 /** Every way a booking can be paid for: the guest's choices, plus a booking staff made for a guest who pays at the property. */
-export type StaffPaymentMethod = PaymentMethod | 'pay_at_hotel';
+export type StaffPaymentMethod = PaymentMethod | 'pay_at_hotel' | 'paid_by_channel';
+/**
+ * Where a booking came from. `website` is the guest checkout. Staff choose one of the others when they add a booking:
+ * `airbnb`, `booking_com` and `other_site` were paid on that site (`paid_by_channel`); `phone_email` and `walk_in` are the
+ * property's own bookings. Never shown to a guest.
+ */
+export type BookingSource = 'website' | 'airbnb' | 'booking_com' | 'other_site' | 'phone_email' | 'walk_in';
 /** `pending`: confirmed but not paid yet (pay at hotel). `paid`: every online booking, and a pay-at-hotel one once a person marked it paid. */
 export type BookingPaymentStatus = 'paid' | 'pending';
 export type HoldStatus = 'active' | 'expired' | 'released' | 'confirmed' | 'cancelled';
@@ -48,6 +54,13 @@ export interface UpdateOrganizationSettingsRequest {
   ownerName: string;
   bookingEmail: string;
   guestReplyEmail: string;
+  /**
+   * Needed only when the save changes the bank details or an email address (where money or guest mail goes):
+   * the signed-in person's current password, and their authenticator or recovery code when two-step verification is on.
+   * Never stored, never logged.
+   */
+  currentPassword?: string;
+  twoFactorCode?: string;
 }
 
 export interface StaffProfile {
@@ -441,6 +454,8 @@ export interface StaffReservation {
   bookerPhone: string;
   guestNote: string;
   paymentMethod: StaffPaymentMethod | null;
+  /** Where the booking came from (staff only: no guest route returns it). */
+  bookingSource: BookingSource;
   /** `pending` until a person marks a pay-at-hotel booking as paid. Always `paid` for online bookings. */
   paymentStatus: BookingPaymentStatus;
   /** When a person marked the booking paid, else null. */
@@ -517,9 +532,17 @@ export interface StaffBookingQuote extends Quote {
   extrasCents: number;
 }
 
-/** A booking made by staff. Only pay at hotel exists for now; a card payment link comes later. */
+/**
+ * A booking made by staff. A booking of the property's own (our website, phone or email, walk-in) is `pay_at_hotel` and
+ * priced from the stay's rates; a booking from Airbnb, Booking.com or another site is `paid_by_channel`: that site
+ * collected the money, staff type the total the guest paid (`channelTotalCents`), and there are no extras. A card payment
+ * link comes later.
+ */
 export interface StaffCreateBookingRequest extends StaffBookingQuoteRequest {
-  paymentMethod: 'pay_at_hotel';
+  paymentMethod: 'pay_at_hotel' | 'paid_by_channel';
+  bookingSource: BookingSource;
+  /** Only for a channel booking: what the guest paid on that site, in cents. Null for the property's own bookings. */
+  channelTotalCents: number | null;
   bookerName: string;
   bookerEmail: string;
   /** Optional: international format when given. */
@@ -610,6 +633,19 @@ export interface PaymentMethodSlice {
   revenueCents: number;
 }
 
+/**
+ * Where the confirmed bookings of the period came from. Revenue is the value of the nights slept in the period (the same
+ * measure as the rest of the report), zeroed for people who do not see money. `sharePercent` is the share of the
+ * period's bookings (rounded, summing to about 100).
+ */
+export interface BookingSourceSlice {
+  source: BookingSource;
+  reservationCount: number;
+  occupiedNights: number;
+  revenueCents: number;
+  sharePercent: number;
+}
+
 /** The headline numbers of one period, computed the same way for the chosen period and the one before it. */
 export interface PeriodSummary {
   from: string;
@@ -694,6 +730,8 @@ export interface StaffReport {
   properties: PropertyReportRow[];
   daily: ReportSeriesPoint[];
   paymentMethods: PaymentMethodSlice[];
+  /** Where the confirmed bookings of the period came from, biggest first. */
+  bookingSources: BookingSourceSlice[];
   stays: StaffReservation[];
   grossRevenueCents: number;
   refundedCents: number;

@@ -213,3 +213,9 @@ export function parseRefundablePayments(raw: unknown): RefundablePayment[] {
   }
   return payments;
 }
+
+/**
+ * A booking made on another website (Airbnb, Booking.com...) is paid and kept there. Here it holds the dates and is
+ * reported, but money and date moves happen on that site. Plain words, no site name: a guest never learns the source.
+ */
+export const CHANNEL_BOOKING_MESSAGE = 'This booking was made on another website, so it is cancelled or changed there. Refunds are handled on that website.';

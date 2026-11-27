@@ -10,12 +10,14 @@ import { StaffRefundsRepository } from './staff-refunds.repository';
 
 describe('StaffRefundsRepository', () => {
   const query = jest.fn();
+  const txQuery = jest.fn();
   let repository: StaffRefundsRepository;
 
   beforeEach(async (): Promise<void> => {
     query.mockReset().mockResolvedValue({ rows: [], rowCount: 0 });
+    txQuery.mockReset().mockResolvedValue({ rows: [], rowCount: 0 });
     const moduleRef = await Test.createTestingModule({
-      providers: [StaffRefundsRepository, { provide: DatabaseService, useValue: { query } }],
+      providers: [StaffRefundsRepository, { provide: DatabaseService, useValue: { query, withTransaction: <T>(fn: (c: unknown) => Promise<T>): Promise<T> => fn({ query: txQuery }) } }],
     }).compile();
     repository = moduleRef.get(StaffRefundsRepository);
   });
@@ -92,6 +94,26 @@ describe('StaffRefundsRepository', () => {
     expect(sql).toContain("status IN ('pending', 'failed')");
     expect(sql).toContain('processing_started_at IS NULL OR processing_started_at < now()');
     expect(params).toEqual(['r1', 150, 'Cash', 'staff-1']);
+  });
+
+  it('marks a refund paid and writes the audit row on ONE transaction client, and writes none when nothing matched', async () => {
+    const audit = jest.fn().mockResolvedValue(undefined);
+    txQuery.mockResolvedValueOnce({ rows: [], rowCount: 1 });
+
+    expect(await repository.markManualPaid('r1', 'staff-1', 'Cash', 150, audit)).toBe('paid');
+    expect(audit).toHaveBeenCalledTimes(1);
+    expect(audit).toHaveBeenCalledWith({ query: txQuery });
+    expect(query).not.toHaveBeenCalled();
+
+    query.mockResolvedValueOnce({ rows: [{ id: 'r1', status: 'pending' }], rowCount: 1 });
+    expect(await repository.markManualPaid('r1', 'staff-1', 'Cash', 150, audit)).toBe('busy');
+    expect(audit).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets a failing audit row fail the whole mark-paid instead of swallowing it', async () => {
+    txQuery.mockResolvedValueOnce({ rows: [], rowCount: 1 });
+
+    await expect(repository.markManualPaid('r1', 'staff-1', 'Cash', 150, () => Promise.reject(new Error('audit insert failed')))).rejects.toThrow('audit insert failed');
   });
 
   it('says busy when a provider call may still be in flight, and not_open when it is already paid', async () => {

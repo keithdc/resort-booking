@@ -8,11 +8,13 @@ import { BadRequestException, ConflictException, ForbiddenException, NotFoundExc
 import type { StaffRefund, StaffReservation } from '@resort-booking/shared-types';
 import { isoDateInTimeZone } from '../../shared/dates/iso-date';
 import type { StaffAccount } from '../../shared/roles/staff-role';
+import type { PoolClient } from 'pg';
 import { Test } from '@nestjs/testing';
+import { AuditService } from '../../shared/audit/audit.service';
 import { SAME_DAY_NO_REFUND_LABEL, SAME_DAY_NO_REFUND_NOTICE } from './bookings.rules';
 import { BookingReader } from './booking-reader';
 import { BookingsRepository, type BlockKind, type BookingRow } from './bookings.repository';
-import { BookingsService, type CancelInput, type CancelOutcome } from './bookings.service';
+import { BookingsService, type CancelAudit, type CancelInput, type CancelOutcome } from './bookings.service';
 import { RebookService } from './rebook.service';
 import { ReservationsService } from '../reservations/reservations.service';
 import { StaffBookingsService } from './staff-bookings.service';
@@ -75,8 +77,9 @@ const OUTCOME: CancelOutcome = {
 describe('StaffBookingsService', () => {
   const findById = jest.fn<Promise<BookingRow | null>, [string]>();
   const findKind = jest.fn<Promise<BlockKind | null>, [string]>();
-  const markPaid = jest.fn<Promise<boolean>, [string, string]>();
-  const cancelRow = jest.fn<Promise<CancelOutcome>, [BookingRow, CancelInput]>();
+  const markPaid = jest.fn<Promise<boolean>, [string, string, string, ((client: PoolClient) => Promise<void>)?]>();
+  const recordInTransaction = jest.fn<Promise<void>, [PoolClient, { organizationId: string; staffUserId: string }, string, Record<string, unknown>?]>();
+  const cancelRow = jest.fn<Promise<CancelOutcome>, [BookingRow, CancelInput, CancelAudit?]>();
   const staffQuote = jest.fn();
   const staffChange = jest.fn();
   const policyFor = jest.fn();
@@ -93,6 +96,7 @@ describe('StaffBookingsService', () => {
     policyFor.mockResolvedValue({ tiers: LADDER, rebookable: false, rebookFeeType: 'none', rebookFeeValue: 0 });
     getReservation.mockResolvedValue({ id: ID } as StaffReservation);
     getStaffRefund.mockResolvedValue({ id: 'refund-1' } as StaffRefund);
+    recordInTransaction.mockResolvedValue(undefined);
     const moduleRef = await Test.createTestingModule({
       providers: [
         StaffBookingsService,
@@ -109,6 +113,7 @@ describe('StaffBookingsService', () => {
         },
         { provide: ReservationsService, useValue: { getReservation } },
         { provide: StaffRefundsRepository, useValue: { getStaffRefund } },
+        { provide: AuditService, useValue: { recordInTransaction } },
       ],
     }).compile();
     service = moduleRef.get(StaffBookingsService);
@@ -176,8 +181,45 @@ describe('StaffBookingsService', () => {
       expect(cancelRow).toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({ refundCents: 100000, percent: 100, reasonCode: 'guest_request', initiatedBy: 'staff', staffId: 'staff-1', note: 'Guest emailed' }),
+        expect.any(Function),
       );
       expect(result).toEqual({ reservation: { id: ID }, refund: { id: 'refund-1' } });
+    });
+
+    it('hands the cancel an audit writer for the SAME transaction: who, the reference, the reason and the planned refund, never the note', async () => {
+      const client = Object.create(null) as PoolClient;
+      cancelRow.mockImplementation(async (_row, _input, audit) => {
+        await audit?.(client, {
+          refundId: 'refund-1',
+          plan: { amountCents: 25000, percent: 25, reason: 'goodwill', status: 'pending', currencyCode: 'EUR' } as CancelOutcome['plan'],
+        });
+        return OUTCOME;
+      });
+
+      await service.cancel(PERMITTED, ID, { reason: 'goodwill', refundCents: 25000, note: 'private words about the guest' });
+
+      expect(recordInTransaction).toHaveBeenCalledTimes(1);
+      const [usedClient, actor, action, details] = recordInTransaction.mock.calls[0] ?? [];
+      expect(usedClient).toBe(client);
+      expect(actor).toEqual({ organizationId: PERMITTED.organizationId, staffUserId: PERMITTED.id });
+      expect(action).toBe('booking.cancelled_by_staff');
+      expect(details).toMatchObject({
+        targetType: 'booking',
+        targetId: ID,
+        metadata: { actorRole: 'employee', viaRefundAccess: true, bookingReference: 'BK-1A2B3C4D5E', reason: 'goodwill', refundIssued: true, refundCents: 25000, refundStatus: 'pending' },
+      });
+      expect(JSON.stringify(details)).not.toContain('private words');
+    });
+
+    it('says nothing was issued when the cancel recorded no refund row', async () => {
+      cancelRow.mockImplementation(async (_row, _input, audit) => {
+        await audit?.(Object.create(null) as PoolClient, { refundId: null, plan: {} as CancelOutcome['plan'] });
+        return { ...OUTCOME, refundId: null };
+      });
+
+      await service.cancel(STAFF, ID, { reason: 'guest_request', refundCents: null, note: 'abc' });
+
+      expect(recordInTransaction.mock.calls[0]?.[3]).toMatchObject({ metadata: { refundIssued: false, refundCents: 0 } });
     });
 
     it('property_cancelled refunds 100% of what was paid, whatever the policy says', async () => {
@@ -185,7 +227,7 @@ describe('StaffBookingsService', () => {
 
       await service.cancel(STAFF, ID, { reason: 'property_cancelled', refundCents: null, note: 'Pipe burst' });
 
-      expect(cancelRow).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ refundCents: 100000, percent: 100, reasonCode: 'property_cancelled' }));
+      expect(cancelRow).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ refundCents: 100000, percent: 100, reasonCode: 'property_cancelled' }), expect.any(Function));
     });
 
     it('goodwill refunds exactly the chosen amount, 0 to paid inclusive', async () => {
@@ -246,7 +288,7 @@ describe('StaffBookingsService', () => {
     it('may cancel under the guest policy and the refund is the policy amount', async () => {
       await service.cancel(EMPLOYEE, ID, { reason: 'guest_request', refundCents: null, note: 'Guest emailed' });
 
-      expect(cancelRow).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ refundCents: 100000, reasonCode: 'guest_request', staffId: 'staff-2' }));
+      expect(cancelRow).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ refundCents: 100000, reasonCode: 'guest_request', staffId: 'staff-2' }), expect.any(Function));
     });
 
     it.each([
@@ -282,6 +324,7 @@ describe('StaffBookingsService', () => {
       expect(cancelRow).toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({ refundCents: expectedCents, percent: expectedPercent, reasonCode: reason, initiatedBy: 'staff', staffId: 'staff-3' }),
+        expect.any(Function),
       );
     });
 
@@ -320,7 +363,7 @@ describe('StaffBookingsService', () => {
 
       await service.cancel(EMPLOYEE, ID, CANCEL);
 
-      expect(cancelRow).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ refundCents: 50000, percent: 50, reasonCode: 'guest_request' }));
+      expect(cancelRow).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ refundCents: 50000, percent: 50, reasonCode: 'guest_request' }), expect.any(Function));
     });
 
     it.each(['2027-07-10', '2027-07-11', '2027-08-30'])(
@@ -342,6 +385,7 @@ describe('StaffBookingsService', () => {
             staffId: 'staff-2',
             note: 'Guest emailed',
           }),
+          expect.any(Function),
         );
         expect(result.refund).toEqual({ id: 'refund-1' });
       },
@@ -389,11 +433,11 @@ describe('StaffBookingsService', () => {
     ])('%s is never locked: the ladder result on the check-in day, custom amounts, and moving dates after the stay began', async (_label, who) => {
       today = '2027-07-10';
       await service.cancel(who, ID, CANCEL);
-      expect(cancelRow).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ refundCents: 50000, percent: 50 }));
-      expect(cancelRow).toHaveBeenLastCalledWith(expect.anything(), expect.not.objectContaining({ label: SAME_DAY_NO_REFUND_LABEL }));
+      expect(cancelRow).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ refundCents: 50000, percent: 50 }), expect.any(Function));
+      expect(cancelRow).toHaveBeenLastCalledWith(expect.anything(), expect.not.objectContaining({ label: SAME_DAY_NO_REFUND_LABEL }), expect.any(Function));
 
       await service.cancel(who, ID, { reason: 'goodwill', refundCents: 7000, note: 'Kind gesture' });
-      expect(cancelRow).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ refundCents: 7000, percent: 7 }));
+      expect(cancelRow).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ refundCents: 7000, percent: 7 }), expect.any(Function));
 
       today = '2027-07-11';
       staffChange.mockResolvedValue({ newBookingId: 'new-id', refund: null });
@@ -410,6 +454,7 @@ describe('StaffBookingsService', () => {
             { provide: BookingsRepository, useValue: { findById, findKind } },
             { provide: BookingsService, useValue: { cancelRow } },
             { provide: RebookService, useValue: { staffQuote, staffChange } },
+            { provide: AuditService, useValue: { recordInTransaction } },
             {
               provide: BookingReader,
               useValue: {
@@ -425,11 +470,11 @@ describe('StaffBookingsService', () => {
         const real = moduleRef.get(StaffBookingsService);
         findById.mockResolvedValue(row({ check_in: '2027-07-02', check_out: '2027-07-04', property_timezone: 'Pacific/Auckland' }));
         await real.cancel(EMPLOYEE, ID, CANCEL);
-        expect(cancelRow).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ refundCents: 0, percent: 0, label: SAME_DAY_NO_REFUND_LABEL }));
+        expect(cancelRow).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ refundCents: 0, percent: 0, label: SAME_DAY_NO_REFUND_LABEL }), expect.any(Function));
 
         findById.mockResolvedValue(row({ check_in: '2027-07-02', check_out: '2027-07-04', property_timezone: 'Europe/Paris' }));
         await real.cancel(EMPLOYEE, ID, CANCEL);
-        expect(cancelRow).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ refundCents: 50000, percent: 50 }));
+        expect(cancelRow).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ refundCents: 50000, percent: 50 }), expect.any(Function));
       } finally {
         jest.useRealTimers();
       }
@@ -536,6 +581,114 @@ describe('StaffBookingsService', () => {
       expect(staffChange).not.toHaveBeenCalled();
     });
   });
+  describe('a booking made on another site (paid by channel)', () => {
+    const channel = (overrides: Partial<BookingRow> = {}): BookingRow => row({ payment_method: 'paid_by_channel', payment_status: 'paid', ...overrides });
+
+    it('previews a cancel with the plain notice and no refund, whoever asks', async () => {
+      findById.mockResolvedValue(channel());
+
+      for (const who of [STAFF, EMPLOYEE, PERMITTED]) {
+        const preview = await service.cancelPreview(who, ID);
+        expect(preview).toMatchObject({ canCancel: true, notice: expect.stringContaining('another website'), policyRefund: { refundCents: 0, refundPercent: 0 } });
+      }
+    });
+
+    it.each([
+      ['an employee, guest request', EMPLOYEE, { reason: 'guest_request' as const, refundCents: null, note: 'Guest cancelled on the site' }],
+      ['an admin, property cancelled (a full refund elsewhere does not exist here)', STAFF, { reason: 'property_cancelled' as const, refundCents: null, note: 'Pipe burst' }],
+      ['an admin, goodwill with an amount typed', STAFF, { reason: 'goodwill' as const, refundCents: 5000, note: 'Sorry' }],
+    ])('cancels for %s with NO refund and NO refund row', async (_label, who, request) => {
+      findById.mockResolvedValue(channel());
+
+      await service.cancel(who, ID, request);
+
+      expect(cancelRow).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ refundCents: 0, percent: 0, skipRefundRow: true }), expect.any(Function));
+    });
+
+    it('does not let a channel booking be marked paid (it is paid already)', async () => {
+      findById.mockResolvedValue(channel());
+
+      await expect(service.markPaid(STAFF, ID)).rejects.toMatchObject({ status: 409, response: { code: 'NOT_PAY_AT_HOTEL' } });
+      expect(markPaid).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('changeSource (an admin corrects where a booking came from)', () => {
+    const sourceOf = jest.fn<Promise<string | null>, [string, string]>();
+    const changeSource = jest.fn<Promise<boolean>, [string, string, string, string, ((client: PoolClient) => Promise<void>)?]>();
+
+    beforeEach(async () => {
+      sourceOf.mockReset();
+      changeSource.mockReset().mockResolvedValue(true);
+      const moduleRef = await Test.createTestingModule({
+        providers: [
+          StaffBookingsService,
+          { provide: BookingsRepository, useValue: { findById, findKind, markPaid, sourceOf, changeSource } },
+          { provide: BookingsService, useValue: { cancelRow } },
+          { provide: RebookService, useValue: { staffQuote, staffChange } },
+          { provide: BookingReader, useValue: { paidCentsOf: (): number => 0, todayFor: (): string => today, policyFor } },
+          { provide: ReservationsService, useValue: { getReservation } },
+          { provide: StaffRefundsRepository, useValue: { getStaffRefund } },
+          { provide: AuditService, useValue: { recordInTransaction } },
+        ],
+      }).compile();
+      service = moduleRef.get(StaffBookingsService);
+    });
+
+    it('changes the source inside one transaction with its audit row (who, from, to), and answers with the booking', async () => {
+      sourceOf.mockResolvedValue('airbnb');
+      const client = Object.create(null) as PoolClient;
+      changeSource.mockImplementation(async (_org, _id, _from, _to, audit) => {
+        await audit?.(client);
+        return true;
+      });
+
+      await expect(service.changeSource(STAFF, ID, 'booking_com')).resolves.toEqual({ id: ID });
+
+      expect(changeSource).toHaveBeenCalledWith('org', ID, 'airbnb', 'booking_com', expect.any(Function));
+      const [usedClient, actor, action, details] = recordInTransaction.mock.calls[0] ?? [];
+      expect(usedClient).toBe(client);
+      expect(actor).toEqual({ organizationId: 'org', staffUserId: 'staff-1' });
+      expect(action).toBe('booking.source_changed');
+      expect(details).toMatchObject({ targetType: 'booking', targetId: ID, metadata: { actorRole: 'admin', fromSource: 'airbnb', toSource: 'booking_com', bookingReference: 'BK-1A2B3C4D5E' } });
+    });
+
+    it('is for admins only: an employee, even with refund access, is refused before anything is read', async () => {
+      await expect(service.changeSource(PERMITTED, ID, 'walk_in')).rejects.toMatchObject({ status: 403, response: { code: 'FORBIDDEN_ROLE' } });
+      expect(sourceOf).not.toHaveBeenCalled();
+    });
+
+    it('answers 404 for a booking that is not this workspace\'s', async () => {
+      sourceOf.mockResolvedValue(null);
+
+      await expect(service.changeSource(STAFF, ID, 'walk_in')).rejects.toBeInstanceOf(NotFoundException);
+      expect(changeSource).not.toHaveBeenCalled();
+    });
+
+    it('refuses the same source, and a move between the property\'s own bookings and another site (and back)', async () => {
+      sourceOf.mockResolvedValue('phone_email');
+      await expect(service.changeSource(STAFF, ID, 'phone_email')).rejects.toMatchObject({ response: { code: 'NO_CHANGE' } });
+      await expect(service.changeSource(STAFF, ID, 'airbnb')).rejects.toMatchObject({ status: 409, response: { code: 'SOURCE_GROUP_CHANGE' } });
+      sourceOf.mockResolvedValue('airbnb');
+      await expect(service.changeSource(STAFF, ID, 'website')).rejects.toMatchObject({ response: { code: 'SOURCE_GROUP_CHANGE' } });
+      expect(changeSource).not.toHaveBeenCalled();
+    });
+
+    it('allows moves within a group in both directions (own: website, phone, walk-in; channel: Airbnb, Booking.com, another site)', async () => {
+      sourceOf.mockResolvedValue('walk_in');
+      await expect(service.changeSource(STAFF, ID, 'website')).resolves.toBeDefined();
+      sourceOf.mockResolvedValue('other_site');
+      await expect(service.changeSource(STAFF, ID, 'airbnb')).resolves.toBeDefined();
+    });
+
+    it('says the booking just changed when the source moved between the read and the write', async () => {
+      sourceOf.mockResolvedValue('airbnb');
+      changeSource.mockResolvedValue(false);
+
+      await expect(service.changeSource(STAFF, ID, 'booking_com')).rejects.toMatchObject({ status: 409, response: { code: 'BOOKING_CHANGED' } });
+    });
+  });
+
   describe('pay at hotel (nothing paid yet)', () => {
     const pending = (overrides: Partial<BookingRow> = {}): BookingRow =>
       row({ payment_method: 'pay_at_hotel', payment_status: 'pending', paid_cents: 0, ...overrides });
@@ -559,7 +712,7 @@ describe('StaffBookingsService', () => {
 
       await service.cancel(EMPLOYEE, ID, { reason: 'guest_request', note: 'Guest called', refundCents: null });
 
-      expect(cancelRow).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ refundCents: 0, percent: 0 }));
+      expect(cancelRow).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ refundCents: 0, percent: 0 }), expect.any(Function));
     });
 
     it('refuses a refund amount on a booking nothing was paid for', async () => {
@@ -577,7 +730,7 @@ describe('StaffBookingsService', () => {
 
       const booking = await service.markPaid(PERMITTED, ID);
 
-      expect(markPaid).toHaveBeenCalledWith(ID, PERMITTED.id, PERMITTED.organizationId);
+      expect(markPaid).toHaveBeenCalledWith(ID, PERMITTED.id, PERMITTED.organizationId, expect.any(Function));
       expect(booking).toEqual({ id: ID });
     });
 
@@ -587,7 +740,42 @@ describe('StaffBookingsService', () => {
 
       await service.markPaid(STAFF, ID);
 
-      expect(markPaid).toHaveBeenCalledWith(ID, STAFF.id, STAFF.organizationId);
+      expect(markPaid).toHaveBeenCalledWith(ID, STAFF.id, STAFF.organizationId, expect.any(Function));
+    });
+
+    it('hands the repository an audit writer for the SAME transaction: who, the reference and the amount, no guest details', async () => {
+      findById.mockResolvedValue(pending());
+      const client = Object.create(null) as PoolClient;
+      markPaid.mockImplementation(async (_id, _staff, _org, audit) => {
+        await audit?.(client);
+        return true;
+      });
+
+      await service.markPaid(PERMITTED, ID);
+
+      expect(recordInTransaction).toHaveBeenCalledTimes(1);
+      const [usedClient, actor, action, details] = recordInTransaction.mock.calls[0] ?? [];
+      expect(usedClient).toBe(client);
+      expect(actor).toEqual({ organizationId: PERMITTED.organizationId, staffUserId: PERMITTED.id });
+      expect(action).toBe('booking.marked_paid');
+      expect(details).toMatchObject({
+        targetType: 'booking',
+        targetId: ID,
+        metadata: { actorRole: 'employee', viaRefundAccess: true, bookingReference: 'BK-1A2B3C4D5E', paymentMethod: 'pay_at_hotel' },
+      });
+      expect(JSON.stringify(details)).not.toMatch(/@|phone|note/i);
+    });
+
+    it('does not mark it paid when the audit row cannot be written: the failure reaches the caller and nothing is claimed', async () => {
+      findById.mockResolvedValue(pending());
+      recordInTransaction.mockRejectedValue(new Error('audit insert failed'));
+      markPaid.mockImplementation(async (_id, _staff, _org, audit) => {
+        await audit?.(Object.create(null) as PoolClient);
+        return true;
+      });
+
+      await expect(service.markPaid(STAFF, ID)).rejects.toThrow('audit insert failed');
+      expect(getReservation).not.toHaveBeenCalled();
     });
 
     it('refuses an employee without refund access before reading or changing anything', async () => {

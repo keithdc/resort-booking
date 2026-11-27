@@ -31,7 +31,15 @@ describe('teamErrorMessage', () => {
 });
 
 describe('inviteUrl', () => {
+  it('keeps the token after the # so no server, log or Referer header ever sees it', () => {
+    const url = inviteUrl('https://admin.example', 'abc');
+
+    expect(new URL(url).pathname).toBe('/invite');
+    expect(new URL(url).search).toBe('');
+    expect(url.split('#')[0]).not.toContain('abc');
+  });
+
   it('builds the address of the invitation page', () => {
-    expect(inviteUrl('https://admin.example', 'abc')).toBe('https://admin.example/invite/abc');
+    expect(inviteUrl('https://admin.example', 'abc')).toBe('https://admin.example/invite#token=abc');
   });
 });

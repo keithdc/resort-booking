@@ -77,6 +77,9 @@ export function paymentMethodLabel(method: PaymentMethodSlice['paymentMethod'] |
   if (method === 'pay_at_hotel') {
     return 'Pay at hotel';
   }
+  if (method === 'paid_by_channel') {
+    return 'Paid on another site';
+  }
   return 'Not recorded';
 }
 

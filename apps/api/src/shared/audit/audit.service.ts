@@ -6,8 +6,10 @@
 
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import type { PoolClient } from 'pg';
 import { resolveIpHashSalt } from '../config/environment';
 import { fingerprint } from '../http/client-ip';
+import { currentRequestContext } from '../http/request-context';
 import { AuditRepository } from './audit.repository';
 import type { AuditActor, AuditEntry, AuditFilters, AuditPage } from './audit.types';
 
@@ -54,6 +56,32 @@ export class AuditService {
       action,
       ipHash: actor.ip === undefined ? null : this.hashIp(actor.ip),
       requestId: actor.requestId ?? null,
+    });
+  }
+
+  /**
+   * Writes the row on the caller's OWN transaction, so the action and its audit row are saved together or not at all
+   * (docs/13 R6-05). Unlike `record`, a failure THROWS: the caller's transaction rolls back and the action does not
+   * happen, because for money and permission changes an action nobody can later see is worse than a refused one.
+   * The caller's network and the request id come from the request context, so services need not pass them.
+   */
+  public async recordInTransaction(
+    client: PoolClient,
+    actor: { organizationId: string; staffUserId: string; ip?: string | undefined; requestId?: string | undefined },
+    action: string,
+    details: Omit<AuditEntry, 'organizationId' | 'staffUserId' | 'action' | 'ipHash' | 'requestId'> = {},
+  ): Promise<void> {
+    // An actor that already carries its network and request id wins; otherwise the request context supplies them.
+    const context = currentRequestContext();
+    const ip = actor.ip ?? context.ip;
+    const requestId = actor.requestId ?? context.requestId;
+    await this.audit.insertWith(client, {
+      ...details,
+      organizationId: actor.organizationId,
+      staffUserId: actor.staffUserId,
+      action,
+      ipHash: ip === undefined ? null : this.hashIp(ip),
+      requestId: requestId ?? null,
     });
   }
 

@@ -47,6 +47,7 @@ function report(): StaffReport {
     properties: [],
     daily: [],
     paymentMethods: [],
+    bookingSources: [],
     stays: [],
     grossRevenueCents: 99000,
     refundedCents: 0,

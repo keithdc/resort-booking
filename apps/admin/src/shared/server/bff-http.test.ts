@@ -82,6 +82,7 @@ describe('classifyRoute', () => {
     expect(classifyRoute('POST', '/staff/logout')).toBe('logout');
     expect(classifyRoute('GET', '/staff/register/status')).toBe('public');
     expect(classifyRoute('GET', '/staff/invites/abc123/preview')).toBe('public');
+    expect(classifyRoute('POST', '/staff/invites/preview')).toBe('public');
     expect(classifyRoute('GET', '/staff/me')).toBe('session');
     expect(classifyRoute('DELETE', '/staff/me/sessions/abc')).toBe('session');
   });

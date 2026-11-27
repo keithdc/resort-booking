@@ -36,9 +36,12 @@ export interface RenderedMail {
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
 const ROLE_WORDS: Record<StaffRole, string> = { admin: 'an administrator', employee: 'an employee' };
 
-/** The admin site's address for a one-time link: `${base}/invite/${token}` (the admin route /invite/[token]). */
+/**
+ * The admin site's address for a one-time link: `${base}/invite#token=${token}`. The token sits after the `#`, the
+ * fragment: a browser never sends it to a server, so it is not in an access log, a proxy log or a Referer header.
+ */
 export function inviteLink(baseUrl: string, token: string): string {
-  return `${baseUrl.replace(/\/+$/, '')}/invite/${encodeURIComponent(token)}`;
+  return `${baseUrl.replace(/\/+$/, '')}/invite#token=${encodeURIComponent(token)}`;
 }
 
 /** Escapes text for HTML content and double-quoted attributes. */

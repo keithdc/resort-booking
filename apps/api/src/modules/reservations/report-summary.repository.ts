@@ -15,6 +15,7 @@ import type {
   ReportAttention,
   StaffRefund,
 } from '@resort-booking/shared-types';
+import { toSafeNumber } from '../../shared/database/checked-number';
 import { DatabaseService } from '../../shared/database/database.service';
 import { mapStaffRefund, STAFF_REFUND_SELECT, type StaffRefundRow } from './staff-history';
 
@@ -29,18 +30,21 @@ export interface HouseCatalogRow {
   currencyCode: string;
 }
 
+/** `paid_cents` and similar sums arrive as bigint strings (64-bit sums, see checked-number.ts). */
+type Sum = string | number;
+
 interface CancellationRow {
   reason: string;
   cancelled_count: number;
-  paid_cents: number;
-  refunded_cents: number;
+  paid_cents: Sum;
+  refunded_cents: Sum;
 }
 
 interface DiscountUsageDbRow {
   discount_id: string;
   label: string;
   redemption_count: number;
-  discount_cents: number;
+  discount_cents: Sum;
 }
 
 interface AttentionBookingRow {
@@ -48,14 +52,14 @@ interface AttentionBookingRow {
   arrivals_today_count: number;
   arrivals_next_7_days_count: number;
   unpaid_at_hotel_count: number;
-  unpaid_at_hotel_cents: number;
+  unpaid_at_hotel_cents: Sum;
   unpaid_at_hotel_arrivals_next_7_days_count: number;
   unpaid_at_hotel_past_count: number;
 }
 
 interface AttentionRefundRow {
   refund_count: number;
-  refund_cents: number;
+  refund_cents: Sum;
 }
 
 interface HouseCatalogDbRow {
@@ -85,7 +89,8 @@ export class ReportSummaryRepository {
       `
       WITH cancelled AS (
         SELECT COALESCE(ib.cancel_reason, 'guest_request') AS reason,
-          COALESCE(ib.paid_cents, ib.total_cents, 0) AS paid,
+          -- A booking made on another site was paid and is refunded THERE: no money here to keep or give back.
+          CASE WHEN ib.payment_method = 'paid_by_channel' THEN 0 ELSE COALESCE(ib.paid_cents, ib.total_cents, 0) END AS paid,
           COALESCE(r.amount_cents, 0) AS refunded,
           (ib.check_out - ib.check_in) AS total_nights,
           GREATEST(0, LEAST(ib.check_out, $2::date) - GREATEST(ib.check_in, $1::date)) AS overlap
@@ -103,8 +108,8 @@ export class ReportSummaryRepository {
       )
       SELECT reason,
         COUNT(*)::int AS cancelled_count,
-        COALESCE(SUM(ROUND(paid::numeric * overlap / NULLIF(total_nights, 0))), 0)::int AS paid_cents,
-        COALESCE(SUM(ROUND(refunded::numeric * overlap / NULLIF(total_nights, 0))), 0)::int AS refunded_cents
+        COALESCE(SUM(ROUND(paid::numeric * overlap / NULLIF(total_nights, 0))), 0)::bigint AS paid_cents,
+        COALESCE(SUM(ROUND(refunded::numeric * overlap / NULLIF(total_nights, 0))), 0)::bigint AS refunded_cents
       FROM cancelled
       GROUP BY reason
       ORDER BY cancelled_count DESC, reason ASC
@@ -115,8 +120,8 @@ export class ReportSummaryRepository {
       (row: CancellationRow): CancellationReasonRow => ({
         reason: row.reason,
         cancelledCount: row.cancelled_count,
-        paidCents: row.paid_cents,
-        refundedCents: row.refunded_cents,
+        paidCents: toSafeNumber(row.paid_cents, 'Paid total'),
+        refundedCents: toSafeNumber(row.refunded_cents, 'Refunded total'),
       }),
     );
   }
@@ -156,7 +161,7 @@ export class ReportSummaryRepository {
       `
       SELECT d.id AS discount_id, d.label,
         COUNT(*)::int AS redemption_count,
-        COALESCE(SUM(dr.amount_cents), 0)::int AS discount_cents
+        COALESCE(SUM(dr.amount_cents), 0)::bigint AS discount_cents
       FROM discount_redemptions dr
       INNER JOIN discounts d ON d.id = dr.discount_id
       INNER JOIN inventory_blocks ib ON ib.id = dr.inventory_block_id
@@ -176,7 +181,7 @@ export class ReportSummaryRepository {
         discountId: row.discount_id,
         label: row.label,
         redemptionCount: row.redemption_count,
-        discountCents: row.discount_cents,
+        discountCents: toSafeNumber(row.discount_cents, 'Discount total'),
       }),
     );
   }
@@ -207,7 +212,7 @@ export class ReportSummaryRepository {
         )::int AS unpaid_at_hotel_count,
         COALESCE(SUM(COALESCE(ib.total_cents, 0)) FILTER (
           WHERE ib.kind = 'reservation' AND ib.status = 'confirmed' AND ib.payment_status = 'pending'
-        ), 0)::int AS unpaid_at_hotel_cents,
+        ), 0)::bigint AS unpaid_at_hotel_cents,
         COUNT(*) FILTER (
           WHERE ib.kind = 'reservation' AND ib.status = 'confirmed' AND ib.payment_status = 'pending'
             AND ib.check_in >= $1::date AND ib.check_in <= $1::date + 7
@@ -224,7 +229,7 @@ export class ReportSummaryRepository {
     );
     const refunds = await this.database.query<AttentionRefundRow>(
       `
-      SELECT COUNT(*)::int AS refund_count, COALESCE(SUM(r.amount_cents), 0)::int AS refund_cents
+      SELECT COUNT(*)::int AS refund_count, COALESCE(SUM(r.amount_cents), 0)::bigint AS refund_cents
       FROM refunds r
       WHERE r.status IN ('pending', 'failed')
         AND ($1::uuid IS NULL OR r.property_id = $1)
@@ -237,11 +242,11 @@ export class ReportSummaryRepository {
     return {
       unpaidHoldCount: booking?.unpaid_hold_count ?? 0,
       refundsToPayCount: refund?.refund_count ?? 0,
-      refundsToPayCents: refund?.refund_cents ?? 0,
+      refundsToPayCents: toSafeNumber(refund?.refund_cents, 'Refunds to pay'),
       arrivalsTodayCount: booking?.arrivals_today_count ?? 0,
       arrivalsNext7DaysCount: booking?.arrivals_next_7_days_count ?? 0,
       unpaidAtHotelCount: booking?.unpaid_at_hotel_count ?? 0,
-      unpaidAtHotelCents: booking?.unpaid_at_hotel_cents ?? 0,
+      unpaidAtHotelCents: toSafeNumber(booking?.unpaid_at_hotel_cents, 'Unpaid at hotel'),
       unpaidAtHotelArrivalsNext7DaysCount: booking?.unpaid_at_hotel_arrivals_next_7_days_count ?? 0,
       unpaidAtHotelPastCount: booking?.unpaid_at_hotel_past_count ?? 0,
     };

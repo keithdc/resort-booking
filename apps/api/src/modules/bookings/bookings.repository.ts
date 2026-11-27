@@ -54,6 +54,9 @@ export interface BookingRow {
 /** The row as the database returns it: `payments` is JSON until it is read safely. */
 type RawBookingRow = Omit<BookingRow, 'payments'> & { payments: unknown };
 
+/** Writes the audit row on the transaction the repository opened, so the action and its row are saved together. */
+export type AuditInTransaction = (client: PoolClient) => Promise<void>;
+
 export type RefundKind = 'cancellation' | 'rebook_difference' | 'late_payment';
 
 /** Why a booking was cancelled, kept on the booking. `dates_changed` is a cancel-and-replace. */
@@ -254,9 +257,8 @@ export class BookingsRepository {
    * Returns false when no row matched (not pending, not confirmed, or not a pay-at-hotel booking), so a second
    * tick, or a tick after a cancel, changes nothing.
    */
-  public async markPaid(bookingId: string, staffId: string, organizationId: string): Promise<boolean> {
-    const result = await this.database.query(
-      `
+  public async markPaid(bookingId: string, staffId: string, organizationId: string, audit?: AuditInTransaction): Promise<boolean> {
+    const sql = `
       UPDATE inventory_blocks
       SET payment_status = 'paid', paid_at = now(), paid_cents = COALESCE(total_cents, 0), marked_paid_by_staff_id = $2
       WHERE id = $1
@@ -265,10 +267,48 @@ export class BookingsRepository {
         AND status = 'confirmed'
         AND payment_status = 'pending'
         AND payment_method = 'pay_at_hotel'
-      `,
-      [bookingId, staffId, organizationId],
+      `;
+    const params = [bookingId, staffId, organizationId];
+    if (audit === undefined) {
+      return ((await this.database.query(sql, params)).rowCount ?? 0) === 1;
+    }
+    // The audit row is saved in the same transaction: both happen or neither does (docs/13 R6-05).
+    return this.database.withTransaction(async (client): Promise<boolean> => {
+      const marked = ((await client.query(sql, params)).rowCount ?? 0) === 1;
+      if (marked) {
+        await audit(client);
+      }
+      return marked;
+    });
+  }
+
+  /** Where a booking of this organization came from, or null when it is not a reservation of this organization. */
+  public async sourceOf(organizationId: string, bookingId: string): Promise<string | null> {
+    const result = await this.database.query<{ booking_source: string }>(
+      `SELECT booking_source FROM inventory_blocks WHERE id = $1 AND organization_id = $2 AND kind = 'reservation'`,
+      [bookingId, organizationId],
     );
-    return (result.rowCount ?? 0) === 1;
+    return result.rows[0]?.booking_source ?? null;
+  }
+
+  /**
+   * Corrects where a booking came from, from the value the caller saw to a new one (so two corrections cannot cross).
+   * The audit row is saved in the same transaction (docs/13 R6-05). False when the booking no longer has that source.
+   * The database refuses a change that would break the payment record (a channel source needs `paid_by_channel`).
+   */
+  public async changeSource(organizationId: string, bookingId: string, from: string, to: string, audit: AuditInTransaction): Promise<boolean> {
+    return this.database.withTransaction(async (client): Promise<boolean> => {
+      const result = await client.query(
+        `UPDATE inventory_blocks SET booking_source = $4
+         WHERE id = $1 AND organization_id = $2 AND kind = 'reservation' AND booking_source = $3`,
+        [bookingId, organizationId, from, to],
+      );
+      const changed = (result.rowCount ?? 0) === 1;
+      if (changed) {
+        await audit(client);
+      }
+      return changed;
+    });
   }
 
   /**

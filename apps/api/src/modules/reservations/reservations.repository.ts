@@ -16,6 +16,7 @@ import type {
   RebookFeeType,
   StaffBookingChange,
   StaffRefund,
+  BookingSource,
   StaffPaymentMethod,
   StaffReservation,
 } from '@resort-booking/shared-types';
@@ -50,6 +51,7 @@ interface ReservationRow {
   guest_note: string;
   payment_method: StaffPaymentMethod | null;
   payment_status: BookingPaymentStatus;
+  booking_source: BookingSource;
   paid_at: Date | null;
   created_by_name: string | null;
   note_count: number;
@@ -84,7 +86,7 @@ const RESERVATION_SELECT = `
     ib.booker_name, ib.booker_email, ib.booker_phone, COALESCE(ib.guest_note, '') AS guest_note, ib.payment_method, ib.status,
     ib.total_cents, ib.currency_code, h.nightly_rate_cents,
     ib.kind, ib.rebook_of_id, ib.arrival_status,
-    ib.paid_cents, ib.payment_status, ib.paid_at, cr.full_name AS created_by_name, ib.terms_accepted_at, ib.cancelled_at, ib.created_at,
+    ib.paid_cents, ib.payment_status, ib.booking_source, ib.paid_at, cr.full_name AS created_by_name, ib.terms_accepted_at, ib.cancelled_at, ib.created_at,
     ib.cancelled_by_staff_id, su.full_name AS cancelled_by_name, ib.cancel_reason, ib.cancel_note,
     (
       SELECT nb.id FROM inventory_blocks nb
@@ -460,6 +462,7 @@ function mapReservation(
     guestNote: row.guest_note ?? '',
     paymentMethod: row.payment_method,
     paymentStatus: row.payment_status,
+    bookingSource: row.booking_source,
     paidAt: row.paid_at === null ? null : row.paid_at.toISOString(),
     createdByName: row.created_by_name,
     notesCount: row.note_count ?? 0,

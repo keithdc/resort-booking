@@ -32,6 +32,7 @@ import {
   nightlyCents,
   previousRange,
   rangedRevenueCents,
+  summariseBookingSources,
 } from './report-summary.rules';
 import { ReservationsRepository } from './reservations.repository';
 import {
@@ -277,6 +278,7 @@ export class ReservationsService {
       properties: [...byProperty.values()],
       daily: dates.map((date: string): ReportSeriesPoint => dailyMap.get(date) ?? emptyPoint(date)),
       paymentMethods: [...paymentMap.values()],
+      bookingSources: summariseBookingSources(stays, query.from, query.to),
       stays,
       grossRevenueCents: summary.grossRevenueCents,
       refundedCents: summary.refundedCents,

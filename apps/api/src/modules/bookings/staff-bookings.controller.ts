@@ -4,7 +4,7 @@
  * @dependencies StaffBookingsService, StaffRefundsService, StaffGuard
  */
 
-import { Body, Controller, Delete, Get, HttpCode, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import type {
   ApiOkBody,
   RebookQuote,
@@ -23,14 +23,9 @@ import { ParseUuidLikePipe } from '../../shared/validation/parse-uuid-like.pipe'
 import { MarkRefundPaidDto, StaffCancelDto, StaffChangeDatesDto, StaffChangeQuoteDto } from './dto/staff-actions.dto';
 import { StaffBookingQuoteDto, StaffCreateBookingDto } from './dto/staff-create-booking.dto';
 import { CreateStaffNoteDto } from './dto/staff-note.dto';
+import { ChangeBookingSourceDto } from './dto/staff-source.dto';
 import { StaffRefundsQueryDto } from './dto/staff-refunds-query.dto';
 import {
-  cancelAuditDetails,
-  changeDatesAuditDetails,
-  createBookingAuditDetails,
-  markBookingPaidAuditDetails,
-  noteAddedAuditDetails,
-  noteRemovedAuditDetails,
   refundActionAuditDetails,
 } from './staff-audit-details';
 import { StaffBookingsService } from './staff-bookings.service';
@@ -38,7 +33,7 @@ import { StaffNotesService } from './staff-notes.service';
 import { StaffRefundsService } from './staff-refunds.service';
 import { Audited } from '../../shared/audit/audited.decorator';
 import { RoleGuard } from '../../shared/roles/role.guard';
-import { AllowRoles, RequireMoneyAccess } from '../../shared/roles/roles.decorator';
+import { AllowRoles, RequireMoneyAccess, RequireRole } from '../../shared/roles/roles.decorator';
 import { TenantGuard } from '../../shared/tenancy/tenant.guard';
 import { TenantScoped } from '../../shared/tenancy/tenant-scope.decorator';
 
@@ -66,11 +61,10 @@ export class StaffBookingsController {
 
   /**
    * Makes a booking for a guest who pays at the property. Confirmed at once, payment pending. Admins and employees
-   * both may: it moves no money, and it is audited with who made it.
+   * both may: it moves no money. StaffBookingCreator writes the audit row (who made it) in the same transaction.
    */
   @Post('reservations')
   @AllowRoles('admin', 'employee')
-  @Audited({ action: 'booking.created_by_staff', targetType: 'booking', targetFromResult: 'id', details: createBookingAuditDetails })
   @TenantScoped({ resource: 'house', from: 'body', key: 'houseId' })
   public async create(@Body() body: StaffCreateBookingDto, @Req() request: StaffRequest): Promise<ApiOkBody<StaffReservation>> {
     return { status: 'ok', data: await this.creator.create(this.staff(request), body) };
@@ -78,11 +72,10 @@ export class StaffBookingsController {
 
   /**
    * The guest paid at the property: pending becomes paid, once. It records money received, so it needs money access (an
-   * admin, or an employee with refund access). Audited with who ticked it.
+   * admin, or an employee with refund access). StaffBookingsService writes the audit row itself, in the same transaction.
    */
   @Post('reservations/:id/mark-paid')
   @RequireMoneyAccess()
-  @Audited({ action: 'booking.marked_paid', targetType: 'booking', targetParam: 'id', details: markBookingPaidAuditDetails })
   @HttpCode(200)
   @TenantScoped({ resource: 'booking', from: 'param', key: 'id' })
   public async markBookingPaid(
@@ -90,6 +83,22 @@ export class StaffBookingsController {
     @Req() request: StaffRequest,
   ): Promise<ApiOkBody<StaffReservation>> {
     return { status: 'ok', data: await this.bookings.markPaid(this.staff(request), id) };
+  }
+
+  /**
+   * An admin corrects where a booking came from, inside the same group (see StaffBookingsService.changeSource).
+   * The service writes the audit row (`booking.source_changed`) in the same transaction.
+   */
+  @Patch('reservations/:id/source')
+  @RequireRole('admin')
+  @HttpCode(200)
+  @TenantScoped({ resource: 'booking', from: 'param', key: 'id' })
+  public async changeSource(
+    @Param('id', ParseUuidLikePipe) id: string,
+    @Body() body: ChangeBookingSourceDto,
+    @Req() request: StaffRequest,
+  ): Promise<ApiOkBody<StaffReservation>> {
+    return { status: 'ok', data: await this.bookings.changeSource(this.staff(request), id, body.source) };
   }
 
   /** The internal staff notes on a booking, newest first. Only staff ever see them. */
@@ -100,10 +109,9 @@ export class StaffBookingsController {
     return { status: 'ok', data: await this.notes.list(this.staff(request), id) };
   }
 
-  /** Adds an internal note to a booking. Audited with who wrote it and the length, never the text. */
+  /** Adds an internal note to a booking. StaffNotesService writes the audit row (who, the length, never the text) in the same transaction. */
   @Post('reservations/:id/notes')
   @AllowRoles('admin', 'employee')
-  @Audited({ action: 'booking.note_added', targetType: 'booking', targetParam: 'id', details: noteAddedAuditDetails })
   @TenantScoped({ resource: 'booking', from: 'param', key: 'id' })
   public async addNote(
     @Param('id', ParseUuidLikePipe) id: string,
@@ -113,10 +121,9 @@ export class StaffBookingsController {
     return { status: 'ok', data: await this.notes.add(this.staff(request), id, body.body) };
   }
 
-  /** Hides a note: an admin any note, an employee only their own. The row stays in the database. */
+  /** Hides a note: an admin any note, an employee only their own. The row stays in the database. StaffNotesService writes the audit row in the same transaction. */
   @Delete('reservations/:id/notes/:noteId')
   @AllowRoles('admin', 'employee')
-  @Audited({ action: 'booking.note_removed', targetType: 'booking', targetParam: 'id', details: noteRemovedAuditDetails })
   @HttpCode(200)
   @TenantScoped({ resource: 'booking', from: 'param', key: 'id' })
   public async removeNote(
@@ -139,10 +146,9 @@ export class StaffBookingsController {
     return { status: 'ok', data: await this.bookings.cancelPreview(this.staff(request), id) };
   }
 
-  /** Cancels a booking for the guest and refunds per the chosen reason. */
+  /** Cancels a booking for the guest and refunds per the chosen reason. StaffBookingsService writes the audit row in the same transaction. */
   @Post('reservations/:id/cancel')
   @AllowRoles('admin', 'employee')
-  @Audited({ action: 'booking.cancelled_by_staff', targetType: 'booking', targetParam: 'id', details: cancelAuditDetails })
   @HttpCode(200)
   @TenantScoped({ resource: 'booking', from: 'param', key: 'id' })
   public async cancel(
@@ -166,10 +172,9 @@ export class StaffBookingsController {
     return { status: 'ok', data: await this.bookings.changeQuote(this.staff(request), id, body) };
   }
 
-  /** Moves the booking to new dates. */
+  /** Moves the booking to new dates. RebookService writes the audit row in the same transaction as the swap. */
   @Post('reservations/:id/change-dates')
   @AllowRoles('admin', 'employee')
-  @Audited({ action: 'booking.dates_changed_by_staff', targetType: 'booking', targetParam: 'id', details: changeDatesAuditDetails })
   @HttpCode(200)
   @TenantScoped({ resource: 'booking', from: 'param', key: 'id' })
   public async changeDates(
@@ -199,10 +204,9 @@ export class StaffBookingsController {
     return { status: 'ok', data: await this.refunds.retry(this.staff(request), id) };
   }
 
-  /** Staff sent the money themselves. Needs money access (an admin, or an employee with refund access). */
+  /** Staff sent the money themselves. Needs money access (an admin, or an employee with refund access). StaffRefundsService writes the audit row in the same transaction. */
   @Post('refunds/:id/mark-paid')
   @RequireMoneyAccess()
-  @Audited({ action: 'refund.marked_paid', targetType: 'refund', targetParam: 'id', details: refundActionAuditDetails })
   @HttpCode(200)
   @TenantScoped({ resource: 'refund', from: 'param', key: 'id' })
   public async markPaid(

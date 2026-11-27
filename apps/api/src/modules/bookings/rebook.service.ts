@@ -17,10 +17,11 @@ import type {
   RefundStatus,
   StaffChangeDatesRequest,
   StaffChangeQuoteRequest,
-  StaffProfile,
 } from '@resort-booking/shared-types';
 import type { PoolClient } from 'pg';
+import { AuditService } from '../../shared/audit/audit.service';
 import { DatabaseService } from '../../shared/database/database.service';
+import type { StaffAccount } from '../../shared/roles/staff-role';
 import { DiscountsService } from '../discounts/discounts.service';
 import { AvailabilityService } from '../inventory/availability.service';
 import { referenceFor, type PriceSnapshot } from '../inventory/inventory.rules';
@@ -31,6 +32,8 @@ import type { PolicySnapshot } from '../reservations/reservations.rules';
 import { BookingReader } from './booking-reader';
 import { BookingsRepository, type BookingRow } from './bookings.repository';
 import { RefundIssuer, type RefundPlan } from './refund-issuer';
+import { CHANNEL_BOOKING_MESSAGE } from './bookings.rules';
+import { changeDatesAuditMetadata } from './staff-audit-details';
 import {
   appliedPromoCodeOf,
   checkNewDates,
@@ -107,6 +110,9 @@ interface AppliedChange {
   refundId: string | null;
 }
 
+/** Writes the audit row inside the swap's own transaction, after the replacement exists and before it commits. */
+type ChangeAudit = (client: PoolClient, applied: AppliedChange, refund: RefundPlan | null) => Promise<void>;
+
 /** What a change that was applied now left behind. */
 export interface ChangeOutcome {
   newBookingId: string;
@@ -125,6 +131,7 @@ export class RebookService {
     private readonly payments: PaymentsService,
     private readonly discounts: DiscountsService,
     private readonly database: DatabaseService,
+    private readonly audit: AuditService,
   ) {}
 
   /**
@@ -283,6 +290,10 @@ export class RebookService {
   }
 
   private assertEligible(row: BookingRow, policy: PolicySnapshot, audience: 'guest' | 'staff' = 'guest'): void {
+    if (row.payment_method === 'paid_by_channel') {
+      // The other site holds the money and the booking: moving dates here would change nothing there (docs/13 section 12).
+      throw new ConflictException({ message: CHANNEL_BOOKING_MESSAGE, code: 'BOOKED_ON_CHANNEL' });
+    }
     const eligibility = checkRebookAllowed(
       policy.rebookable,
       row.status,
@@ -380,6 +391,7 @@ export class RebookService {
     actor: ChangeActor,
     manualPaymentCents: number,
     refundLabel: string,
+    audit?: ChangeAudit,
   ): Promise<ChangeOutcome> {
     const { row, balance } = context;
     const refund = balance.refundCents > 0 ? this.refunds.plan(row, balance.refundCents, 100, refundLabel) : null;
@@ -402,6 +414,8 @@ export class RebookService {
       await client.query('BEGIN');
       try {
         const result = await this.applyInTransaction(client, plan);
+        // Same transaction: the dates move and the row exists, or neither (docs/13 R6-05).
+        await audit?.(client, result, refund);
         await client.query('COMMIT');
         return result;
       } catch (error: unknown) {
@@ -434,7 +448,7 @@ export class RebookService {
    * owes more, staff must confirm the guest paid the difference outside the system (it is recorded as a
    * manual payment). Who did it and why is kept on the audit record.
    */
-  public async staffChange(row: BookingRow, input: StaffChangeDatesRequest, staff: StaffProfile): Promise<ChangeOutcome> {
+  public async staffChange(row: BookingRow, input: StaffChangeDatesRequest, staff: StaffAccount): Promise<ChangeOutcome> {
     const context = await this.prepareForStaff(row, input);
     if (context.dateCheck === 'same') {
       throw new ConflictException({ message: NO_CHANGE_MESSAGE, code: 'NO_CHANGE' });
@@ -453,6 +467,20 @@ export class RebookService {
       { initiatedBy: 'staff', staffId: staff.id, note: input.note },
       context.balance.payCents,
       `Staff changed the dates of a booking (${staff.fullName}); the price difference is refunded`,
+      (client, applied, refund) =>
+        this.audit.recordInTransaction(client, { organizationId: staff.organizationId, staffUserId: staff.id }, 'booking.dates_changed_by_staff', {
+          targetType: 'booking',
+          targetId: row.id,
+          metadata: changeDatesAuditMetadata(
+            staff,
+            row.id,
+            applied.newBookingId,
+            { waiveFee: input.waiveFee, balanceSettledOutside: input.balanceSettledOutside === true },
+            refund === null || applied.refundId === null
+              ? null
+              : { amountCents: refund.amountCents, percent: refund.percent, reason: refund.reason, status: refund.status, currencyCode: refund.currencyCode },
+          ),
+        }),
     );
   }
 

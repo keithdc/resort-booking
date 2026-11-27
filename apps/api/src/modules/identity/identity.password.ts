@@ -19,12 +19,13 @@ export interface ScryptParams {
 }
 
 /**
- * The cost of NEW hashes: Node's defaults, which is what every existing hash was made with. A stored hash carries its
- * own parameters (`scrypt$N$r$p$salt$key`), so raising these later (OWASP now suggests N=2^17, which needs about 128 MiB
- * per hash and roughly eight times the CPU: an owner and capacity decision, docs/13 R2-27) only changes new hashes and
- * the ones `passwordNeedsRehash` finds on the next successful sign-in. Nobody is locked out, nothing is migrated in bulk.
+ * The cost of NEW hashes: N=2^17, r=8, p=1 (the OWASP recommendation): 128 MiB of memory per hash and about eight times
+ * the CPU of Node's defaults (measured on a laptop: about 150 ms per hash instead of 20 ms). Hashes made earlier keep
+ * working, because a stored hash carries its own parameters (`scrypt$N$r$p$salt$key`); `passwordNeedsRehash` finds them
+ * on the next successful sign-in and the caller saves a stronger one. Nobody is locked out, nothing is migrated in bulk.
+ * Memory budget: the queue below lets 3 hashes run at once, so about 3 x 128 MiB = 384 MiB at the peak (docs/13 R6-04).
  */
-export const TARGET_SCRYPT_PARAMS: ScryptParams = { N: 16384, r: 8, p: 1 };
+export const TARGET_SCRYPT_PARAMS: ScryptParams = { N: 131072, r: 8, p: 1 };
 
 /** A stored value with a bigger cost than this is treated as corrupt, so a bad row cannot make one login allocate gigabytes. */
 const MAX_STORED_N = 2 ** 20;

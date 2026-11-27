@@ -8,7 +8,10 @@
 
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { StaffBookingNote } from '@resort-booking/shared-types';
+import type { PoolClient } from 'pg';
+import { AuditService } from '../../shared/audit/audit.service';
 import type { StaffAccount } from '../../shared/roles/staff-role';
+import { noteAddedAuditMetadata, noteRemovedAuditMetadata } from './staff-audit-details';
 import { StaffNoteLimiter } from './staff-note-limiter';
 import { NOTES_PER_BOOKING_CAP, StaffNotesRepository, type NoteRow } from './staff-notes.repository';
 
@@ -17,6 +20,7 @@ export class StaffNotesService {
   public constructor(
     private readonly notes: StaffNotesRepository,
     private readonly limiter: StaffNoteLimiter,
+    private readonly audit: AuditService,
   ) {}
 
   /** The visible notes of a booking, newest first. 404 for a booking that is not this workspace's. */
@@ -36,7 +40,14 @@ export class StaffNotesService {
         code: 'NOTES_LIMIT_REACHED',
       });
     }
-    const row = await this.notes.insert({ organizationId: staff.organizationId, propertyId, bookingId, body, staffId: staff.id });
+    // The audit row (who, which booking, how long; never the text) is saved in the same transaction as the note.
+    const row = await this.notes.insert({ organizationId: staff.organizationId, propertyId, bookingId, body, staffId: staff.id }, (client) =>
+      this.audit.recordInTransaction(client, { organizationId: staff.organizationId, staffUserId: staff.id }, 'booking.note_added', {
+        targetType: 'booking',
+        targetId: bookingId,
+        metadata: noteAddedAuditMetadata(staff, bookingId, body.length),
+      }),
+    );
     return toNote(row, staff);
   }
 
@@ -48,7 +59,13 @@ export class StaffNotesService {
     if (note === null || !mayHide(staff, note)) {
       throw notFound();
     }
-    if (!(await this.notes.hide(staff.organizationId, bookingId, noteId, staff.id))) {
+    const audit = (client: PoolClient): Promise<void> =>
+      this.audit.recordInTransaction(client, { organizationId: staff.organizationId, staffUserId: staff.id }, 'booking.note_removed', {
+        targetType: 'booking',
+        targetId: bookingId,
+        metadata: noteRemovedAuditMetadata(staff, bookingId, noteId),
+      });
+    if (!(await this.notes.hide(staff.organizationId, bookingId, noteId, staff.id, audit))) {
       throw notFound();
     }
   }
