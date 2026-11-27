@@ -154,7 +154,7 @@ Needs migrations `040`, `041` and `042` (restart the API first). Use a stay with
 
 **Promo code on a staff booking.** In New booking (not for Airbnb or other-site bookings), type a code the property has under Discounts into "Promo code (optional)" and press Apply. **Expected:** the price drops and the field says the code was applied. A wrong code says why it did not apply and the price stays. Remove clears it. The saved booking keeps the discount and counts toward the code's use limit. Offers that apply by themselves (long stay, early bird) show in the price without a code.
 
-**Promotions list.** Under the promo field, "Promotions for this stay" lists the property's discounts that fit the chosen stay: name, size, conditions, status, uses (for example "0 of 1 used"), and for a coupon whether it is advertised to guests. A coupon has a "Use CODE" button that fills and applies it; an automatic offer says "Applies by itself". Switched-off and ended promotions are not listed. Check it as an employee too: employees can read the list but still cannot edit discounts.
+**Promotions in the promo field.** The promo field has a dropdown arrow. Open it to see the property's coupons that fit the chosen stay: code, name, size, status, uses (for example "0 of 1 used") and whether the coupon is advertised to guests. The list scrolls inside itself, and typing filters it. Picking one applies it at once. Under the field, "N automatic offers" opens a short list of the offers that apply by themselves (long stay and so on). Switched-off, ended and used-up promotions are not listed. Check it as an employee too: employees can read the list but still cannot edit discounts.
 
 ## 15. Guest page spacing and staff notes
 

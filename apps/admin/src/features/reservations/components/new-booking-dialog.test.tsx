@@ -197,29 +197,34 @@ describe('NewBookingDialog', () => {
     await waitFor(() => expect(api.quoteStaffBooking.mock.calls.at(-1)?.[0]).not.toHaveProperty('promoCode'));
   });
 
-  it('lists the property\'s promotions for the chosen stay and applies a coupon in one click', async () => {
+  it('offers the property\'s coupons in the promo field\'s own list and applies one in one click; automatic offers are folded away', async () => {
     const base = { alwaysOn: false, houseIds: null, combinable: false, priority: 100, active: true, propertyId: 'p1', promoted: false } as const;
     api.fetchStaffPromotions.mockResolvedValue([
       { ...base, id: 'd1', label: 'Friends and family', effect: { kind: 'percent', percent: 15 }, conditions: [{ kind: 'promo_code', code: 'FRIEND15' }], redemptions: 0, maxRedemptions: 1 },
       { ...base, id: 'd2', label: 'Long stay', effect: { kind: 'percent', percent: 10 }, conditions: [{ kind: 'min_nights', nights: 7 }], redemptions: 3, maxRedemptions: null },
       { ...base, id: 'd3', label: 'Switched off', active: false, effect: { kind: 'percent', percent: 5 }, conditions: [{ kind: 'promo_code', code: 'OLD5' }], redemptions: 0, maxRedemptions: null },
       { ...base, id: 'd4', label: 'Other stay only', houseIds: ['other'], effect: { kind: 'percent', percent: 5 }, conditions: [{ kind: 'promo_code', code: 'ELSEWHERE' }], redemptions: 0, maxRedemptions: null },
+      { ...base, id: 'd5', label: 'Used up', effect: { kind: 'percent', percent: 5 }, conditions: [{ kind: 'promo_code', code: 'GONE' }], redemptions: 1, maxRedemptions: 1 },
     ] as Discount[]);
-    api.createStaffBooking.mockResolvedValue(staffReservation({ id: 'new-3' }));
     renderDialog();
-    const list = await screen.findByRole('region', { name: 'Promotions for this stay' });
-    expect(list.textContent).toContain('Friends and family');
-    expect(list.textContent).toContain('0 of 1 used');
-    expect(list.textContent).toContain('Not advertised');
-    expect(list.textContent).toContain('Long stay');
-    expect(list.textContent).toContain('Applies by itself');
-    expect(list.textContent).not.toContain('Switched off');
-    expect(list.textContent).not.toContain('Other stay only');
+    expect(await screen.findByText('1 coupon for this stay: open the list to pick one.')).toBeTruthy();
+    // The automatic offer is one folded line, not a card.
+    expect(screen.queryByText(/Long stay: 10% off/)).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: /1 automatic offer/ }));
+    expect(screen.getByRole('list', { name: 'Automatic offers' }).textContent).toContain('Long stay: 10% off');
 
-    await userEvent.click(screen.getByRole('button', { name: 'Use code FRIEND15' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Open' }));
+    const options = await screen.findAllByRole('option');
+    const text = options.map((option) => option.textContent ?? '');
+    expect(text.some((row) => row.includes('FRIEND15') && row.includes('0 of 1 used') && row.includes('Not advertised'))).toBe(true);
+    expect(text.join(' ')).not.toContain('OLD5');
+    expect(text.join(' ')).not.toContain('ELSEWHERE');
+    // A coupon that has been used up no longer shows: it cannot apply.
+    expect(text.join(' ')).not.toContain('GONE');
+
+    await userEvent.click(options.find((option) => (option.textContent ?? '').includes('FRIEND15')) as HTMLElement);
     await waitFor(() => expect(api.quoteStaffBooking).toHaveBeenLastCalledWith(expect.objectContaining({ promoCode: 'FRIEND15' })));
     expect((screen.getByLabelText(/Promo code/) as HTMLInputElement).value).toBe('FRIEND15');
-    expect(screen.getByRole('button', { name: 'FRIEND15 is applied' })).toBeTruthy();
   });
 
   it('says so and blocks saving when the dates are not free', async () => {

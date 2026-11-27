@@ -34,7 +34,7 @@ import { useNewBooking } from '../hooks/use-new-booking';
 import { extraPriceText, NEW_BOOKING_MAX_EXTRA_QUANTITY, NEW_BOOKING_MAX_NIGHTS, NEW_BOOKING_MAX_NOTE, NEW_BOOKING_PAYMENT_OPTIONS } from '../utils/new-booking';
 import { bookingSourceLabel, PICKABLE_SOURCES } from '@/shared/utils/booking-source';
 import { formatCents } from '@/shared/utils/money';
-import { NewBookingPromotions } from './new-booking-promotions';
+import { NewBookingPromoField } from './new-booking-promo-field';
 import { NewBookingQuoteSummary } from './new-booking-quote-summary';
 
 interface NewBookingDialogProps {
@@ -220,49 +220,16 @@ export function NewBookingDialog({ open, properties, defaultPropertyId, defaultD
           ) : null}
 
           {!state.isChannel && state.house !== null ? (
-            <Stack direction="row" spacing={1} alignItems="flex-start">
-              <TextField
-                label="Promo code (optional)"
-                value={state.promoInput}
-                onChange={(event): void => state.setPromoInput(event.target.value)}
-                onKeyDown={(event): void => {
-                  if (event.key === 'Enter') {
-                    event.preventDefault();
-                    if (state.promoInput.trim() !== '' && state.promoInput.trim() !== state.appliedPromo) {
-                      state.applyPromo();
-                    }
-                  }
-                }}
-                error={state.appliedPromo !== '' && state.quote?.promoCode?.applied === false}
-                helperText={
-                  state.appliedPromo !== '' && state.quote?.promoCode !== null && state.quote?.promoCode !== undefined
-                    ? state.quote.promoCode.message
-                    : 'Only if the guest gave you a code. Offers that apply by themselves are already in the price.'
-                }
-                fullWidth
-                slotProps={{ htmlInput: { maxLength: 40, autoCapitalize: 'characters', autoComplete: 'off', autoCorrect: 'off', spellCheck: false } }}
-              />
-              {state.appliedPromo !== '' ? (
-                <Button sx={{ height: 56, flexShrink: 0 }} onClick={state.removePromo}>
-                  Remove
-                </Button>
-              ) : null}
-              <Button
-                variant="outlined"
-                sx={{ height: 56, flexShrink: 0 }}
-                disabled={state.promoInput.trim() === '' || state.promoInput.trim() === state.appliedPromo}
-                onClick={state.applyPromo}
-              >
-                Apply
-              </Button>
-            </Stack>
-          ) : null}
-          {!state.isChannel && state.house !== null ? (
-            <NewBookingPromotions
+            <NewBookingPromoField
               promotions={state.promotions}
               currencyCode={state.house.currencyCode}
               today={state.today}
+              value={state.promoInput}
               appliedCode={state.appliedPromo}
+              result={state.quote?.promoCode ?? null}
+              onChange={state.setPromoInput}
+              onApply={state.applyPromo}
+              onRemove={state.removePromo}
               onPick={state.pickPromo}
             />
           ) : null}
