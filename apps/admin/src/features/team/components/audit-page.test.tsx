@@ -65,7 +65,7 @@ describe('AuditPage', () => {
     expect(table.getByText('Marie Dupont')).toBeTruthy();
     expect(table.getByText('Invited a team member')).toBeTruthy();
     expect(table.getByText('team.invite_created')).toBeTruthy();
-    expect(table.getByText('role: employee')).toBeTruthy();
+    expect(table.getByText('Employee')).toBeTruthy();
     expect(api.fetchAudit).toHaveBeenCalledWith({ limit: 25 });
   });
 

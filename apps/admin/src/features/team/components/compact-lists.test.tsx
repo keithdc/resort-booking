@@ -96,7 +96,7 @@ describe('audit log on a phone', () => {
     const list = within(await screen.findByRole('list', { name: 'Audit log' }));
     expect(screen.queryByRole('table')).toBeNull();
     expect(list.getByText('Invited a team member')).toBeTruthy();
-    expect(list.getByText('role: employee')).toBeTruthy();
+    expect(list.getByText('Employee')).toBeTruthy();
     vi.doUnmock('../services/team-api');
   });
 });

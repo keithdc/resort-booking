@@ -15,8 +15,29 @@ import { PageHeader } from '@/shared/components/page-header';
 import { SectionCard } from '@/shared/components/section-card';
 import { useAudit } from '../hooks/use-audit';
 import { useMemberOptions } from '../hooks/use-member-options';
-import { AUDIT_CATEGORIES, actionLabel, actorLabel, detailsLine } from '../utils/audit-labels';
+import { AUDIT_CATEGORIES, actionLabel, actorLabel, detailItems, type AuditDetail } from '../utils/audit-labels';
 import { formatDateTime } from '../utils/format-time';
+
+/** The facts of one audit entry as label and value rows, so each fact can be read at a glance. */
+function DetailList({ items }: { items: AuditDetail[] }): React.JSX.Element | null {
+  if (items.length === 0) {
+    return null;
+  }
+  return (
+    <Box component="dl" sx={{ m: 0, display: 'grid', gridTemplateColumns: 'max-content minmax(0, 1fr)', columnGap: 1.5, rowGap: 0.25 }}>
+      {items.map((item): React.JSX.Element => (
+        <Box key={item.label} sx={{ display: 'contents' }}>
+          <Typography component="dt" variant="body2" color="text.secondary">
+            {item.label}
+          </Typography>
+          <Typography component="dd" variant="body2" sx={{ m: 0, overflowWrap: 'anywhere' }}>
+            {item.value}
+          </Typography>
+        </Box>
+      ))}
+    </Box>
+  );
+}
 
 /**
  * The audit log (admins only): who did what and when, newest first. Filter by kind of action and by date;
@@ -111,11 +132,9 @@ export function AuditPage(): React.JSX.Element {
                     </Typography>
                     <Typography sx={{ fontWeight: 600 }}>{actionLabel(record.action)}</Typography>
                     <Typography variant="body2">{actorLabel(record)}</Typography>
-                    {detailsLine(record.metadata) === '' ? null : (
-                      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, overflowWrap: 'anywhere' }}>
-                        {detailsLine(record.metadata)}
-                      </Typography>
-                    )}
+                    <Box sx={{ mt: 0.5 }}>
+                      <DetailList items={detailItems(record.metadata)} />
+                    </Box>
                     <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, overflowWrap: 'anywhere' }}>
                       {record.action}
                     </Typography>
@@ -146,7 +165,9 @@ export function AuditPage(): React.JSX.Element {
                           {record.action}
                         </Typography>
                       </TableCell>
-                      <TableCell sx={{ color: 'text.secondary' }}>{detailsLine(record.metadata)}</TableCell>
+                      <TableCell>
+                        <DetailList items={detailItems(record.metadata)} />
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
