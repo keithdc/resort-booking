@@ -68,6 +68,17 @@ async function fillGuest(): Promise<void> {
   await userEvent.type(screen.getByLabelText(/^Guest email/), 'grace@example.com');
 }
 
+/** The price area once a price has arrived (it shows placeholder lines while the first one is worked out). */
+async function priceArea(): Promise<HTMLElement> {
+  return waitFor(() => {
+    const area = screen.getByLabelText('Price of the stay');
+    if (area.getAttribute('aria-busy') !== 'false') {
+      throw new Error('The price is still being worked out');
+    }
+    return area;
+  });
+}
+
 const bookButton = (): HTMLButtonElement => screen.getByRole('button', { name: /Book it|Add booking|Saving…/ });
 
 async function chooseSource(label: string): Promise<void> {
@@ -96,13 +107,32 @@ describe('NewBookingDialog', () => {
     expect((screen.getByLabelText(/^Check-in/) as HTMLInputElement).value).toBe(FUTURE);
     expect(await screen.findByLabelText('Price of the stay')).toBeTruthy();
     expect(houses.fetchStaffHouses).toHaveBeenCalledWith('p1');
-    expect(api.quoteStaffBooking).toHaveBeenCalledWith({ houseId: 'h1', checkIn: FUTURE, checkOut: '2999-07-12', guestCount: 2 });
-    expect(within(screen.getByLabelText('Price of the stay')).getAllByText(/960,00/).length).toBeGreaterThan(0);
+    await waitFor(() => expect(api.quoteStaffBooking).toHaveBeenCalledWith({ houseId: 'h1', checkIn: FUTURE, checkOut: '2999-07-12', guestCount: 2 }));
+    await waitFor(() => expect(within(screen.getByLabelText('Price of the stay')).getAllByText(/960,00/).length).toBeGreaterThan(0));
+  });
+
+  it('keeps the price area in place while a new price is worked out: a loader on Total, no extra line', async () => {
+    renderDialog();
+    await waitFor(() => expect(within(screen.getByLabelText('Price of the stay')).getAllByText(/960,00/).length).toBeGreaterThan(0));
+    let finish: (value: StaffBookingQuote) => void = () => undefined;
+    api.quoteStaffBooking.mockImplementation(() => new Promise<StaffBookingQuote>((resolve) => { finish = resolve; }));
+    fireEvent.change(screen.getByLabelText(/^Nights/), { target: { value: '3' } });
+
+    const area = await screen.findByLabelText('Price of the stay');
+    await waitFor(() => expect(area.getAttribute('aria-busy')).toBe('true'));
+    expect(within(area).getByLabelText('Working out the price')).toBeTruthy();
+    expect(within(area).getAllByText(/960,00/).length).toBeGreaterThan(0);
+    expect(screen.queryByText('Working out the price…')).toBeNull();
+
+    await waitFor(() => expect(api.quoteStaffBooking).toHaveBeenCalledWith(expect.objectContaining({ checkIn: FUTURE, checkOut: '2999-07-13' })));
+    finish(quote({ nights: 3, checkOut: '2999-07-13', subtotalCents: 144000, totalCents: 144000 }));
+    await waitFor(() => expect(within(screen.getByLabelText('Price of the stay')).getAllByText(/1.440,00/).length).toBeGreaterThan(0));
+    expect(screen.getByLabelText('Price of the stay').getAttribute('aria-busy')).toBe('false');
   });
 
   it('offers Pay at hotel (chosen) and shows Credit card as disabled with "Payment link: coming soon"', async () => {
     renderDialog();
-    await screen.findByLabelText('Price of the stay');
+    await priceArea();
 
     const hotel = screen.getByRole('radio', { name: /Pay at hotel/ }) as HTMLInputElement;
     const card = screen.getByRole('radio', { name: /Credit card/ }) as HTMLInputElement;
@@ -114,7 +144,7 @@ describe('NewBookingDialog', () => {
 
   it('keeps the book button off until there is a price, a name and a valid email', async () => {
     renderDialog();
-    await screen.findByLabelText('Price of the stay');
+    await priceArea();
     expect(bookButton().disabled).toBe(true);
 
     await userEvent.type(screen.getByLabelText(/^Guest name/), 'Grace Hopper');
@@ -130,7 +160,7 @@ describe('NewBookingDialog', () => {
     const created = staffReservation({ id: 'new-1', reference: 'BK-NEW0000001', paymentMethod: 'pay_at_hotel', paymentStatus: 'pending', paidCents: 0 });
     api.createStaffBooking.mockResolvedValue(created);
     const { onCreated } = renderDialog();
-    await screen.findByLabelText('Price of the stay');
+    await priceArea();
     await fillGuest();
     await userEvent.type(screen.getByLabelText(/^Note/), '  late arrival ');
 
@@ -153,7 +183,7 @@ describe('NewBookingDialog', () => {
     );
     api.createStaffBooking.mockResolvedValue(staffReservation({ id: 'new-2' }));
     renderDialog();
-    await screen.findByLabelText('Price of the stay');
+    await priceArea();
     await userEvent.type(screen.getByLabelText(/Promo code/), ' SUMMER10 ');
     await userEvent.click(screen.getByRole('button', { name: 'Apply' }));
     expect(await screen.findByText('SUMMER10 applied: 10% off')).toBeTruthy();
@@ -204,7 +234,7 @@ describe('NewBookingDialog', () => {
   it('shows the API\'s answer when someone took the dates a moment ago, and stops the booking', async () => {
     api.createStaffBooking.mockRejectedValue(new ApiRequestError('Those dates are no longer available', 409, { code: 'DATES_UNAVAILABLE' }));
     const { onCreated } = renderDialog();
-    await screen.findByLabelText('Price of the stay');
+    await priceArea();
     await fillGuest();
 
     await userEvent.click(bookButton());
@@ -216,7 +246,7 @@ describe('NewBookingDialog', () => {
 
   it('does not ask for a price for a date in the past or too many guests', async () => {
     renderDialog();
-    await screen.findByLabelText('Price of the stay');
+    await priceArea();
     api.quoteStaffBooking.mockClear();
 
     fireEvent.change(screen.getByLabelText(/^Check-in/), { target: { value: '2000-01-01' } });
@@ -248,7 +278,7 @@ describe('NewBookingDialog', () => {
   describe('where the guest booked', () => {
     it('asks first, offers the six sources and starts on phone or email', async () => {
       renderDialog();
-      await screen.findByLabelText('Price of the stay');
+      await priceArea();
 
       const picker = screen.getByRole('combobox', { name: /Where did the guest book/ });
       expect(picker.textContent).toBe('Phone or email');
@@ -259,7 +289,7 @@ describe('NewBookingDialog', () => {
     it('saves a walk-in or a booking from our website as pay at hotel with that source and no typed total', async () => {
       api.createStaffBooking.mockResolvedValue(staffReservation({ id: 'new-1' }));
       renderDialog();
-      await screen.findByLabelText('Price of the stay');
+      await priceArea();
       await chooseSource('Walk-in');
       await fillGuest();
       await waitFor(() => expect(bookButton().disabled).toBe(false));
@@ -288,7 +318,7 @@ describe('NewBookingDialog', () => {
       it('keeps the button off until a valid total is typed, then saves it as paid by channel with the amount in cents', async () => {
         api.createStaffBooking.mockResolvedValue(staffReservation({ id: 'new-1' }));
         const { onCreated } = renderDialog();
-        await screen.findByLabelText('Price of the stay');
+        await priceArea();
         await chooseSource('Booking.com');
         await fillGuest();
         await waitFor(() => expect(screen.getByText('These dates are free.')).toBeTruthy());
@@ -324,7 +354,7 @@ describe('NewBookingDialog', () => {
 
       it('goes back to pay at hotel and extras when the source changes back to one of your own', async () => {
         renderDialog();
-        await screen.findByLabelText('Price of the stay');
+        await priceArea();
         await chooseSource('Airbnb');
         await chooseSource('Phone or email');
 
@@ -345,7 +375,7 @@ describe('NewBookingDialog', () => {
     it('shows no extras section when the property offers none', async () => {
       api.fetchStaffBookingExtras.mockResolvedValue([]);
       renderDialog();
-      await screen.findByLabelText('Price of the stay');
+      await priceArea();
 
       expect(screen.queryByText('Extras')).toBeNull();
     });
@@ -377,7 +407,7 @@ describe('NewBookingDialog', () => {
           houseId: 'h1', checkIn: FUTURE, checkOut: '2999-07-12', guestCount: 2, extras: [{ extraId: 'x1', quantity: 2 }],
         });
       });
-      const summary = await screen.findByLabelText('Price of the stay');
+      const summary = await priceArea();
       expect(await within(summary).findByText(/Breakfast basket × 2/)).toBeTruthy();
       expect(within(summary).getAllByText(/996,00/).length).toBeGreaterThan(0);
     });
@@ -392,7 +422,7 @@ describe('NewBookingDialog', () => {
       );
       fireEvent.change(screen.getByLabelText('How many Extra pillows'), { target: { value: '1' } });
 
-      const summary = await screen.findByLabelText('Price of the stay');
+      const summary = await priceArea();
       expect(await within(summary).findByText(/Extra pillows × 1 · on request/)).toBeTruthy();
       expect(within(summary).getByText('Not charged now')).toBeTruthy();
     });
@@ -428,7 +458,7 @@ describe('NewBookingDialog', () => {
     it('keeps the extras section out of the way when the list cannot be loaded: the booking still works', async () => {
       api.fetchStaffBookingExtras.mockRejectedValue(new Error('offline'));
       renderDialog();
-      await screen.findByLabelText('Price of the stay');
+      await priceArea();
 
       expect(screen.queryByText('Extras')).toBeNull();
       await fillGuest();

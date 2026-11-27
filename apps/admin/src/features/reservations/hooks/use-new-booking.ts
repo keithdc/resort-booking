@@ -258,9 +258,11 @@ export function useNewBooking({ open, properties, defaultPropertyId, defaultDate
 
   // The live price.
   useEffect((): (() => void) => {
-    setQuote(null);
+    // The last price stays on screen (dimmed, Total shows a loader) while the new one is worked out, so the form
+    // does not jump. Saving is blocked meanwhile (`quoting`), and it is cleared when there is no stay to price.
     setQuoteError(null);
     if (!open || stay === null) {
+      setQuote(null);
       setQuoting(false);
       return (): void => undefined;
     }
@@ -276,6 +278,7 @@ export function useNewBooking({ open, properties, defaultPropertyId, defaultDate
         })
         .catch((failure: unknown): void => {
           if (quoteRun.current === run) {
+            setQuote(null);
             setQuoteError(failure instanceof ApiRequestError ? failure.message : 'Could not work out the price. Please try again.');
           }
         })

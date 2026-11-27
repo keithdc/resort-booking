@@ -165,14 +165,6 @@ export function NewBookingDialog({ open, properties, defaultPropertyId, defaultD
               {state.problem}
             </Typography>
           )}
-          {state.quoting ? (
-            <Stack direction="row" spacing={1} alignItems="center" aria-label="Working out the price">
-              <CircularProgress size={16} />
-              <Typography variant="body2" color="text.secondary">
-                Working out the price…
-              </Typography>
-            </Stack>
-          ) : null}
           {state.quoteError !== null ? <Alert severity="error">{state.quoteError}</Alert> : null}
 
           {!state.isChannel && state.extras.length > 0 ? (
@@ -298,8 +290,8 @@ export function NewBookingDialog({ open, properties, defaultPropertyId, defaultD
                 fullWidth
               />
             </Stack>
-          ) : quote !== null ? (
-            <NewBookingQuoteSummary quote={quote} />
+          ) : quote !== null || state.quoting ? (
+            <NewBookingQuoteSummary quote={quote} loading={state.quoting} />
           ) : null}
 
           <Typography variant="subtitle2" component="h3" sx={{ pt: 1 }}>

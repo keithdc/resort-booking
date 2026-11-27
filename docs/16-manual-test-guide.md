@@ -234,6 +234,8 @@ Run from the repository root. Start Docker first (`npm run db:up`) for the datab
 | `npm run typecheck` / `npm run lint:all` | Type-checks, or lint for api, admin and web. |
 | `npm run security:check` | The banned-pattern and secret checks used by CI. |
 
+`test:full` and `test:db` first run a short check (`scripts/test-preflight.mjs`) and stop with one plain message when the database cannot be reached or its user cannot create databases, instead of failing dozens of tests.
+
 The database tests connect with `DATABASE_ADMIN_URL`; it defaults to the local Docker Postgres (`postgres://resort:resort@localhost:5433/postgres`). Set it yourself to use another server.
 
 ## If something fails
