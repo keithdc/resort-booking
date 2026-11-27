@@ -61,8 +61,8 @@ describe('StaffCancelDialog', () => {
     renderDialog(false);
     await loaded();
 
-    expect(screen.getByRole('radio', { name: /Guest asked/ })).toBeTruthy();
-    expect(screen.queryByRole('radio', { name: /We cannot host/ })).toBeNull();
+    expect(screen.getByRole('radio', { name: /The guest is cancelling/ })).toBeTruthy();
+    expect(screen.queryByRole('radio', { name: /We are cancelling/ })).toBeNull();
     expect(screen.queryByRole('radio', { name: /Goodwill/ })).toBeNull();
     expect(screen.getByText(/decided by an admin or someone with refund access/)).toBeTruthy();
   });
@@ -71,7 +71,7 @@ describe('StaffCancelDialog', () => {
     renderDialog(false);
     await loaded();
 
-    expect(plain(screen.getByRole('radio', { name: /Guest asked/ }).closest('label')?.textContent)).toContain('720,00');
+    expect(plain(screen.getByRole('radio', { name: /The guest is cancelling/ }).closest('label')?.textContent)).toContain('720,00');
     expect(plain(confirmButton().textContent)).toContain('720,00');
   });
 
@@ -99,9 +99,9 @@ describe('StaffCancelDialog', () => {
     await loaded();
 
     expect(screen.getByText('Check-in is today: no refund applies. An admin or someone with refund access can decide otherwise.')).toBeTruthy();
-    expect(plain(screen.getByRole('radio', { name: /Guest asked/ }).closest('label')?.textContent)).toContain('no refund (check-in is today)');
+    expect(plain(screen.getByRole('radio', { name: /The guest is cancelling/ }).closest('label')?.textContent)).toContain('Check-in is today, so the guest gets no refund.');
     expect(plain(confirmButton().textContent)).toBe('Cancel with no refund');
-    expect(screen.queryByRole('radio', { name: /We cannot host/ })).toBeNull();
+    expect(screen.queryByRole('radio', { name: /We are cancelling/ })).toBeNull();
   });
 
   it('offers an employee with refund access every reason, like an admin', async () => {
@@ -133,9 +133,9 @@ describe('StaffCancelDialog', () => {
 
     const dialog = plain(screen.getByRole('dialog').textContent);
     expect(dialog).toContain('The guest has paid 960,00 €');
-    expect(dialog).toContain('Guest asked: policy refund 720,00 € (75%)');
-    expect(dialog).toContain('We cannot host: full refund 960,00 €');
-    expect(dialog).toContain('Goodwill or special case: you choose the refund');
+    expect(dialog).toContain('Refund following your cancellation policy: 720,00 € (75%).');
+    expect(dialog).toContain('Full refund: 960,00 €.');
+    expect(dialog).toContain('A goodwill or custom refund. You choose the amount.');
   });
 
   it('puts the focus on keeping the booking, not on cancelling', async () => {
@@ -167,7 +167,7 @@ describe('StaffCancelDialog', () => {
     renderDialog();
     await loaded();
 
-    await userEvent.click(screen.getByLabelText(/We cannot host/));
+    await userEvent.click(screen.getByLabelText(/We are cancelling/));
     fireEvent.change(screen.getByLabelText(/^Note/), { target: { value: 'Pipe burst' } });
 
     expect(plain(confirmButton().textContent)).toBe('Cancel and refund 960,00 €');
@@ -176,7 +176,7 @@ describe('StaffCancelDialog', () => {
   it('asks for a goodwill amount, bounded by what was paid, with a clear message', async () => {
     renderDialog();
     await loaded();
-    await userEvent.click(screen.getByLabelText(/Goodwill or special case/));
+    await userEvent.click(screen.getByLabelText(/Special case/));
     fireEvent.change(screen.getByLabelText(/^Note/), { target: { value: 'Apology' } });
     expect(confirmButton().hasAttribute('disabled')).toBe(true);
 
@@ -235,7 +235,7 @@ describe('StaffCancelDialog', () => {
     renderDialog();
     await loaded();
 
-    expect(screen.getByText(/has no refund ladder, so no refund/)).toBeTruthy();
+    expect(screen.getByText(/has no refund rules, so the guest gets no refund/)).toBeTruthy();
     fireEvent.change(screen.getByLabelText(/^Note/), { target: { value: 'Guest rang' } });
     expect(confirmButton().textContent).toBe('Cancel with no refund');
   });

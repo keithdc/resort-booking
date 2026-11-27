@@ -56,7 +56,7 @@ Ports used by the dev setup: web `3000`, admin `3001`, API `3002`.
 
 Create a test booking first: on the guest site pick dates, pay with the mock payment, note the booking reference. Make a second one that **checks in today**.
 
-1. As the employee **without** refund access: open the future booking, Cancel. **Expected:** only the "Guest asked" option, the refund shown equals your property's "If they cancel" table for that date, and no custom amount. Confirm. **Expected:** cancelled, a refund created at the policy amount.
+1. As the employee **without** refund access: open the future booking, Cancel. **Expected:** only the "The guest is cancelling" option, the refund shown equals your property's "If they cancel" table for that date, and no custom amount. Confirm. **Expected:** cancelled, a refund created at the policy amount.
 2. Open the booking that checks in **today**. **Expected:** Cancel is allowed but shows "Check-in is today: no refund applies" and the button reads "Cancel with no refund". "Change dates" is disabled with a message.
 3. As admin, on the Team page choose **Give refund access** on the employee and confirm. **Expected:** the chip changes to "Refund access". The employee (reload) now sees the goodwill and custom-amount options and Retry or "Mark as refunded" on the Refunds page.
 4. Remove the access again. **Expected:** the options disappear on reload.

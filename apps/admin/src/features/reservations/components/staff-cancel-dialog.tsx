@@ -9,6 +9,7 @@
 import type { StaffCancelResult } from '@resort-booking/shared-types';
 import {
   Alert,
+  Box,
   Button,
   CircularProgress,
   Dialog,
@@ -34,6 +35,18 @@ interface StaffCancelDialogProps {
   canManageRefunds: boolean;
   onClose: () => void;
   onCancelled: (result: StaffCancelResult) => void;
+}
+
+/** One cancel reason: a short title and a plain sentence saying what it means for the refund. */
+function ReasonLabel({ title, hint }: { title: string; hint: string }): React.JSX.Element {
+  return (
+    <Box sx={{ py: 0.5 }}>
+      <Typography sx={{ fontWeight: 600 }}>{title}</Typography>
+      <Typography variant="body2" color="text.secondary">
+        {hint}
+      </Typography>
+    </Box>
+  );
 }
 
 /**
@@ -79,22 +92,31 @@ export function StaffCancelDialog({ open, reservationId, reference, canManageRef
                   value="guest_request"
                   control={<Radio />}
                   label={
-                    preview.policyRefund === null
-                      ? 'Guest asked: this booking has no refund ladder, so no refund'
-                      : preview.notice !== null
-                        ? 'Guest asked: no refund (check-in is today)'
-                        : `Guest asked: policy refund ${money(preview.policyRefund.refundCents)} (${String(preview.policyRefund.refundPercent)}%)`
+                    <ReasonLabel
+                      title="The guest is cancelling"
+                      hint={
+                        preview.policyRefund === null
+                          ? 'This booking has no refund rules, so the guest gets no refund.'
+                          : preview.notice !== null
+                            ? 'Check-in is today, so the guest gets no refund.'
+                            : `Refund following your cancellation policy: ${money(preview.policyRefund.refundCents)} (${String(preview.policyRefund.refundPercent)}%).`
+                      }
+                    />
                   }
                 />
                 {canManageRefunds ? (
                   <FormControlLabel
                     value="property_cancelled"
                     control={<Radio />}
-                    label={`We cannot host: full refund ${money(preview.paidCents)}`}
+                    label={<ReasonLabel title="We are cancelling" hint={`We cannot host the guest. Full refund: ${money(preview.paidCents)}.`} />}
                   />
                 ) : null}
                 {canManageRefunds ? (
-                  <FormControlLabel value="goodwill" control={<Radio />} label="Goodwill or special case: you choose the refund" />
+                  <FormControlLabel
+                    value="goodwill"
+                    control={<Radio />}
+                    label={<ReasonLabel title="Special case" hint="A goodwill or custom refund. You choose the amount." />}
+                  />
                 ) : null}
               </RadioGroup>
               {canManageRefunds ? null : (
