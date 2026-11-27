@@ -175,6 +175,22 @@ Section 15 needs migration `043` (restart the API first) for the notes. Steps 1-
     **Expected:** both statements fail with an error (notes are never deleted or edited), even for the owner role. With no notes yet the statements affect no row and the error may not show: add a note first.
 11. **Erasure scrubs notes (dry run).** `npm run privacy:erase-guest -w @resort-booking/api -- --email <test guest email>` (no `--apply`). **Expected:** a dry run; nothing changes. With `--apply` on a **test** booking the note text becomes `[removed]` (the receipt says "staff notes scrubbed: N").
 
+## 16. Search visibility
+
+Start the web app with `SITE_URL=https://www.example.com npm run dev:web` (any address works for the test).
+
+1. Open `/robots.txt`. **Expected:** `Allow: /`, `Disallow: /manage`, `/search` and `/*checkIn=`, and a `Sitemap:` line with your address.
+2. Open `/sitemap.xml`. **Expected:** the home page, `/properties`, every published property and every published stay. Unpublish a stay in the admin, reload: it disappears. Switch it back on.
+3. Open a stay page and View Source (not the inspector). **Expected:** a `<title>` such as "Lake Chalet at Alpine Lake Houses, Annecy | Humphreys", a `<meta name="description">` with "Sleeps N, from X per night", a `<link rel="canonical">` with the clean stay address, `og:title`, `og:image` and `twitter:card`, and two `application/ld+json` blocks (VacationRental and BreadcrumbList).
+4. Open the same stay with `?checkIn=2027-07-01&promo=TEST`. **Expected:** the canonical link is still the clean address.
+5. View Source of the property page. **Expected:** a LodgingBusiness block and a breadcrumb, with no email address and no "aggregateRating".
+6. View Source of `/search?checkIn=2027-07-01&guestCount=2` and `/manage`. **Expected:** `noindex` in the robots tag.
+7. Open `/properties/does-not-exist`. **Expected:** the "We can't find that page" screen and `noindex` in View Source.
+8. Open `/properties/alpine-lake/houses/lake-chalet`. **Expected:** it redirects to the `/stays/` address.
+9. Paste a stay address into a chat app or a preview tool (for example the Facebook Sharing Debugger or LinkedIn Post Inspector, once the site is public). **Expected:** the stay name, description and photo.
+10. In the browser tab, **Expected:** the dark "H" icon.
+11. After the site is public, run the page through Google's Rich Results Test (search.google.com/test/rich-results) and PageSpeed Insights (pagespeed.web.dev), mobile. Note any red items.
+
 ## Automated checks you can trigger yourself
 
 Run from the repository root. Start Docker first (`npm run db:up`) for the database tests.

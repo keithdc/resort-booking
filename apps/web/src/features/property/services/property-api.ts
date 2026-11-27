@@ -13,37 +13,39 @@ import type {
   PropertyDetail,
   PropertySummary,
 } from '@resort-booking/shared-types';
+import { cache } from 'react';
 import { getApiOk } from '@/shared/services/api-client';
 
 /**
- * Lists published properties.
+ * Lists published properties. Wrapped in React `cache`, so the page and its metadata share one API call per request
+ * (the same for the three loaders below).
  */
-export function fetchProperties(): Promise<PropertySummary[]> {
+export const fetchProperties = cache((): Promise<PropertySummary[]> => {
   return getApiOk<PropertySummary[]>('/properties');
-}
+});
 
 /**
  * Loads one published property.
  */
-export function fetchProperty(slug: string): Promise<PropertyDetail> {
+export const fetchProperty = cache((slug: string): Promise<PropertyDetail> => {
   return getApiOk<PropertyDetail>(`/properties/${encodeURIComponent(slug)}`);
-}
+});
 
 /**
  * Lists published houses at a property.
  */
-export function fetchHouses(propertySlug: string): Promise<HouseSummary[]> {
+export const fetchHouses = cache((propertySlug: string): Promise<HouseSummary[]> => {
   return getApiOk<HouseSummary[]>(`/properties/${encodeURIComponent(propertySlug)}/houses`);
-}
+});
 
 /**
  * Loads a published house.
  */
-export function fetchHouse(propertySlug: string, houseSlug: string): Promise<HouseDetail> {
+export const fetchHouse = cache((propertySlug: string, houseSlug: string): Promise<HouseDetail> => {
   return getApiOk<HouseDetail>(
     `/properties/${encodeURIComponent(propertySlug)}/houses/${encodeURIComponent(houseSlug)}`,
   );
-}
+});
 
 /**
  * Published extra pillows / mattress-style requests at checkout.

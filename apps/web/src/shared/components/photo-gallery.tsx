@@ -155,6 +155,7 @@ export function PhotoGallery({ photos, altFallback }: PhotoGalleryProps): React.
                   sizes={isHero ? HERO_SIZES : TILE_SIZES}
                   alt={photo.altText || altFallback}
                   loading={isHero ? 'eager' : 'lazy'}
+                  fetchPriority={isHero ? 'high' : 'auto'}
                   decoding="async"
                   draggable={false}
                   sx={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}

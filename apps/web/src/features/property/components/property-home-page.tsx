@@ -16,6 +16,8 @@ import {
   SparklesText,
 } from '@resort-booking/ui';
 import Link from 'next/link';
+import { JsonLd } from '@/shared/seo/json-ld-script';
+import { websiteJsonLd } from '@/shared/seo/json-ld';
 import { photoSrcSet } from '@/shared/utils/responsive';
 import { withDefaultStay } from '@/shared/utils/stay-query';
 import { fetchProperties } from '../services/property-api';
@@ -32,8 +34,11 @@ export async function PropertyHomePage(): Promise<React.JSX.Element> {
       property.coverPhotoUrl !== null,
   );
 
+  const cities = [...new Set(properties.map((property): string => property.city.trim()).filter((city): boolean => city !== ''))];
+
   return (
     <Box>
+      <JsonLd data={websiteJsonLd()} />
       <Box
         sx={{
           position: 'relative',
@@ -114,7 +119,7 @@ export async function PropertyHomePage(): Promise<React.JSX.Element> {
           Our properties
         </Typography>
         <Typography color="text.secondary" sx={{ mb: 4, maxWidth: 520 }}>
-          One operator, several coasts and lakes. Each stay has its own calendar.
+          {cities.length > 0 ? `Holiday stays in ${cities.join(', ')}. ` : ''}One operator, several coasts and lakes. Each stay has its own calendar.
         </Typography>
         <PropertyCardGrid properties={properties} />
       </Container>

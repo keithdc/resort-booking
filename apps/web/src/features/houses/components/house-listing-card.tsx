@@ -64,7 +64,9 @@ export function HouseListingCard({
           )}
           <ImageScrim />
           <Box sx={{ position: 'absolute', left: 16, right: 16, bottom: 16, color: 'common.white' }}>
-            <Typography variant="h6">{house.name}</Typography>
+            <Typography variant="h6" component="h3">
+              {house.name}
+            </Typography>
             <Typography variant="body2">{house.propertyCity}</Typography>
           </Box>
         </Box>

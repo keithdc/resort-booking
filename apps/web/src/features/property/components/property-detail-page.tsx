@@ -8,6 +8,10 @@ import { Box, Container, Link as MuiLink, Stack, Typography } from '@mui/materia
 import { BlurFade, Highlighter } from '@resort-booking/ui';
 import type { HouseSearchResult } from '@resort-booking/shared-types';
 import { fetchStaySearch } from '@/features/houses/services/inventory-api';
+import { breadcrumbJsonLd, propertyJsonLd } from '@/shared/seo/json-ld';
+import { JsonLd } from '@/shared/seo/json-ld-script';
+import { propertyPath } from '@/shared/seo/site-url';
+import { orNotFound } from '@/shared/services/or-not-found';
 import { CancellationPolicySection } from '@/shared/components/cancellation-policy';
 import { PhotoGallery } from '@/shared/components/photo-gallery';
 import { PropertyMap } from '@/shared/components/property-map';
@@ -53,7 +57,7 @@ export async function PropertyDetailPage({
 }: PropertyDetailPageProps): Promise<React.JSX.Element> {
   const search = parsePropertyStaySearch(searchParams, slug, todayIsoDate());
   const [property, houses, policy, results, offers] = await Promise.all([
-    fetchProperty(slug),
+    orNotFound(fetchProperty(slug)),
     fetchHouses(slug),
     fetchCancellationPolicyOrNull(slug),
     loadAvailability(slug, search),
@@ -71,6 +75,13 @@ export async function PropertyDetailPage({
         });
   return (
     <Box>
+      <JsonLd data={propertyJsonLd(property, houses)} />
+      <JsonLd
+        data={breadcrumbJsonLd([
+          { name: 'Home', path: '/' },
+          { name: property.name, path: propertyPath(property.slug) },
+        ])}
+      />
       <Container sx={{ pt: { xs: 3, md: 5 }, pb: 2 }} maxWidth="lg">
         <BlurFade inView={false}>
           <Typography variant="h3" component="h1">

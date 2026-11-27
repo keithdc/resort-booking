@@ -386,6 +386,19 @@ Those can be added later. Channel managers (re-sync to Airbnb) are a **conscious
 - Domain TLD is a branding choice. Details in `docs/05-eu-compliance-and-payments.md`.
 - UI: `docs/06-ui-theme.md` (8px professional buttons).
 
+## Search visibility (SEO)
+
+How the guest site is found on Google and shared on social media. Code: `apps/web/src/shared/seo/`, the route files in `apps/web/src/app/`.
+
+- **Site address.** Set `SITE_URL` (read when the server starts) or `NEXT_PUBLIC_SITE_URL` (fixed at build) to the real public address, for example `https://www.example.com`. Without it, in production, no canonical links, structured-data links or sitemap entries are written (so localhost addresses never reach search engines). Set it before the site goes public.
+- **Titles and descriptions** are built from the data on each page: the home page names the towns; a property page says "Name: stays in Town" with the number of stays, how many it sleeps and the lowest price; a stay page says "Stay at Property, Town" with "Sleeps N, from X per night" and the stay's own description. Descriptions are cut at about 155 characters. Each page has its own canonical link (always the clean address, whatever dates or promo code are in the link) and its own Open Graph and Twitter cards, with the cover photo.
+- **Not indexed:** the search results page and the manage-booking page carry `noindex`, and `robots.txt` also keeps crawlers out of `/manage`, `/search` and any link with `checkIn=` in it. The old `/houses/` stay addresses redirect permanently to `/stays/`.
+- **`/sitemap.xml`** lists the home page, the property list, every published property and every published stay, built on request from the API. Unpublished items are never listed. If the API is down it lists less, never errors. There is no "last modified" date because the API does not give one.
+- **Structured data (JSON-LD)** on the home page (`WebSite`), property pages (`LodgingBusiness`) and stay pages (`VacationRental` with sleeps and amenities), plus a breadcrumb trail. It carries the public business phone, address and price-from line only, never an email address or guest data, and **no ratings**: the site has no reviews of its own and must not invent any. The text is escaped so a stay name can never close the script tag.
+- **Missing pages:** an unknown or unpublished property or stay shows the 404 screen and is marked `noindex`. It still answers with status 200 (the page streams after the loading screen has been sent); see `docs/17-pending-work.md` for the option to change that.
+- **Page structure:** one `h1` per page, headings in order, a `main` landmark, a `nav` in the header, descriptive photo text, a visible mention of the town, links between the property page and its stays, and a site-wide list of properties in the footer.
+- **Speed:** the first photo is loaded with high priority and the others lazily; photos use responsive `srcset`; fonts use `display=swap` with preconnect. No third-party scripts. Pages are rendered on every request (the security policy needs a fresh nonce), so they are not cached by a CDN.
+
 ## Staff screens (cancellations, refunds, date changes)
 
 - **Booking dialog** (calendar → click a booking): shows the reference, amount paid, terms accepted, and the cancellation, refund and history records. **Cancel booking** and **Change dates** open from here. Both default focus to the safe button, put the exact euro amount on the confirm button, and need a written note (3–500 characters) kept with the staff name.

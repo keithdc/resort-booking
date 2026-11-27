@@ -45,7 +45,7 @@ export async function SiteFooter(): Promise<React.JSX.Element> {
           }}
         >
           <Box>
-            <Typography variant="h5" sx={{ fontWeight: 600, letterSpacing: 0.4 }}>
+            <Typography variant="h5" component="p" sx={{ fontWeight: 600, letterSpacing: 0.4 }}>
               Humphreys
             </Typography>
             <Typography variant="body2" sx={{ mt: 1, maxWidth: 280, opacity: 0.9 }}>

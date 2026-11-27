@@ -52,7 +52,7 @@ export function SiteHeader(): React.JSX.Element {
             </Typography>
           </MuiLink>
           <Box sx={{ flexGrow: 1 }} />
-          <Box sx={{ display: { xs: 'none', sm: 'flex' }, alignItems: 'center' }}>
+          <Box component="nav" aria-label="Main" sx={{ display: { xs: 'none', sm: 'flex' }, alignItems: 'center' }}>
             <MuiLink
               component={NextLink}
               href="/properties"

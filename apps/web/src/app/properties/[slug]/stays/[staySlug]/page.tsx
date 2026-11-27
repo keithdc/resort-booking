@@ -4,7 +4,11 @@
  * @dependencies HouseDetailPage
  */
 
+import type { Metadata } from 'next';
 import { HouseDetailPage } from '@/features/houses';
+import { fetchHouse } from '@/features/property/services/property-api';
+import { stayMetadata } from '@/shared/seo/metadata';
+import { orNotFound } from '@/shared/services/or-not-found';
 import { parsePromoParam } from '@/shared/utils/offers';
 import { stayQueryFromRecord, withDefaultStay } from '@/shared/utils/stay-query';
 
@@ -19,6 +23,15 @@ interface HousePageProps {
     guestCount?: string;
     promo?: string | string[];
   }>;
+}
+
+/**
+ * Title, description, canonical link (always the clean stay address, whatever dates or promo are in the query)
+ * and card. An unknown or unpublished stay is a real 404.
+ */
+export async function generateMetadata({ params }: Pick<HousePageProps, 'params'>): Promise<Metadata> {
+  const { slug, staySlug } = await params;
+  return stayMetadata(await orNotFound(fetchHouse(slug, staySlug)));
 }
 
 /**

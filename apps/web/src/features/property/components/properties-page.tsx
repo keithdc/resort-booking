@@ -21,7 +21,7 @@ export async function PropertiesPage(): Promise<React.JSX.Element> {
       <Typography color="text.secondary" sx={{ mb: 4, maxWidth: 560 }}>
         One operator, several coasts and lakes. Open a property to see its stays, photos and location.
       </Typography>
-      <PropertyCardGrid properties={properties} />
+      <PropertyCardGrid properties={properties} headingLevel="h2" />
     </Container>
   );
 }

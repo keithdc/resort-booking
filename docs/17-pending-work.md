@@ -2,7 +2,7 @@
 
 One place for everything that is **not built yet** or **waiting for an owner decision**. Written in plain words so the owner can read it. Details live in the doc named in brackets. When something here is done or decided, delete the line (or move it to the doc that describes the feature) so this file stays short.
 
-Last reviewed after the staff-notes round (migration `043`).
+Last reviewed after the search-visibility round.
 
 ## 1. Not built yet
 
@@ -34,9 +34,9 @@ The payment code runs on a **mock** provider today (`docs/05`, `docs/14`). The r
 
 Guest booking **confirmation**, **hold expiry** and **cancellation/refund** emails are not built. Only staff invitation and reset emails exist (`docs/12-email.md`).
 
-### 1.3a Calendar sync with Airbnb and other sites (iCal)
+### 1.3a Calendar sync with Airbnb and other sites (iCal): required before launch
 
-Needed while the client still has bookings on Airbnb or another site, and for any later channel. Today the admin must **block those dates by hand** or two guests can book the same night (`docs/04` lists channel sync as out of scope for v1; this is the small, safe version).
+The owner may keep Airbnb running next to the direct site (a good idea: years of reviews and ranking), so both channels share one calendar. Build this **before launch**. Needed while the client still has bookings on Airbnb or another site, and for any later channel. Today the admin must **block those dates by hand** or two guests can book the same night (`docs/04` lists channel sync as out of scope for v1; this is the small, safe version).
 
 - **Import:** each stay gets an optional iCal link (the private calendar link that Airbnb and Booking.com give a host). The API reads it on a schedule (for example every 15 to 30 minutes) and turns each busy range into an inventory block marked "Blocked by Airbnb", never overwriting a real booking. A range that disappears from the feed is released.
 - **Export:** each stay gets a private iCal link of its confirmed bookings so other sites can block the same nights. The link is a long random token, revocable, with no guest details (only "Reserved").
@@ -53,6 +53,30 @@ Not planned, on purpose (owner decision, keep the app easy to use): switching to
 - **Refactoring pass:** low priority. Only do it when a file gets in the way of a change.
 - **Browser testing of the recent admin screens:** low priority, owner will test over time (`docs/16-manual-test-guide.md` sections 14 and 15).
 - **Least-privilege roles in development:** the dev database still uses one owner role. Switching to `resort_owner` / `resort_app` / `resort_readonly` as in `docs/11-database-access.md` would catch permission mistakes earlier.
+
+### 1.6 Search visibility: steps outside the code
+
+The code side is done (`docs/04`, "Search visibility"). These steps need the owner and the real domain:
+
+1. **Real domain and `SITE_URL`.** Buy the domain, point it at the web app, set `SITE_URL=https://...` on the server. Without it the sitemap is empty and there are no canonical links.
+2. **Google Search Console.** Add the domain, verify it (DNS record), submit `https://<domain>/sitemap.xml`, and check "Pages" for anything marked excluded or erroring after a week.
+3. **Google Business Profile.** Create the profile for each property: right category, exact pin, photos, phone, the website link, opening and check-in details. Reply to every review. This is the biggest factor for "best accommodation in [area]" searches.
+4. **Reviews.** Email each guest after check-out with the direct link to leave a Google review (needs the guest emails, section 1.3). Show 3 to 5 testimonials with permission. No in-app reviews (decided: skip).
+5. **Backlinks.** Ask the local tourism board, nearby restaurants and tour operators, and travel bloggers to link to the property page. A few good local links beat many poor ones.
+6. **Content.** Real photos with a short description each (the photo text is used by Google Images and screen readers), a longer description for each stay that mentions the town and what is nearby, and one page about the area (not built yet: a small "Things to do near [town]" page would help the searches people make before they look for a place to stay).
+7. **Social previews.** After launch, check a stay address in the Facebook Sharing Debugger and LinkedIn Post Inspector; use "Scrape again" after changing a photo.
+8. **Measure.** Check Search Console monthly: impressions, clicks, average position for the town and "holiday stay" searches. No third-party tracking is installed (decision: privacy first); Search Console needs none.
+
+**Decision for later: real 404 status.** An unknown or unpublished address shows the 404 screen and `noindex` but answers with status 200, because `app/loading.tsx` makes the page stream. Search engines treat this as a soft 404 and drop it, so it works. A true 404 status needs `loading.tsx` removed (visitors then see nothing until the page's data has loaded, instead of a spinner). Not done; say if you want it.
+
+**Decision for later: page caching.** Every page is rendered per request (the security policy needs a fresh nonce on each response), so a CDN cannot cache the HTML and the speed depends on the API's response time. The alternative is a policy without nonces (hash-based or `unsafe-inline`), which weakens the protection against injected scripts. Not changed.
+
+### 1.7 Small jobs for later
+
+- **Privacy-friendly analytics, when paid ads start.** Not added now on purpose. When ads begin, add analytics that measure visits and bookings per source (ad, Google, Instagram, email) without tracking individuals, plus the cookie notice the rules require, so the cost per booking can be compared with the Airbnb fee it replaces. Start with a small ad test (about EUR 5 to 10 a day for 3 to 4 weeks) a few weeks before a busy period.
+- **Guest email opt-in at checkout.** An optional, unticked checkbox ("Email me about offers and my next stay") stored with the date and wording, so past guests can be written to about booking direct. A guest who has not agreed is not emailed. Include it in the data export and erasure tools (`docs/15`).
+- **"Things to do near" area page** for the property (searches people make before choosing a stay).
+- **Book direct card for the property** (printed card or QR code: "Book direct next time and save X%") and the matching discount code. Not code, but plan it with the owner.
 
 ## 2. Waiting for an owner decision
 
@@ -115,7 +139,7 @@ Do these in order. Do not announce the site before every box is ticked.
 4. **Backups and monitoring:** daily backups, one restore drill done, an uptime monitor with phone alerts, alerts for stuck refunds and failed webhooks (`docs/15`, `docs/14`).
 5. **Legal pages:** terms and cancellation policy, privacy notice, cookie notice, company and VAT details, tourist tax if it applies, the model for guest data requests (`docs/05`, `docs/15`).
 6. **Content:** real photos and descriptions for every stay, real prices and extras, house rules, check-in instructions, a phone or WhatsApp number guests can reach.
-7. **Calendar:** every existing Airbnb or agency booking blocked (by hand or through section 1.3a), then a double-check of the next 12 months.
+7. **Calendar:** the iCal sync (section 1.3a) built if Airbnb stays on, otherwise every existing Airbnb or agency booking blocked by hand, then a double-check of the next 12 months.
 8. **Test run:** two real bookings made by friends (card and pay at hotel), one cancelled with refund, one date change, each followed through the admin, the reports and the guest emails.
 9. **Security test:** an outside penetration test (`docs/13`), fixes done.
 10. **Find guests:** the website domain, Google Business Profile, Instagram, an email to past guests who agreed to hear from the property, and a "book direct and save" discount.

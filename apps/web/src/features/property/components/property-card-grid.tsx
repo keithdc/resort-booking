@@ -13,13 +13,15 @@ import { photoSrcSet } from '@/shared/utils/responsive';
 
 interface PropertyCardGridProps {
   properties: readonly PropertySummary[];
+  /** The heading level of each card's name: h3 under a section heading, h2 straight under the page title. */
+  headingLevel?: 'h2' | 'h3';
 }
 
 /**
  * Published properties as cards: photo, name, address, link to its stays. Shared by the home page
  * and the properties page so both always look the same.
  */
-export function PropertyCardGrid({ properties }: PropertyCardGridProps): React.JSX.Element {
+export function PropertyCardGrid({ properties, headingLevel = 'h3' }: PropertyCardGridProps): React.JSX.Element {
   if (properties.length === 0) {
     return <Typography>No published properties yet.</Typography>;
   }
@@ -47,7 +49,9 @@ export function PropertyCardGrid({ properties }: PropertyCardGridProps): React.J
                 )}
               </Box>
               <CardContent>
-                <Typography variant="h5">{property.name}</Typography>
+                <Typography variant="h5" component={headingLevel}>
+                  {property.name}
+                </Typography>
                 <Typography color="text.secondary" sx={{ mt: 0.5 }}>
                   {formatAddress(property.addressLine, property.postalCode, property.city, property.countryCode)}
                 </Typography>

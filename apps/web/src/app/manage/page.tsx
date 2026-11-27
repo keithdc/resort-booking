@@ -4,12 +4,19 @@
  * @dependencies ManageBookingPage
  */
 
+import type { Metadata } from 'next';
 import { ManageBookingPage } from '@/features/bookings';
+import { manageMetadata } from '@/shared/seo/metadata';
 
 export const dynamic = 'force-dynamic';
 
 interface ManagePageProps {
   searchParams: Promise<{ reference?: string }>;
+}
+
+/** The booking look-up is private: never indexed, links not followed. */
+export function generateMetadata(): Metadata {
+  return manageMetadata();
 }
 
 /**

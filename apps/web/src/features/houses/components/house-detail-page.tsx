@@ -14,6 +14,10 @@ import {
   fetchRequestOptions,
 } from '@/features/property/services/property-api';
 import { fetchPropertyOffersOrEmpty } from '@/features/property/services/offers-api';
+import { breadcrumbJsonLd, stayJsonLd } from '@/shared/seo/json-ld';
+import { JsonLd } from '@/shared/seo/json-ld-script';
+import { propertyPath, stayPath } from '@/shared/seo/site-url';
+import { orNotFound } from '@/shared/services/or-not-found';
 import { OfferChips } from '@/shared/components/offer-chips';
 import { PhotoGallery } from '@/shared/components/photo-gallery';
 import { PropertyMap } from '@/shared/components/property-map';
@@ -47,10 +51,10 @@ export async function HouseDetailPage({
   promoCode = '',
 }: HouseDetailPageProps): Promise<React.JSX.Element> {
   const [house, requestOptions, extras, property, policy, propertyOffers] = await Promise.all([
-    fetchHouse(propertySlug, houseSlug),
+    orNotFound(fetchHouse(propertySlug, houseSlug)),
     fetchRequestOptions(propertySlug),
     fetchExtras(propertySlug),
-    fetchProperty(propertySlug),
+    orNotFound(fetchProperty(propertySlug)),
     fetchCancellationPolicyOrNull(propertySlug),
     fetchPropertyOffersOrEmpty(propertySlug),
   ]);
@@ -60,6 +64,14 @@ export async function HouseDetailPage({
 
   return (
     <StayQuoteProvider>
+    <JsonLd data={stayJsonLd(house)} />
+    <JsonLd
+      data={breadcrumbJsonLd([
+        { name: 'Home', path: '/' },
+        { name: house.propertyName, path: propertyPath(house.propertySlug) },
+        { name: house.name, path: stayPath(house.propertySlug, house.slug) },
+      ])}
+    />
     <Container sx={{ py: { xs: 3, md: 6 } }} maxWidth="lg">
       <MuiLink component={NextLink} href={`/properties/${house.propertySlug}`} sx={LINK_ROW_SX}>
         {house.propertyName}

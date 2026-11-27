@@ -4,7 +4,9 @@
  * @dependencies SearchResultsPage
  */
 
+import type { Metadata } from 'next';
 import { SearchResultsPage } from '@/features/houses/components/search-results-page';
+import { searchMetadata } from '@/shared/seo/metadata';
 import { stayQueryFromRecord, withDefaultStay } from '@/shared/utils/stay-query';
 
 export const dynamic = 'force-dynamic';
@@ -17,6 +19,11 @@ interface SearchPageProps {
     guestCount?: string;
     property?: string;
   }>;
+}
+
+/** Search results are never indexed: every date combination is its own page. */
+export function generateMetadata(): Metadata {
+  return searchMetadata();
 }
 
 /**
