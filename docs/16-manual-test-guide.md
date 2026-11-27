@@ -175,6 +175,21 @@ Section 15 needs migration `043` (restart the API first) for the notes. Steps 1-
     **Expected:** both statements fail with an error (notes are never deleted or edited), even for the owner role. With no notes yet the statements affect no row and the error may not show: add a note first.
 11. **Erasure scrubs notes (dry run).** `npm run privacy:erase-guest -w @resort-booking/api -- --email <test guest email>` (no `--apply`). **Expected:** a dry run; nothing changes. With `--apply` on a **test** booking the note text becomes `[removed]` (the receipt says "staff notes scrubbed: N").
 
+## Automated checks you can trigger yourself
+
+Run from the repository root. Start Docker first (`npm run db:up`) for the database tests.
+
+| Command | What it runs |
+| --- | --- |
+| `npm run test:full` | Every test suite in one go: API, admin, web and ui, including the real-database tests (about 2 minutes). |
+| `npm run check` | Everything before a push: type-checks, lint, `test:full` and the security script. |
+| `npm run test:api` / `test:admin` / `test:web` / `test:ui` | One app at a time. |
+| `npm run test:db` | Only the real-database tests (migrations, guards, roles). Uses temporary `resort_check_*` databases and removes them. |
+| `npm run typecheck` / `npm run lint:all` | Type-checks, or lint for api, admin and web. |
+| `npm run security:check` | The banned-pattern and secret checks used by CI. |
+
+The database tests connect with `DATABASE_ADMIN_URL`; it defaults to the local Docker Postgres (`postgres://resort:resort@localhost:5433/postgres`). Set it yourself to use another server.
+
 ## If something fails
 
 1. Note the step, what you did and what you saw (a screenshot helps).

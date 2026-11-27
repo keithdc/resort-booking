@@ -16,7 +16,8 @@
     "privacy:export-guest": "ts-node --compiler-options '{\"module\":\"commonjs\"}' src/shared/privacy/privacy-cli.ts export-guest",
     "privacy:erase-staff": "ts-node --compiler-options '{\"module\":\"commonjs\"}' src/shared/privacy/privacy-cli.ts erase-staff",
     "privacy:reapply-erasures": "ts-node --compiler-options '{\"module\":\"commonjs\"}' src/shared/privacy/privacy-cli.ts reapply-erasures",
-    "test:db": "jest database-roles.integration"
+    "test:db": "jest database-roles.integration",
+    "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
     "@nestjs/common": "^11.2.12",
