@@ -193,7 +193,10 @@ describe('NewBookingDialog', () => {
     await userEvent.click(bookButton());
     await waitFor(() => expect(api.createStaffBooking).toHaveBeenCalledWith(expect.objectContaining({ promoCode: 'SUMMER10' })));
 
-    await userEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    expect((screen.getByLabelText(/Promo code/) as HTMLInputElement).value.trim()).toBe('SUMMER10');
+    expect(screen.queryByRole('button', { name: 'Apply' })).toBeNull();
+    await userEvent.click(screen.getByLabelText(/Promo code/));
+    await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
     await waitFor(() => expect(api.quoteStaffBooking.mock.calls.at(-1)?.[0]).not.toHaveProperty('promoCode'));
   });
 
@@ -232,6 +235,7 @@ describe('NewBookingDialog', () => {
     await waitFor(() => expect(api.quoteStaffBooking.mock.calls.at(-1)?.[0]).not.toHaveProperty('promoCode'));
     expect((screen.getByLabelText(/Promo code/) as HTMLInputElement).value).toBe('');
     expect(screen.queryByRole('button', { name: 'Remove' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Apply' })).toBeNull();
   });
 
   it('says so and blocks saving when the dates are not free', async () => {

@@ -153,7 +153,7 @@ export function NewBookingPromoField({
                   ? result.message
                   : available > 0
                     ? `${String(available)} coupon${available === 1 ? '' : 's'} for this stay: open the list to pick one.`
-                    : 'Only if the guest gave you a code.'
+                    : 'Only if the guest gave you a code. Type it and press Enter or Apply.'
               }
               slotProps={{
                 input: params.InputProps,
@@ -163,14 +163,11 @@ export function NewBookingPromoField({
             />
           )}
         />
-        {hasApplied ? (
-          <Button sx={{ height: 56, flexShrink: 0 }} onClick={onRemove}>
-            Remove
+        {typed !== '' && typed !== appliedCode ? (
+          <Button variant="outlined" sx={{ height: 56, flexShrink: 0 }} onClick={onApply}>
+            Apply
           </Button>
         ) : null}
-        <Button variant="outlined" sx={{ height: 56, flexShrink: 0 }} disabled={typed === '' || typed === appliedCode} onClick={onApply}>
-          Apply
-        </Button>
       </Stack>
       {automatic.length > 0 ? (
         <Box>
