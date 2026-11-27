@@ -34,6 +34,16 @@ The payment code runs on a **mock** provider today (`docs/05`, `docs/14`). The r
 
 Guest booking **confirmation**, **hold expiry** and **cancellation/refund** emails are not built. Only staff invitation and reset emails exist (`docs/12-email.md`).
 
+### 1.3a Calendar sync with Airbnb and other sites (iCal)
+
+Needed while the client still has bookings on Airbnb or another site, and for any later channel. Today the admin must **block those dates by hand** or two guests can book the same night (`docs/04` lists channel sync as out of scope for v1; this is the small, safe version).
+
+- **Import:** each stay gets an optional iCal link (the private calendar link that Airbnb and Booking.com give a host). The API reads it on a schedule (for example every 15 to 30 minutes) and turns each busy range into an inventory block marked "Blocked by Airbnb", never overwriting a real booking. A range that disappears from the feed is released.
+- **Export:** each stay gets a private iCal link of its confirmed bookings so other sites can block the same nights. The link is a long random token, revocable, with no guest details (only "Reserved").
+- **Safety:** only fetch `https` URLs of the allowed hosts, set a short timeout and a size cap, do not follow redirects to private networks (SSRF), never log the URL (it is a secret), show the last successful sync time and any error in the stay settings.
+- **Limits:** iCal is not instant (15 to 30 minutes of delay is normal), so a double booking is still possible in that window. Keep the schedule short and block manually for peak dates.
+- **Not planned:** a full channel manager (prices, messages, reviews).
+
 ### 1.4 Booking features: decided to keep simple
 
 Not planned, on purpose (owner decision, keep the app easy to use): switching to another stay (cancel and book again), extras re-quote or an on-request approval flow (use a staff note, or add the extra when making the booking), and the guest checkout choosing extras (use the note). Still open and small: a date change that needs more money supports card payment of the difference only (no bank-transfer balance), and automatic reminders for unpaid-at-hotel bookings (the report already lists them by arrival date).
@@ -94,3 +104,20 @@ Numbers refer to the doc that explains the question.
 - The **guest checkout after Pay** and the cancel dialogs are tested at component level only.
 - The middleware on the admin app only checks that the session cookie **exists**; the API decides whether it is valid.
 - Browser autofill colours: the theme removes the saved-login tint (`packages/ui`), checked only through tests and one screenshot round. Report it if the blue returns.
+
+## 5. Go-live checklist (taking real bookings)
+
+Do these in order. Do not announce the site before every box is ticked.
+
+1. **Money:** the real Stripe adapter (section 1.2) tested in Stripe test mode, then live keys, webhook secret set, a real small payment and a real refund made and checked in the Stripe dashboard.
+2. **Guest emails:** booking confirmation, hold expiry and cancellation or refund emails (section 1.3). Resend domain verified.
+3. **Production settings:** `NODE_ENV=production`, no mock payments, strong secrets in the host's secret store, the app running as `resort_app` only, migrations run by the owner role, two-step verification on every admin.
+4. **Backups and monitoring:** daily backups, one restore drill done, an uptime monitor with phone alerts, alerts for stuck refunds and failed webhooks (`docs/15`, `docs/14`).
+5. **Legal pages:** terms and cancellation policy, privacy notice, cookie notice, company and VAT details, tourist tax if it applies, the model for guest data requests (`docs/05`, `docs/15`).
+6. **Content:** real photos and descriptions for every stay, real prices and extras, house rules, check-in instructions, a phone or WhatsApp number guests can reach.
+7. **Calendar:** every existing Airbnb or agency booking blocked (by hand or through section 1.3a), then a double-check of the next 12 months.
+8. **Test run:** two real bookings made by friends (card and pay at hotel), one cancelled with refund, one date change, each followed through the admin, the reports and the guest emails.
+9. **Security test:** an outside penetration test (`docs/13`), fixes done.
+10. **Find guests:** the website domain, Google Business Profile, Instagram, an email to past guests who agreed to hear from the property, and a "book direct and save" discount.
+11. **First weeks:** watch the audit log, refunds queue and unpaid-at-hotel report every day.
+
