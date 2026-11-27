@@ -225,6 +225,13 @@ describe('NewBookingDialog', () => {
     await userEvent.click(options.find((option) => (option.textContent ?? '').includes('FRIEND15')) as HTMLElement);
     await waitFor(() => expect(api.quoteStaffBooking).toHaveBeenLastCalledWith(expect.objectContaining({ promoCode: 'FRIEND15' })));
     expect((screen.getByLabelText(/Promo code/) as HTMLInputElement).value).toBe('FRIEND15');
+
+    // The X on the field takes the code and its discount off, not only the text.
+    await userEvent.hover(screen.getByLabelText(/Promo code/));
+    await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    await waitFor(() => expect(api.quoteStaffBooking.mock.calls.at(-1)?.[0]).not.toHaveProperty('promoCode'));
+    expect((screen.getByLabelText(/Promo code/) as HTMLInputElement).value).toBe('');
+    expect(screen.queryByRole('button', { name: 'Remove' })).toBeNull();
   });
 
   it('says so and blocks saving when the dates are not free', async () => {

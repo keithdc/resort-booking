@@ -94,12 +94,21 @@ export function NewBookingPromoField({
           options={coupons}
           inputValue={value}
           onInputChange={(_event, next, reason): void => {
-            if (reason !== 'reset') {
-              onChange(next);
+            if (reason === 'reset') {
+              return;
             }
+            // Emptying the field (the X, or deleting the text) takes the applied code and its discount off too.
+            if (next === '' && hasApplied) {
+              onRemove();
+              return;
+            }
+            onChange(next);
           }}
           onChange={(_event, picked): void => {
             if (picked === null) {
+              if (hasApplied) {
+                onRemove();
+              }
               return;
             }
             onPick(typeof picked === 'string' ? picked.trim() : picked.code);
