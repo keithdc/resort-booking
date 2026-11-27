@@ -71,4 +71,10 @@ export class DiscountWriteDto {
   @KeepRawValue()
   @IsBoolean()
   public promoted?: boolean;
+
+  /** Only for a promo code: each guest (by email) can use it once. Optional so older clients keep working (false). */
+  @IsOptional()
+  @KeepRawValue()
+  @IsBoolean()
+  public oncePerGuest?: boolean;
 }

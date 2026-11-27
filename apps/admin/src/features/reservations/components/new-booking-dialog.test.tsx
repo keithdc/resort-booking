@@ -203,7 +203,7 @@ describe('NewBookingDialog', () => {
   it('offers the property\'s coupons in the promo field\'s own list and applies one in one click; automatic offers are folded away', async () => {
     const base = { alwaysOn: false, houseIds: null, combinable: false, priority: 100, active: true, propertyId: 'p1', promoted: false } as const;
     api.fetchStaffPromotions.mockResolvedValue([
-      { ...base, id: 'd1', label: 'Friends and family', effect: { kind: 'percent', percent: 15 }, conditions: [{ kind: 'promo_code', code: 'FRIEND15' }], redemptions: 0, maxRedemptions: 1 },
+      { ...base, id: 'd1', label: 'Friends and family', effect: { kind: 'percent', percent: 15 }, conditions: [{ kind: 'promo_code', code: 'FRIEND15' }], redemptions: 0, maxRedemptions: 1, oncePerGuest: true },
       { ...base, id: 'd2', label: 'Long stay', effect: { kind: 'percent', percent: 10 }, conditions: [{ kind: 'min_nights', nights: 7 }], redemptions: 3, maxRedemptions: null },
       { ...base, id: 'd3', label: 'Switched off', active: false, effect: { kind: 'percent', percent: 5 }, conditions: [{ kind: 'promo_code', code: 'OLD5' }], redemptions: 0, maxRedemptions: null },
       { ...base, id: 'd4', label: 'Other stay only', houseIds: ['other'], effect: { kind: 'percent', percent: 5 }, conditions: [{ kind: 'promo_code', code: 'ELSEWHERE' }], redemptions: 0, maxRedemptions: null },
@@ -219,7 +219,7 @@ describe('NewBookingDialog', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Open' }));
     const options = await screen.findAllByRole('option');
     const text = options.map((option) => option.textContent ?? '');
-    expect(text.some((row) => row.includes('FRIEND15') && row.includes('0 of 1 used') && row.includes('Not advertised'))).toBe(true);
+    expect(text.some((row) => row.includes('FRIEND15') && row.includes('0 of 1 used') && row.includes('Not advertised') && row.includes('Once per guest'))).toBe(true);
     expect(text.join(' ')).not.toContain('OLD5');
     expect(text.join(' ')).not.toContain('ELSEWHERE');
     // A coupon that has been used up no longer shows: it cannot apply.
@@ -236,6 +236,25 @@ describe('NewBookingDialog', () => {
     expect((screen.getByLabelText(/Promo code/) as HTMLInputElement).value).toBe('');
     expect(screen.queryByRole('button', { name: 'Remove' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Apply' })).toBeNull();
+  });
+
+  it('says plainly when a once-per-guest code was already used with this email, and takes the code off the price', async () => {
+    api.quoteStaffBooking.mockImplementation((request: { promoCode?: string }) =>
+      Promise.resolve(request.promoCode === 'WELCOME15' ? quote({ discountCents: 14400, totalCents: 81600, promoCode: { code: 'WELCOME15', applied: true, message: 'Code WELCOME15 applied' } }) : quote()),
+    );
+    api.createStaffBooking.mockRejectedValue(new ApiRequestError('This code has already been used with this email address', 409, { code: 'PROMO_ALREADY_USED' }));
+    renderDialog();
+    await priceArea();
+    await userEvent.type(screen.getByLabelText(/Promo code/), 'WELCOME15');
+    await userEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    await waitFor(() => expect(api.quoteStaffBooking).toHaveBeenLastCalledWith(expect.objectContaining({ promoCode: 'WELCOME15' })));
+    await priceArea();
+    await fillGuest();
+    await userEvent.click(bookButton());
+
+    expect((await screen.findByRole('alert')).textContent).toContain('This code has already been used with this email address');
+    await waitFor(() => expect(api.quoteStaffBooking.mock.calls.at(-1)?.[0]).not.toHaveProperty('promoCode'));
+    expect((screen.getByLabelText(/Promo code/) as HTMLInputElement).value).toBe('');
   });
 
   it('says so and blocks saving when the dates are not free', async () => {

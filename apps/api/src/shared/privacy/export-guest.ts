@@ -91,7 +91,8 @@ export async function collectGuestExport(db: PrivacyDb, email: string, now: Date
          FROM booking_changes WHERE old_booking_id = ANY($1::uuid[]) OR new_booking_id = ANY($1::uuid[]) ORDER BY created_at, id`,
       );
       const discountRedemptions = await byIds(
-        `SELECT id, discount_id, inventory_block_id, amount_cents, created_at
+        `SELECT id, discount_id, inventory_block_id, amount_cents, created_at,
+                (email_key IS NOT NULL) AS counted_once_per_guest
          FROM discount_redemptions WHERE inventory_block_id = ANY($1::uuid[]) ORDER BY created_at, id`,
       );
       return {

@@ -10,6 +10,7 @@ import { PropertyModule } from '../property/property.module';
 import { DiscountsController } from './discounts.controller';
 import { DiscountsRepository } from './discounts.repository';
 import { DiscountsService } from './discounts.service';
+import { GuestEmailKeyService } from './guest-email-key';
 import { OffersController } from './offers.controller';
 import { OffersService } from './offers.service';
 import { StaffPromotionsController } from './staff-promotions.controller';
@@ -17,7 +18,7 @@ import { StaffPromotionsController } from './staff-promotions.controller';
 @Module({
   imports: [IdentityModule, PropertyModule],
   controllers: [DiscountsController, OffersController, StaffPromotionsController],
-  providers: [DiscountsService, DiscountsRepository, OffersService],
+  providers: [DiscountsService, DiscountsRepository, OffersService, GuestEmailKeyService],
   exports: [DiscountsService],
 })
 export class DiscountsModule {}

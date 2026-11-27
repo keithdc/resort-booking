@@ -11,6 +11,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ApiRequestError } from '@/shared/services/api-client';
 import { createDiscount, deleteDiscount, fetchDiscounts, updateDiscount } from '../services/staff-discounts-api';
 import {
+  applyDraftPatch,
   draftFromDiscount,
   draftToWrite,
   EMPTY_DISCOUNT_DRAFT,
@@ -93,7 +94,7 @@ export function usePropertyDiscounts(propertyId: string): PropertyDiscountsState
   }, []);
 
   const updateDraft = useCallback((patch: Partial<DiscountDraft>): void => {
-    setDraft((current): DiscountDraft => ({ ...current, ...patch }));
+    setDraft((current): DiscountDraft => applyDraftPatch(current, patch));
   }, []);
 
   const persist = useCallback(async (): Promise<void> => {

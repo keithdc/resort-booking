@@ -12,6 +12,7 @@ import { PropertyRepository } from '../property/property.repository';
 import type { DiscountWriteDto } from './dto/discount-write.dto';
 import { DiscountsRepository, type PropertyScope } from './discounts.repository';
 import { DiscountsService } from './discounts.service';
+import { GuestEmailKeyService } from './guest-email-key';
 
 const PROPERTY = 'property-1';
 const OTHER_PROPERTY = 'property-2';
@@ -33,6 +34,7 @@ function discount(overrides: Partial<Discount> = {}): Discount {
     active: true,
     maxRedemptions: null,
     promoted: false,
+    oncePerGuest: false,
     redemptions: 0,
     ...overrides,
   };
@@ -115,10 +117,15 @@ describe('DiscountsService', () => {
   const replaceRedemptions = jest.fn<Promise<void>, [PoolClient, string, string, readonly QuoteDiscountLine[]]>();
   const getPropertyById = jest.fn<Promise<PropertyDetail | null>, [string]>();
   const listHousesByPropertyId = jest.fn<Promise<HouseSummary[]>, [string]>();
+  const onceOnlyIds = jest.fn();
+  const usedByKey = jest.fn();
+  const bookerEmailOf = jest.fn();
+  const keyFor = jest.fn<string, [string]>();
   let service: DiscountsService;
 
   beforeEach(async (): Promise<void> => {
     jest.resetAllMocks();
+    keyFor.mockImplementation((email: string): string => `key:${email}`);
     getPropertyById.mockResolvedValue(propertyDetail());
     listHousesByPropertyId.mockResolvedValue([houseSummary(HOUSE_A), houseSummary(HOUSE_B)]);
     insert.mockImplementation((scope, write) => Promise.resolve({ ...discount(), ...write, propertyId: scope.propertyId }));
@@ -128,7 +135,11 @@ describe('DiscountsService', () => {
         DiscountsService,
         {
           provide: DiscountsRepository,
-          useValue: { listForProperties, getById, insert, update, delete: remove, recordRedemptions, replaceRedemptions },
+          useValue: { listForProperties, getById, insert, update, delete: remove, recordRedemptions, replaceRedemptions, onceOnlyIds, usedByKey, bookerEmailOf },
+        },
+        {
+          provide: GuestEmailKeyService,
+          useValue: { keyFor },
         },
         { provide: PropertyRepository, useValue: { getPropertyById, listHousesByPropertyId } },
       ],
@@ -338,32 +349,159 @@ describe('DiscountsService', () => {
   });
 
   describe('recordRedemptions', () => {
-    it('hands the applied discount lines to the repository in one call', async () => {
-      const lines: QuoteDiscountLine[] = [{ discountId: 'd1', label: 'Long stay', amountCents: 6000 }];
+    const lines: QuoteDiscountLine[] = [{ discountId: 'd1', label: 'Long stay', amountCents: 6000 }];
+
+    it('hands the applied discounts to the repository in one call, with no email key when none is limited', async () => {
+      onceOnlyIds.mockResolvedValue(new Set<string>());
       const client = fakeClient();
 
       await service.recordRedemptions(client, 'block-1', lines);
 
       expect(recordRedemptions).toHaveBeenCalledTimes(1);
-      expect(recordRedemptions).toHaveBeenCalledWith(client, 'block-1', lines);
+      expect(recordRedemptions).toHaveBeenCalledWith(client, 'block-1', [{ discountId: 'd1', amountCents: 6000, emailKey: null }]);
+      expect(bookerEmailOf).not.toHaveBeenCalled();
+    });
+
+    it('records nothing and asks nothing for a booking with no discounts', async () => {
+      await service.recordRedemptions(fakeClient(), 'block-1', []);
+
+      expect(onceOnlyIds).not.toHaveBeenCalled();
+      expect(recordRedemptions).toHaveBeenCalledWith(expect.anything(), 'block-1', []);
+    });
+
+    it('adds the guest\'s email key only to a discount limited to once per guest', async () => {
+      onceOnlyIds.mockResolvedValue(new Set(['d2']));
+      bookerEmailOf.mockResolvedValue('ada@example.com');
+      usedByKey.mockResolvedValue(new Set<string>());
+      const client = fakeClient();
+
+      await service.recordRedemptions(client, 'block-1', [
+        { discountId: 'd1', label: 'Long stay', amountCents: 6000 },
+        { discountId: 'd2', label: 'Welcome code', amountCents: 2000 },
+      ]);
+
+      expect(usedByKey).toHaveBeenCalledWith(client, ['d2'], 'key:ada@example.com', null);
+      expect(recordRedemptions).toHaveBeenCalledWith(client, 'block-1', [
+        { discountId: 'd1', amountCents: 6000, emailKey: null },
+        { discountId: 'd2', amountCents: 2000, emailKey: 'key:ada@example.com' },
+      ]);
+    });
+
+    it('refuses with PROMO_ALREADY_USED, and records nothing, when that email already used the code', async () => {
+      onceOnlyIds.mockResolvedValue(new Set(['d1']));
+      bookerEmailOf.mockResolvedValue('ada@example.com');
+      usedByKey.mockResolvedValue(new Set(['d1']));
+
+      await expect(service.recordRedemptions(fakeClient(), 'block-1', lines)).rejects.toMatchObject({
+        status: 409,
+        response: { code: 'PROMO_ALREADY_USED', message: 'This code has already been used with this email address' },
+      });
+      expect(recordRedemptions).not.toHaveBeenCalled();
+    });
+
+    it('turns the unique index refusing a racing second use into the same PROMO_ALREADY_USED, and leaves other errors alone', async () => {
+      onceOnlyIds.mockResolvedValue(new Set(['d1']));
+      bookerEmailOf.mockResolvedValue('ada@example.com');
+      usedByKey.mockResolvedValue(new Set<string>());
+      recordRedemptions.mockRejectedValueOnce(Object.assign(new Error('duplicate'), { code: '23505', constraint: 'discount_redemptions_one_use_per_email_key' }));
+      await expect(service.recordRedemptions(fakeClient(), 'block-1', lines)).rejects.toMatchObject({ response: { code: 'PROMO_ALREADY_USED' } });
+
+      recordRedemptions.mockRejectedValueOnce(Object.assign(new Error('duplicate'), { code: '23505', constraint: 'something_else' }));
+      await expect(service.recordRedemptions(fakeClient(), 'block-1', lines)).rejects.toThrow('duplicate');
+    });
+
+    it('cannot limit a booking that has no email (anonymised): it records the use without a key', async () => {
+      onceOnlyIds.mockResolvedValue(new Set(['d1']));
+      bookerEmailOf.mockResolvedValue(null);
+
+      await service.recordRedemptions(fakeClient(), 'block-1', lines);
+
+      expect(usedByKey).not.toHaveBeenCalled();
+      expect(recordRedemptions).toHaveBeenCalledWith(expect.anything(), 'block-1', [{ discountId: 'd1', amountCents: 6000, emailKey: null }]);
     });
   });
 
   describe('moveRedemptions', () => {
+    const lines: QuoteDiscountLine[] = [{ discountId: 'd1', label: 'Long stay', amountCents: 6000 }];
+
     it('moves discount use from the old booking to the one that replaces it, with what the new one got', async () => {
-      const lines: QuoteDiscountLine[] = [{ discountId: 'd1', label: 'Long stay', amountCents: 6000 }];
+      onceOnlyIds.mockResolvedValue(new Set<string>());
       const client = fakeClient();
 
       await service.moveRedemptions(client, 'old-booking', 'new-booking', lines);
 
       expect(replaceRedemptions).toHaveBeenCalledTimes(1);
-      expect(replaceRedemptions).toHaveBeenCalledWith(client, 'old-booking', 'new-booking', lines);
+      expect(replaceRedemptions).toHaveBeenCalledWith(client, 'old-booking', 'new-booking', [{ discountId: 'd1', amountCents: 6000, emailKey: null }]);
     });
 
     it('can move to a booking with no discounts at all (the old rows still go)', async () => {
       await service.moveRedemptions(fakeClient(), 'old-booking', 'new-booking', []);
 
       expect(replaceRedemptions).toHaveBeenCalledWith(expect.anything(), 'old-booking', 'new-booking', []);
+    });
+
+    it('does not count the guest\'s own use in the booking being replaced against the replacement, and carries the key over', async () => {
+      onceOnlyIds.mockResolvedValue(new Set(['d1']));
+      bookerEmailOf.mockResolvedValue('ada@example.com');
+      usedByKey.mockResolvedValue(new Set<string>());
+      const client = fakeClient();
+
+      await service.moveRedemptions(client, 'old-booking', 'new-booking', lines);
+
+      expect(bookerEmailOf).toHaveBeenCalledWith(client, 'new-booking');
+      expect(usedByKey).toHaveBeenCalledWith(client, ['d1'], 'key:ada@example.com', 'old-booking');
+      expect(replaceRedemptions).toHaveBeenCalledWith(client, 'old-booking', 'new-booking', [{ discountId: 'd1', amountCents: 6000, emailKey: 'key:ada@example.com' }]);
+    });
+
+    it('still refuses when ANOTHER booking of the same email used the code', async () => {
+      onceOnlyIds.mockResolvedValue(new Set(['d1']));
+      bookerEmailOf.mockResolvedValue('ada@example.com');
+      usedByKey.mockResolvedValue(new Set(['d1']));
+
+      await expect(service.moveRedemptions(fakeClient(), 'old-booking', 'new-booking', lines)).rejects.toMatchObject({ response: { code: 'PROMO_ALREADY_USED' } });
+      expect(replaceRedemptions).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('assertGuestMayUse (before holding or making a booking)', () => {
+    const lines: QuoteDiscountLine[] = [{ discountId: 'd1', label: 'Welcome code', amountCents: 2000 }];
+
+    it('asks nothing for a booking without discounts or without an email', async () => {
+      await service.assertGuestMayUse([], 'ada@example.com');
+      await service.assertGuestMayUse(lines, '  ');
+      await service.assertGuestMayUse(lines, null);
+      expect(usedByKey).not.toHaveBeenCalled();
+    });
+
+    it('lets the booking through when the email has not used the code', async () => {
+      usedByKey.mockResolvedValue(new Set<string>());
+      await expect(service.assertGuestMayUse(lines, 'Ada@Example.com')).resolves.toBeUndefined();
+      expect(usedByKey).toHaveBeenCalledWith(undefined, ['d1'], 'key:Ada@Example.com', null);
+    });
+
+    it('refuses with 409 PROMO_ALREADY_USED and a plain message when the email used it', async () => {
+      usedByKey.mockResolvedValue(new Set(['d1']));
+      await expect(service.assertGuestMayUse(lines, 'ada@example.com')).rejects.toMatchObject({
+        status: 409,
+        response: { code: 'PROMO_ALREADY_USED', message: 'This code has already been used with this email address' },
+      });
+    });
+  });
+
+  describe('once per guest on write', () => {
+    it('saves the switch with a promo code and defaults it to off', async () => {
+      await service.create(PROPERTY, dto({ conditions: [{ kind: 'promo_code', code: 'WELCOME15' }], oncePerGuest: true }));
+      expect(insert.mock.calls[0]?.[1]).toMatchObject({ oncePerGuest: true });
+      await service.create(PROPERTY, dto({ conditions: [{ kind: 'promo_code', code: 'WELCOME15' }] }));
+      expect(insert.mock.calls[1]?.[1]).toMatchObject({ oncePerGuest: false });
+    });
+
+    it('refuses the switch without a promo code, and a coupon that also carries other rules', async () => {
+      await expect(service.create(PROPERTY, dto({ oncePerGuest: true }))).rejects.toMatchObject({ response: { code: 'INVALID_DISCOUNT', message: 'Once per guest needs a promo code' } });
+      await expect(
+        service.create(PROPERTY, dto({ conditions: [{ kind: 'promo_code', code: 'WELCOME15' }, { kind: 'min_nights', nights: 3 }] })),
+      ).rejects.toMatchObject({ response: { code: 'INVALID_DISCOUNT' } });
+      expect(insert).not.toHaveBeenCalled();
     });
   });
 });

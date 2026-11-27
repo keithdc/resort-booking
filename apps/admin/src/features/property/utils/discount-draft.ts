@@ -22,6 +22,18 @@ export const COUPON_STACK_LABEL = 'Can be used together with an automatic discou
 export const COUPON_STACK_HELP =
   'A coupon is applied after the best automatic discount, on what is left. Turn off to make it replace the automatic discount when it saves more.';
 
+/** Said under the promo code: a coupon stands alone, so the other rules are switched off while it is ticked. */
+export const COUPON_OWN_NOTE = 'A coupon is its own discount: it works with the code alone.';
+
+/** "Each guest can use it once": checked by the email given at checkout, because guests have no accounts. */
+export const ONCE_PER_GUEST_LABEL = 'Each guest can use this code once (checked by email)';
+export const ONCE_PER_GUEST_HELP =
+  'Guests do not have accounts, so this is checked by the email address typed at checkout. Someone who types a different email address could use the code again.';
+
+/** Shown when an older discount mixes a promo code with other rules: it prices as saved, but cannot be saved like that. */
+export const MIXED_COUPON_NOTE =
+  'This discount mixes a promo code with other rules. It still works as saved, but a promo code now works with the code alone. Choose which to keep before saving.';
+
 /** Help for the usage limit. */
 export const LIMIT_LABEL = 'Limit how many bookings can use it';
 export const LIMIT_HELP = 'When the limit is reached the discount stops being offered.';
@@ -70,6 +82,8 @@ export interface DiscountDraft {
   promoCode: string;
   /** Only for a promo code (a coupon): stack on top of the best automatic discount. */
   combinable: boolean;
+  /** Only for a promo code (a coupon): each guest (by email) can use it once. New coupons start with it ticked. */
+  oncePerGuest: boolean;
   /** Not shown in the form: carried through so an old discount keeps its saved value. */
   priority: string;
   active: boolean;
@@ -92,6 +106,8 @@ export interface DraftProblems {
   weekdays?: string;
   promo?: string;
   limit?: string;
+  /** A promo code mixed with other rules (an older discount): fix before saving. */
+  mixed?: string;
 }
 
 export const EMPTY_DISCOUNT_DRAFT: DiscountDraft = {
@@ -117,6 +133,8 @@ export const EMPTY_DISCOUNT_DRAFT: DiscountDraft = {
   promoCode: '',
   // New discounts stack with others by default: a code on top of a long-stay discount is the common case.
   combinable: true,
+  // A new coupon starts limited to one use per guest; the owner can untick it. (Only a coupon ever saves it as on.)
+  oncePerGuest: true,
   priority: String(DEFAULT_PRIORITY),
   active: true,
   limitOn: false,
@@ -142,6 +160,8 @@ export function draftFromDiscount(discount: Discount): DiscountDraft {
     houseIds: discount.houseIds === null ? [] : [...discount.houseIds],
     alwaysOn: discount.alwaysOn,
     combinable: discount.combinable,
+    // A saved discount keeps what it was saved with. Ticking a promo code on an older discount starts from the default (on).
+    oncePerGuest: discount.oncePerGuest,
     priority: String(discount.priority),
     active: discount.active,
     limitOn: discount.maxRedemptions !== null,
@@ -198,6 +218,7 @@ export function draftToWrite(draft: DiscountDraft): DiscountWrite {
     houseIds: draft.scope === 'all' ? null : [...draft.houseIds],
     // Automatic discounts never stack, so the flag is meaningless for them: save it as off.
     combinable: isCouponDraft(draft) && draft.combinable,
+    oncePerGuest: isCouponDraft(draft) && draft.oncePerGuest,
     priority: carriedPriority(draft.priority),
     active: draft.active,
     maxRedemptions: draft.limitOn ? Number(draft.maxRedemptions.trim()) : null,
@@ -210,6 +231,51 @@ export function draftToWrite(draft: DiscountDraft): DiscountWrite {
  */
 export function isCouponDraft(draft: Pick<DiscountDraft, 'promoOn' | 'alwaysOn'>): boolean {
   return draft.promoOn && !draft.alwaysOn;
+}
+
+/**
+ * Is this a promo code mixed with other qualifying rules (minimum nights, booked ahead, stay dates, weekdays, always on)?
+ * Only an older saved discount can be: the form no longer lets a person build one. The run window, the use limit, the
+ * stays it covers, the website switch and stacking are not qualifying rules and never make a coupon "mixed".
+ */
+export function isMixedCouponDraft(
+  draft: Pick<DiscountDraft, 'promoOn' | 'alwaysOn' | 'minNightsOn' | 'leadOn' | 'stayOn' | 'weekdayOn'>,
+): boolean {
+  return draft.promoOn && (draft.alwaysOn || draft.minNightsOn || draft.leadOn || draft.stayOn || draft.weekdayOn);
+}
+
+/** The patch that keeps only the code: every other qualifying rule off. */
+export const KEEP_CODE_ONLY: Partial<DiscountDraft> = {
+  alwaysOn: false,
+  minNightsOn: false,
+  leadOn: false,
+  stayOn: false,
+  weekdayOn: false,
+};
+
+/** The patch that keeps the other rules: the promo code (and what only belongs to a coupon) off. */
+export const KEEP_OTHER_RULES: Partial<DiscountDraft> = { promoOn: false, promoCode: '', oncePerGuest: false };
+
+/**
+ * Applies a change from the form. A promo code and the other qualifying rules exclude each other:
+ * - ticking the promo code switches the other rules off (and a new coupon starts limited to once per guest);
+ * - ticking another rule (always on, minimum nights, booked ahead, stay dates, weekdays) switches the promo code off and
+ *   clears the code, because the code would otherwise be saved with a rule it cannot have.
+ * Nothing is saved until the person presses Save, so no confirmation is asked. Changing a field that is not a qualifying
+ * rule never touches the others, so an older discount that mixes them can still be opened and read.
+ */
+export function applyDraftPatch(current: DiscountDraft, patch: Partial<DiscountDraft>): DiscountDraft {
+  let next: DiscountDraft = { ...current, ...patch };
+  if (patch.promoOn === true && !current.promoOn) {
+    next = { ...next, ...KEEP_CODE_ONLY, oncePerGuest: true };
+  } else if (
+    current.promoOn &&
+    next.promoOn &&
+    (patch.alwaysOn === true || patch.minNightsOn === true || patch.leadOn === true || patch.stayOn === true || patch.weekdayOn === true)
+  ) {
+    next = { ...next, ...KEEP_OTHER_RULES };
+  }
+  return next;
 }
 
 /** A saved priority is passed through untouched; anything else becomes the default. */
@@ -293,6 +359,9 @@ export function validateDraft(draft: DiscountDraft): DraftProblems {
     if (window !== null) {
       problems.window = window;
     }
+  }
+  if (isMixedCouponDraft(draft)) {
+    problems.mixed = 'Keep the code only, or keep the other rules and drop the code';
   }
   if (!draft.alwaysOn) {
     addConditionProblems(draft, problems);

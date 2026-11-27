@@ -63,6 +63,7 @@ describe('StaffBookingCreator', () => {
   const getQuote = jest.fn();
   const insertStaffBooking = jest.fn();
   const recordRedemptions = jest.fn();
+  const assertGuestMayUse = jest.fn();
   const getPolicySnapshot = jest.fn();
   const getReservation = jest.fn();
   const checkQuote = jest.fn();
@@ -82,6 +83,7 @@ describe('StaffBookingCreator', () => {
     getQuote.mockResolvedValue(quote());
     insertStaffBooking.mockResolvedValue('new-1');
     recordRedemptions.mockResolvedValue(undefined);
+    assertGuestMayUse.mockResolvedValue(undefined);
     getPolicySnapshot.mockResolvedValue({ tiers: [], rebookable: false, rebookFeeType: 'none', rebookFeeValue: 0 });
     getReservation.mockResolvedValue({ id: 'new-1', paymentStatus: 'pending' } as StaffReservation);
     clientQuery.mockResolvedValue({ rows: [] });
@@ -93,7 +95,7 @@ describe('StaffBookingCreator', () => {
         { provide: InventoryService, useValue: { getQuote } },
         { provide: InventoryRepository, useValue: { insertStaffBooking } },
         { provide: DatabaseService, useValue: { withClient: (run: (client: unknown) => Promise<unknown>): Promise<unknown> => run({ query: clientQuery }) } },
-        { provide: DiscountsService, useValue: { recordRedemptions } },
+        { provide: DiscountsService, useValue: { recordRedemptions, assertGuestMayUse } },
         { provide: ReservationsService, useValue: { getPolicySnapshot, getReservation } },
         { provide: ExtrasRepository, useValue: { listPublishedForBooking } },
         { provide: ReservationExtrasRepository, useValue: { insertAll: insertAllExtras } },
@@ -334,6 +336,15 @@ describe('StaffBookingCreator', () => {
       await creator.create(STAFF, REQUEST);
 
       expect(recordRedemptions).toHaveBeenCalledWith(expect.anything(), 'new-1', quote().discounts);
+    });
+
+    it('refuses with the same plain message, and writes nothing, when a once-per-guest code was already used with this email', async () => {
+      assertGuestMayUse.mockRejectedValue(new ConflictException({ message: 'This code has already been used with this email address', code: 'PROMO_ALREADY_USED' }));
+
+      await expect(creator.create(STAFF, REQUEST)).rejects.toMatchObject({ response: { code: 'PROMO_ALREADY_USED' } });
+
+      expect(assertGuestMayUse).toHaveBeenCalledWith(quote().discounts, REQUEST.bookerEmail);
+      expect(clientQuery).not.toHaveBeenCalled();
     });
 
     it('says 409 and writes nothing when the dates are not free', async () => {

@@ -49,6 +49,7 @@ function discount(overrides: Partial<Discount> = {}): Discount {
     active: true,
     maxRedemptions: null,
     promoted: false,
+    oncePerGuest: false,
     redemptions: 0,
     ...overrides,
   };
@@ -66,6 +67,7 @@ function write(overrides: Partial<DiscountWrite> = {}): DiscountWrite {
     active: true,
     maxRedemptions: null,
     promoted: false,
+    oncePerGuest: false,
     ...overrides,
   };
 }
@@ -460,6 +462,44 @@ describe('validateDiscountWrite', () => {
 
   it('accepts a good discount', () => {
     expect(validateDiscountWrite(write())).toBeNull();
+  });
+
+  describe('a promo code is its own kind of discount', () => {
+    const coupon: DiscountCondition = { kind: 'promo_code', code: 'WELCOME15' };
+    const OWN = 'A promo code works on its own. Remove the other conditions (you can keep the dates it runs between).';
+
+    it('accepts the code alone, and the code with the dates it runs between', () => {
+      expect(validateDiscountWrite(write({ conditions: [coupon] }))).toBeNull();
+      expect(validateDiscountWrite(write({ conditions: [coupon, { kind: 'booking_window', startDate: '2027-01-01', endDate: '2027-01-31' }] }))).toBeNull();
+    });
+
+    it.each<DiscountCondition>([
+      { kind: 'min_nights', nights: 3 },
+      { kind: 'booking_lead_days', minDays: 30, maxDays: null },
+      { kind: 'stay_dates', startDate: '2027-07-01', endDate: '2027-07-31' },
+      { kind: 'weekday', days: [1, 2] },
+    ])('refuses the code together with %j', (other) => {
+      expect(validateDiscountWrite(write({ conditions: [coupon, other] }))).toBe(OWN);
+      expect(validateDiscountWrite(write({ conditions: [other, coupon] }))).toBe(OWN);
+    });
+
+    it('keeps the voucher\'s own limits: the use limit, the stays it covers, the website switch and stacking', () => {
+      expect(
+        validateDiscountWrite(write({ conditions: [coupon], maxRedemptions: 50, houseIds: ['h1'], promoted: true, combinable: true })),
+      ).toBeNull();
+    });
+
+    it('does not judge a discount without a code', () => {
+      expect(validateDiscountWrite(write({ conditions: [{ kind: 'min_nights', nights: 3 }, { kind: 'weekday', days: [5] }] }))).toBeNull();
+    });
+  });
+
+  describe('once per guest', () => {
+    it('is allowed with a promo code and refused without one', () => {
+      expect(validateDiscountWrite(write({ conditions: [{ kind: 'promo_code', code: 'WELCOME15' }], oncePerGuest: true }))).toBeNull();
+      expect(validateDiscountWrite(write({ oncePerGuest: true }))).toBe('Once per guest needs a promo code');
+      expect(validateDiscountWrite(write({ conditions: [], alwaysOn: true, oncePerGuest: true }))).toBe('Once per guest needs a promo code');
+    });
   });
 
   it('accepts an explicit always-on discount', () => {

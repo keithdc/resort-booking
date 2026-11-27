@@ -75,7 +75,7 @@ describe('eraseGuest', () => {
       if (statement.text.includes('WHERE lower(btrim(ib.booker_email)) = $1')) {
         return [rowOf(booking()), rowOf(booking({ id: '2b3c4d5e-0000-4000-8000-000000000002', upcoming: true }))];
       }
-      return statement.text.includes('WITH picked') ? [{ n: 1, refund_notes: 2, change_notes: 0, staff_notes: 3 }] : undefined;
+      return statement.text.includes('WITH picked') ? [{ n: 1, refund_notes: 2, change_notes: 0, staff_notes: 3, email_keys: 1 }] : undefined;
     });
 
     const receipt = await eraseGuest(db, { email: EMAIL, apply: true, forceFuture: false, operator: 'op', salt: SALT });
@@ -85,6 +85,7 @@ describe('eraseGuest', () => {
     expect(receipt.skipped).toHaveLength(1);
     expect(receipt.refundNotesScrubbed).toBe(2);
     expect(receipt.staffNotesScrubbed).toBe(3);
+    expect(receipt.emailKeysCleared).toBe(1);
     const write = db.transactions[1];
     expect(write?.options.maintenance).toBe(true);
     expect(write?.statements.map((statement) => statement.text.trim().split(/\s+/)[0])).toEqual(['WITH', 'INSERT', 'INSERT']);

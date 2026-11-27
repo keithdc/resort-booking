@@ -9,7 +9,7 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { draftToWrite, EMPTY_DISCOUNT_DRAFT, type DiscountDraft } from '../utils/discount-draft';
+import { applyDraftPatch, draftToWrite, EMPTY_DISCOUNT_DRAFT, type DiscountDraft } from '../utils/discount-draft';
 import { DiscountDialog } from './discount-dialog';
 
 function house(id: string, name: string): HouseSummary {
@@ -60,7 +60,7 @@ function Harness({ initial = {}, today = '2026-11-25', editing = false, error = 
       today={today}
       error={error}
       saving={false}
-      onChange={(patch): void => setDraft((current) => ({ ...current, ...patch }))}
+      onChange={(patch): void => setDraft((current) => applyDraftPatch(current, patch))}
       onSave={(): void => onSaved(draftToWrite(draft))}
       onClose={vi.fn<() => void>()}
     />
@@ -365,6 +365,7 @@ describe('DiscountDialog', () => {
         active: true,
         maxRedemptions: null,
         promoted: false,
+        oncePerGuest: false,
       });
     });
 
@@ -394,8 +395,6 @@ describe('DiscountDialog', () => {
       await tick(/Weekdays/);
       await userEvent.click(screen.getByRole('button', { name: 'Thu' }));
       await userEvent.click(screen.getByRole('button', { name: 'Sun' }));
-      await tick(/Promo code/);
-      type('Promo code', 'WELCOME15');
       await userEvent.click(saveButton());
 
       expect(onSaved.mock.calls[0]?.[0].conditions).toEqual([
@@ -404,8 +403,29 @@ describe('DiscountDialog', () => {
         { kind: 'stay_dates', startDate: '2027-07-01', endDate: '2027-07-31' },
         { kind: 'booking_window', startDate: '2027-05-01', endDate: '2027-05-31' },
         { kind: 'weekday', days: [0, 4] },
-        { kind: 'promo_code', code: 'WELCOME15' },
       ]);
+    });
+
+    it('produces a coupon: the code, the dates it runs between, a use limit and once per guest', async () => {
+      const onSaved = renderDialog({ initial: { label: 'Welcome code', value: '15' } });
+
+      await tick(/Promo code/);
+      type('Promo code', 'WELCOME15');
+      type('Starts', '2027-05-01');
+      type('Ends', '2027-05-31');
+      await userEvent.click(screen.getByRole('switch', { name: 'Limit how many bookings can use it' }));
+      type('Maximum bookings', '50');
+      await userEvent.click(saveButton());
+
+      expect(onSaved.mock.calls[0]?.[0]).toMatchObject({
+        conditions: [
+          { kind: 'booking_window', startDate: '2027-05-01', endDate: '2027-05-31' },
+          { kind: 'promo_code', code: 'WELCOME15' },
+        ],
+        maxRedemptions: 50,
+        oncePerGuest: true,
+        alwaysOn: false,
+      });
     });
 
     it('lets a weekday be switched back off', async () => {
@@ -483,6 +503,112 @@ describe('DiscountDialog', () => {
       await userEvent.click(saveButton());
 
       expect(onSaved.mock.calls[0]?.[0]).toMatchObject({ alwaysOn: true, conditions: [] });
+    });
+  });
+
+  describe('a promo code is its own discount', () => {
+    const onceBox = (): HTMLInputElement => screen.getByRole('checkbox', { name: 'Each guest can use this code once (checked by email)' });
+
+    it('switches the other qualifying rules off and disables them while the promo code is ticked, and says why', async () => {
+      renderDialog({ initial: { label: 'Mixed', value: '10', minNightsOn: true, minNights: '7', weekdayOn: true, weekdays: [1] } });
+
+      await tick(/Promo code/);
+
+      for (const name of [/Long booking/, /Booked ahead/, /Only for stays between/, /Weekdays/, /Always on/]) {
+        const box = screen.getByRole('checkbox', { name }) as HTMLInputElement;
+        expect(box.checked).toBe(false);
+        expect(box.disabled).toBe(true);
+      }
+      expect(screen.getByText('A coupon is its own discount: it works with the code alone.')).toBeTruthy();
+    });
+
+    it('keeps what belongs to the voucher itself available: the run dates, the use limit, the stays and stacking', async () => {
+      renderDialog({ initial: { label: 'Welcome', value: '10' } });
+      await tick(/Promo code/);
+
+      expect((screen.getByLabelText('Starts') as HTMLInputElement).disabled).toBe(false);
+      expect((screen.getByRole('switch', { name: 'Limit how many bookings can use it' }) as HTMLInputElement).disabled).toBe(false);
+      expect((screen.getByRole('combobox', { name: 'Applies to' }) as HTMLElement).getAttribute('aria-disabled')).not.toBe('true');
+      expect(screen.getByRole('switch', { name: 'Can be used together with an automatic discount' })).toBeTruthy();
+    });
+
+    it('lets the other rules be used again once the promo code is unticked', async () => {
+      renderDialog({ initial: { label: 'X', value: '10', promoOn: true, promoCode: 'ABC' } });
+      await tick(/Promo code/);
+
+      const nights = screen.getByRole('checkbox', { name: /Long booking/ }) as HTMLInputElement;
+      expect(nights.disabled).toBe(false);
+      await userEvent.click(nights);
+      expect(nights.checked).toBe(true);
+    });
+
+    it('starts a new coupon limited to once per guest, explains how it is checked, and lets the owner untick it', async () => {
+      const onSaved = renderDialog({ initial: { label: 'Welcome', value: '15' } });
+      await tick(/Promo code/);
+      type('Promo code', 'WELCOME15');
+
+      expect(onceBox().checked).toBe(true);
+      expect(screen.getByText(/Guests do not have accounts, so this is checked by the email address typed at checkout/)).toBeTruthy();
+      expect(screen.getByText(/Someone who types a different email address could use the code again/)).toBeTruthy();
+      await userEvent.click(onceBox());
+      await userEvent.click(saveButton());
+
+      expect(onSaved.mock.calls[0]?.[0]).toMatchObject({ oncePerGuest: false });
+    });
+
+    it('saves once per guest as on for a new coupon without touching it', async () => {
+      const onSaved = renderDialog({ initial: { label: 'Welcome', value: '15' } });
+      await tick(/Promo code/);
+      type('Promo code', 'WELCOME15');
+      await userEvent.click(saveButton());
+
+      expect(onSaved.mock.calls[0]?.[0]).toMatchObject({ oncePerGuest: true });
+    });
+
+    it('never saves once per guest for a discount without a code', async () => {
+      const onSaved = renderDialog({ initial: { label: 'Long stay', value: '10', minNightsOn: true, minNights: '7' } });
+      await userEvent.click(saveButton());
+
+      expect(onSaved.mock.calls[0]?.[0]).toMatchObject({ oncePerGuest: false });
+    });
+
+    it('keeps an older coupon as it was saved: once per guest stays off until the owner ticks it', async () => {
+      const onSaved = renderDialog({ editing: true, initial: { label: 'Welcome', value: '15', promoOn: true, promoCode: 'WELCOME15', oncePerGuest: false } });
+
+      expect(onceBox().checked).toBe(false);
+      await userEvent.click(saveButton());
+
+      expect(onSaved.mock.calls[0]?.[0]).toMatchObject({ oncePerGuest: false });
+    });
+
+    describe('an older discount that mixes a promo code with other rules', () => {
+      const mixedDraft = { label: 'Mixed', value: '10', promoOn: true, promoCode: 'ABC', minNightsOn: true, minNights: '7', oncePerGuest: false };
+
+      it('shows a calm notice and cannot be saved until one side is chosen', () => {
+        renderDialog({ editing: true, initial: mixedDraft });
+
+        expect(screen.getByText(/This discount mixes a promo code with other rules/)).toBeTruthy();
+        expect((saveButton() as HTMLButtonElement).disabled).toBe(true);
+      });
+
+      it('"Keep the code only" drops the other rules and can then be saved', async () => {
+        const onSaved = renderDialog({ editing: true, initial: mixedDraft });
+
+        await userEvent.click(screen.getByRole('button', { name: 'Keep the code only' }));
+
+        expect(screen.queryByText(/This discount mixes a promo code with other rules/)).toBeNull();
+        await userEvent.click(saveButton());
+        expect(onSaved.mock.calls[0]?.[0].conditions).toEqual([{ kind: 'promo_code', code: 'ABC' }]);
+      });
+
+      it('"Keep the other rules" drops the code and can then be saved', async () => {
+        const onSaved = renderDialog({ editing: true, initial: mixedDraft });
+
+        await userEvent.click(screen.getByRole('button', { name: 'Keep the other rules' }));
+
+        await userEvent.click(saveButton());
+        expect(onSaved.mock.calls[0]?.[0]).toMatchObject({ conditions: [{ kind: 'min_nights', nights: 7 }], oncePerGuest: false });
+      });
     });
   });
 });

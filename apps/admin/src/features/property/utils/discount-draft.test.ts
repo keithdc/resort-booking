@@ -15,7 +15,9 @@ import {
   EMPTY_DISCOUNT_DRAFT,
   formatDateRange,
   hasRunWindow,
+  applyDraftPatch,
   isCouponDraft,
+  isMixedCouponDraft,
   isUsedUp,
   LIMIT_LABEL,
   RUN_WINDOW_HELP,
@@ -50,6 +52,7 @@ function discount(overrides: Partial<Discount> = {}): Discount {
     active: true,
     maxRedemptions: null,
     promoted: false,
+    oncePerGuest: false,
     redemptions: 0,
     ...overrides,
   };
@@ -113,6 +116,7 @@ describe('draftToWrite', () => {
       active: true,
       maxRedemptions: null,
       promoted: false,
+      oncePerGuest: false,
     });
   });
 
@@ -245,6 +249,7 @@ describe('draftFromDiscount', () => {
       active: original.active,
       maxRedemptions: original.maxRedemptions,
       promoted: original.promoted,
+      oncePerGuest: original.oncePerGuest,
     });
   });
 
@@ -585,5 +590,68 @@ describe('describeRunWindow', () => {
       severity: 'warning',
       text: 'This window has already ended: guests no longer get this discount.',
     });
+  });
+});
+
+describe('a promo code is its own discount (applyDraftPatch)', () => {
+  it('ticking the promo code switches the other qualifying rules off and starts the coupon once per guest', () => {
+    const start = draft({ minNightsOn: true, leadOn: true, stayOn: true, weekdayOn: true, alwaysOn: false, oncePerGuest: false });
+    const next = applyDraftPatch(start, { promoOn: true });
+    expect(next).toMatchObject({ promoOn: true, minNightsOn: false, leadOn: false, stayOn: false, weekdayOn: false, alwaysOn: false, oncePerGuest: true });
+  });
+
+  it('keeps the voucher\'s own settings when the promo code is ticked: run window, limit, stays, website, stacking', () => {
+    const start = draft({ windowStart: '2027-05-01', windowEnd: '2027-05-31', limitOn: true, maxRedemptions: '5', scope: 'chosen', houseIds: ['h1'], promoted: true, combinable: false });
+    const next = applyDraftPatch(start, { promoOn: true });
+    expect(next).toMatchObject({ windowStart: '2027-05-01', windowEnd: '2027-05-31', limitOn: true, maxRedemptions: '5', scope: 'chosen', houseIds: ['h1'], promoted: true, combinable: false });
+  });
+
+  it.each([{ alwaysOn: true }, { minNightsOn: true }, { leadOn: true }, { stayOn: true }, { weekdayOn: true }])(
+    'ticking another rule (%j) switches the promo code off and clears the code',
+    (patch) => {
+      const start = draft({ minNightsOn: false, promoOn: true, promoCode: 'WELCOME15', oncePerGuest: true });
+      const next = applyDraftPatch(start, patch);
+      expect(next).toMatchObject({ ...patch, promoOn: false, promoCode: '', oncePerGuest: false });
+    },
+  );
+
+  it('does not touch the rules when something else changes (an older mixed discount can still be opened)', () => {
+    const mixed = draft({ promoOn: true, promoCode: 'ABC', minNightsOn: true, oncePerGuest: false });
+    const next = applyDraftPatch(mixed, { label: 'Renamed', promoCode: 'ABCD' });
+    expect(next).toMatchObject({ label: 'Renamed', promoCode: 'ABCD', promoOn: true, minNightsOn: true, oncePerGuest: false });
+  });
+
+  it('does not reset once per guest when an existing coupon is edited (ticking the code again is not a new coupon)', () => {
+    const coupon = draft({ minNightsOn: false, promoOn: true, promoCode: 'ABC', oncePerGuest: false });
+    expect(applyDraftPatch(coupon, { promoOn: true }).oncePerGuest).toBe(false);
+  });
+});
+
+describe('once per guest in the draft', () => {
+  it('starts on in a new draft, but is only ever saved as on for a coupon', () => {
+    expect(EMPTY_DISCOUNT_DRAFT.oncePerGuest).toBe(true);
+    expect(draftToWrite(draft({ oncePerGuest: true })).oncePerGuest).toBe(false);
+    expect(draftToWrite(draft({ minNightsOn: false, promoOn: true, promoCode: 'ABC', oncePerGuest: true })).oncePerGuest).toBe(true);
+    expect(draftToWrite(draft({ minNightsOn: false, promoOn: true, promoCode: 'ABC', oncePerGuest: false })).oncePerGuest).toBe(false);
+  });
+
+  it('reads an older coupon as it was saved (off) and a limited one as on', () => {
+    const base = { conditions: [{ kind: 'promo_code', code: 'ABC' } as const] };
+    expect(draftFromDiscount(discount({ ...base, oncePerGuest: false })).oncePerGuest).toBe(false);
+    expect(draftFromDiscount(discount({ ...base, oncePerGuest: true })).oncePerGuest).toBe(true);
+  });
+});
+
+describe('a mixed coupon (an older discount)', () => {
+  it('is a promo code with another qualifying rule, but not with the dates it runs between', () => {
+    expect(isMixedCouponDraft(draft({ promoOn: true }))).toBe(true);
+    expect(isMixedCouponDraft(draft({ minNightsOn: false, promoOn: true }))).toBe(false);
+    expect(isMixedCouponDraft(draft({ minNightsOn: false, promoOn: true, windowStart: '2027-05-01', windowEnd: '2027-05-31' }))).toBe(false);
+    expect(isMixedCouponDraft(draft({ promoOn: false }))).toBe(false);
+  });
+
+  it('cannot be saved until it is fixed', () => {
+    expect(validateDraft(draft({ promoOn: true, promoCode: 'ABC' })).mixed).toBeDefined();
+    expect(validateDraft(draft({ minNightsOn: false, promoOn: true, promoCode: 'ABC' })).mixed).toBeUndefined();
   });
 });

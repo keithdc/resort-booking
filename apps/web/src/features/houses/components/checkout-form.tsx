@@ -112,6 +112,9 @@ export function CheckoutForm({
   const [hold, setHold] = useState<Hold | null>(null);
   const [confirmation, setConfirmation] = useState<ReservationConfirmation | null>(null);
   const [holdError, setHoldError] = useState<string | null>(null);
+  // Set when the API says this email already used a once-per-guest code (the quote cannot know the email, so the guest
+  // learns it when pressing Pay). The code is taken off and the price refreshes: Pay again continues without it.
+  const [promoUsed, setPromoUsed] = useState<string | null>(null);
   // Set when the API says the dates went to someone else between the quote and the hold.
   const [datesTaken, setDatesTaken] = useState(false);
   const [pending, setPending] = useState(false);
@@ -182,12 +185,12 @@ export function CheckoutForm({
   }, [loadQuote]);
 
   // A hold error, or "dates just taken", can appear far from the Pay button on a phone: show it.
-  const showsProblem = holdError !== null || datesTaken || quoteError !== null;
+  const showsProblem = holdError !== null || datesTaken || quoteError !== null || promoUsed !== null;
   useEffect((): void => {
     if (showsProblem) {
       revealElement(errorRef.current);
     }
-  }, [showsProblem, holdError, datesTaken, quoteError]);
+  }, [showsProblem, holdError, datesTaken, quoteError, promoUsed]);
 
   // The page header shows the nightly rate for these dates, so it needs the same quote.
   usePublishStayQuote(quote);
@@ -221,6 +224,7 @@ export function CheckoutForm({
     setPending(true);
     setHoldError(null);
     setDatesTaken(false);
+    setPromoUsed(null);
     try {
       const next = await createHold({
         houseId: house.id,
@@ -243,6 +247,11 @@ export function CheckoutForm({
         setDatesTaken(true);
         availability.refresh();
         void loadQuote();
+      } else if (error instanceof ApiRequestError && error.status === 409 && error.code === 'PROMO_ALREADY_USED') {
+        // Say it plainly next to the promo field, take the code off, and let the price refresh. Nothing was held.
+        setPromoUsed(error.message);
+        setAppliedPromo('');
+        setPromoInput('');
       } else {
         setHoldError(error instanceof ApiRequestError ? error.message : 'Could not hold these dates');
       }
@@ -509,6 +518,11 @@ export function CheckoutForm({
           <Stack ref={errorRef} spacing={2} sx={{ scrollMarginTop: 96 }}>
             {quoteError !== null ? <Alert severity="error">{quoteError}</Alert> : null}
             {holdError !== null ? <Alert severity="error">{holdError}</Alert> : null}
+            {promoUsed !== null ? (
+              <Alert severity="warning" role="alert">
+                {promoUsed}. The price now shows without the code: press Pay to continue.
+              </Alert>
+            ) : null}
             {datesTaken ? (
               <Alert severity="warning" role="alert">
                 Sorry, those dates were just taken. Pick other dates.
@@ -521,8 +535,12 @@ export function CheckoutForm({
           onChange={setPromoInput}
           appliedCode={appliedPromo}
           result={quote?.promoCode ?? null}
-          onApply={(): void => setAppliedPromo(promoInput.trim())}
+          onApply={(): void => {
+            setPromoUsed(null);
+            setAppliedPromo(promoInput.trim());
+          }}
           onRemove={(): void => {
+            setPromoUsed(null);
             setPromoInput('');
             setAppliedPromo('');
           }}

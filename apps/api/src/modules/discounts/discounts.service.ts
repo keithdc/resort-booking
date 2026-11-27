@@ -4,13 +4,14 @@
  * @dependencies DiscountsRepository, PropertyRepository
  */
 
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Discount, DiscountWrite, QuoteDiscountLine } from '@resort-booking/shared-types';
 import type { PoolClient } from 'pg';
 import { isoDateInTimeZone } from '../../shared/dates/iso-date';
 import { PropertyRepository } from '../property/property.repository';
 import type { DiscountWriteDto } from './dto/discount-write.dto';
-import { DiscountsRepository } from './discounts.repository';
+import { DiscountsRepository, type RedemptionRow } from './discounts.repository';
+import { GuestEmailKeyService } from './guest-email-key';
 import {
   applyDiscounts,
   DEFAULT_PRIORITY,
@@ -31,11 +32,29 @@ export interface DiscountEvaluationInput {
   now?: Date;
 }
 
+/** What a guest is told when a once-per-guest code was already used with their email address. */
+export const PROMO_ALREADY_USED_MESSAGE = 'This code has already been used with this email address';
+const PROMO_ALREADY_USED_INDEX = 'discount_redemptions_one_use_per_email_key';
+
+function promoAlreadyUsed(): ConflictException {
+  return new ConflictException({ message: PROMO_ALREADY_USED_MESSAGE, code: 'PROMO_ALREADY_USED' });
+}
+
+/** The unique index that keeps one use per (discount, email key): two checkouts racing with one address cannot both win. */
+function isEmailKeyViolation(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) {
+    return false;
+  }
+  const candidate = error as { code?: string; constraint?: string };
+  return candidate.code === '23505' && candidate.constraint === PROMO_ALREADY_USED_INDEX;
+}
+
 @Injectable()
 export class DiscountsService {
   public constructor(
     private readonly discounts: DiscountsRepository,
     private readonly houses: PropertyRepository,
+    private readonly emailKeys: GuestEmailKeyService,
   ) {}
 
   // --- Quoting (guest) ---
@@ -67,26 +86,96 @@ export class DiscountsService {
   }
 
   /**
-   * Notes which discounts a confirmed stay used (counts toward use limits).
+   * Before a booking is held or made: refuses with `PROMO_ALREADY_USED` (409) when one of the discounts it got is
+   * limited to one use per guest and this email address already used it. The quote cannot do this check (it does not
+   * know the email), so it happens when the guest presses Pay, and when staff make a booking. `exceptBookingId` is a
+   * booking that is being replaced, whose own use does not count against its replacement.
    */
-  public recordRedemptions(
+  public async assertGuestMayUse(
+    lines: readonly QuoteDiscountLine[],
+    email: string | null | undefined,
+    exceptBookingId: string | null = null,
+  ): Promise<void> {
+    if (lines.length === 0 || email === null || email === undefined || email.trim() === '') {
+      return;
+    }
+    const used = await this.discounts.usedByKey(
+      undefined,
+      lines.map((line): string => line.discountId),
+      this.emailKeys.keyFor(email),
+      exceptBookingId,
+    );
+    if (used.size > 0) {
+      throw promoAlreadyUsed();
+    }
+  }
+
+  /**
+   * Notes which discounts a confirmed stay used (counts toward use limits). A discount limited to one use per guest also
+   * records the guest's email key and is re-checked here, inside the caller's transaction: a second use by the same
+   * email, even one racing the first, is refused with `PROMO_ALREADY_USED` and the transaction rolls back.
+   */
+  public async recordRedemptions(
     client: PoolClient,
     inventoryBlockId: string,
     lines: readonly QuoteDiscountLine[],
   ): Promise<void> {
-    return this.discounts.recordRedemptions(client, inventoryBlockId, lines);
+    const rows = await this.redemptionRows(client, inventoryBlockId, lines, null);
+    try {
+      await this.discounts.recordRedemptions(client, inventoryBlockId, rows);
+    } catch (error: unknown) {
+      throw isEmailKeyViolation(error) ? promoAlreadyUsed() : error;
+    }
   }
 
   /**
-   * When a booking's dates change, discount use moves to the new booking (with the discounts it got).
+   * When a booking's dates change, discount use moves to the new booking (with the discounts it got). The guest's own
+   * earlier use is the booking being replaced, so it never blocks the replacement and is never counted twice.
    */
-  public moveRedemptions(
+  public async moveRedemptions(
     client: PoolClient,
     fromBookingId: string,
     toBookingId: string,
     lines: readonly QuoteDiscountLine[],
   ): Promise<void> {
-    return this.discounts.replaceRedemptions(client, fromBookingId, toBookingId, lines);
+    const rows = await this.redemptionRows(client, toBookingId, lines, fromBookingId);
+    try {
+      await this.discounts.replaceRedemptions(client, fromBookingId, toBookingId, rows);
+    } catch (error: unknown) {
+      throw isEmailKeyViolation(error) ? promoAlreadyUsed() : error;
+    }
+  }
+
+  /**
+   * The rows to record: each discount with its amount, and the booking's email key for the ones limited to one use per
+   * guest. Throws `PROMO_ALREADY_USED` when that key already used one of them in another booking.
+   */
+  private async redemptionRows(
+    client: PoolClient,
+    bookingId: string,
+    lines: readonly QuoteDiscountLine[],
+    exceptBookingId: string | null,
+  ): Promise<RedemptionRow[]> {
+    if (lines.length === 0) {
+      return [];
+    }
+    const limited = await this.discounts.onceOnlyIds(client, lines.map((line): string => line.discountId));
+    let key: string | null = null;
+    if (limited.size > 0) {
+      const email = await this.discounts.bookerEmailOf(client, bookingId);
+      key = email === null ? null : this.emailKeys.keyFor(email);
+      if (key !== null) {
+        const used = await this.discounts.usedByKey(client, [...limited], key, exceptBookingId);
+        if (used.size > 0) {
+          throw promoAlreadyUsed();
+        }
+      }
+    }
+    return lines.map((line): RedemptionRow => ({
+      discountId: line.discountId,
+      amountCents: line.amountCents,
+      emailKey: limited.has(line.discountId) ? key : null,
+    }));
   }
 
   // --- Staff ---
@@ -175,6 +264,7 @@ export class DiscountsService {
       active: dto.active,
       maxRedemptions: dto.maxRedemptions,
       promoted: dto.promoted ?? false,
+      oncePerGuest: dto.oncePerGuest ?? false,
     };
     const problem = validateDiscountWrite(write);
     if (problem !== null) {

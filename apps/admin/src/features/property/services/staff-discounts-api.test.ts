@@ -25,10 +25,11 @@ const WRITE: DiscountWrite = {
   active: true,
   maxRedemptions: null,
   promoted: true,
+  oncePerGuest: false,
 };
 
 /** What an API that was not restarted since "show on the website" was added sends: no `promoted`. */
-function oldApiDiscount(): Omit<Discount, 'promoted'> {
+function oldApiDiscount(): Omit<Discount, 'promoted' | 'oncePerGuest'> {
   return {
     id: 'd1',
     propertyId: 'p1',
@@ -58,6 +59,13 @@ describe('staff-discounts-api', () => {
 
     expect(client.getStaffApiOk).toHaveBeenCalledWith('/staff/properties/p1/discounts');
     expect(found.map((discount) => discount.promoted)).toEqual([false, true]);
+    expect(found.map((discount) => discount.oncePerGuest)).toEqual([false, false]);
+  });
+
+  it('reads the once-per-guest switch when the server sends it', async () => {
+    client.getStaffApiOk.mockResolvedValue([{ ...oldApiDiscount(), oncePerGuest: true }]);
+
+    expect((await fetchDiscounts('p1'))[0]?.oncePerGuest).toBe(true);
   });
 
   it('sends the choice when creating and updating, and defaults the answer', async () => {

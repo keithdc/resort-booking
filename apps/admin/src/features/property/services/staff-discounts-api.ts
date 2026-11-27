@@ -8,10 +8,11 @@ import type { Discount, DiscountWrite } from '@resort-booking/shared-types';
 import { getStaffApiOk, mutateStaffApiOk } from '@/shared/services/api-client';
 
 /**
- * A server that has not been restarted since "show on the website" was added sends no `promoted`: read it as off.
+ * A server that has not been restarted since "show on the website" (or "once per guest") was added sends no `promoted`
+ * (or `oncePerGuest`): read each as off.
  */
 function withDiscountDefaults(discount: Discount): Discount {
-  return { ...discount, promoted: discount.promoted === true };
+  return { ...discount, promoted: discount.promoted === true, oncePerGuest: discount.oncePerGuest === true };
 }
 
 /**

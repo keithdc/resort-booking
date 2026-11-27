@@ -259,6 +259,10 @@ export class InventoryService {
       });
     }
 
+    // A coupon limited to one use per guest: the quote does not know the email, so this is where it is checked, before
+    // any dates are held. It is checked again when the booking is confirmed (a second checkout racing this one).
+    await this.discounts.assertGuestMayUse(quote.discounts, dto.bookerEmail);
+
     const house = await this.houses.getHouseById(dto.houseId);
     if (house === null) {
       throw new NotFoundException({ message: 'Stay not found', code: 'HOUSE_NOT_FOUND' });

@@ -884,6 +884,11 @@ export interface DiscountWrite {
   maxRedemptions: number | null;
   /** Advertise on the guest site before dates are picked. For a promo-code discount this makes the code public. */
   promoted: boolean;
+  /**
+   * Only for a promo-code discount (a coupon): each guest can use it once, checked by the email given at checkout
+   * (guests have no accounts, so someone who types another email can use it again).
+   */
+  oncePerGuest: boolean;
 }
 
 export interface Discount extends DiscountWrite {

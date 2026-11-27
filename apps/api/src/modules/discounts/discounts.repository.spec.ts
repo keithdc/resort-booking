@@ -23,6 +23,7 @@ function row(overrides: Record<string, unknown> = {}): Record<string, unknown> {
     active: true,
     max_redemptions: null,
     promoted: true,
+    once_per_guest: false,
     redemptions: 0,
     ...overrides,
   };
@@ -47,11 +48,11 @@ describe('DiscountsRepository', () => {
 
   describe('replaceRedemptions (a booking\'s dates changed)', () => {
     it('removes the old booking\'s discount use, then records the new booking\'s, in the caller\'s transaction', async () => {
-      await repository.replaceRedemptions(client, 'old', 'new', [{ discountId: 'd1', label: 'Long stay', amountCents: 6000 }]);
+      await repository.replaceRedemptions(client, 'old', 'new', [{ discountId: 'd1', amountCents: 6000, emailKey: null }]);
 
       expect(clientQuery.mock.calls.map((call) => call[0].includes('DELETE FROM discount_redemptions'))).toEqual([true, false]);
       expect(clientQuery.mock.calls[0]?.[1]).toEqual(['old']);
-      expect(clientQuery.mock.calls[1]?.[1]).toEqual(['new', ['d1'], [6000]]);
+      expect(clientQuery.mock.calls[1]?.[1]).toEqual(['new', ['d1'], [6000], [null]]);
     });
 
     it('still clears the old rows when the new booking got no discount', async () => {
@@ -63,12 +64,88 @@ describe('DiscountsRepository', () => {
 
     it('records several discounts in one statement, not one per discount', async () => {
       await repository.replaceRedemptions(client, 'old', 'new', [
-        { discountId: 'd1', label: 'A', amountCents: 100 },
-        { discountId: 'd2', label: 'B', amountCents: 200 },
+        { discountId: 'd1', amountCents: 100, emailKey: null },
+        { discountId: 'd2', amountCents: 200, emailKey: null },
       ]);
 
       expect(clientQuery).toHaveBeenCalledTimes(2);
-      expect(clientQuery.mock.calls[1]?.[1]).toEqual(['new', ['d1', 'd2'], [100, 200]]);
+      expect(clientQuery.mock.calls[1]?.[1]).toEqual(['new', ['d1', 'd2'], [100, 200], [null, null]]);
+    });
+  });
+
+  describe('once per guest', () => {
+    it('reads the switch with each discount', async () => {
+      dbQuery.mockResolvedValueOnce({ rows: [row({ once_per_guest: true })] });
+      const found = await repository.getById('d1');
+      expect(found?.oncePerGuest).toBe(true);
+      expect(dbQuery.mock.calls[0]?.[0]).toContain('d.once_per_guest');
+    });
+
+    it('saves the switch on insert and on update', async () => {
+      const write = {
+        label: 'Welcome',
+        effect: { kind: 'percent' as const, percent: 15 },
+        conditions: [{ kind: 'promo_code' as const, code: 'WELCOME15' }],
+        alwaysOn: false,
+        houseIds: null,
+        combinable: true,
+        priority: 100,
+        active: true,
+        maxRedemptions: null,
+        promoted: false,
+        oncePerGuest: true,
+      };
+      dbQuery.mockResolvedValueOnce({ rows: [{ id: 'd1' }] }).mockResolvedValueOnce({ rows: [row()] });
+      await repository.insert({ organizationId: 'o1', propertyId: 'p1' }, write);
+      expect(dbQuery.mock.calls[0]?.[0]).toContain('once_per_guest');
+      expect(dbQuery.mock.calls[0]?.[1]?.at(-1)).toBe(true);
+
+      dbQuery.mockReset();
+      dbQuery.mockResolvedValueOnce({ rows: [], rowCount: 1 }).mockResolvedValueOnce({ rows: [row()] });
+      await repository.update('d1', { ...write, oncePerGuest: false });
+      expect(dbQuery.mock.calls[0]?.[0]).toContain('once_per_guest = $13');
+      expect(dbQuery.mock.calls[0]?.[1]?.at(-1)).toBe(false);
+    });
+
+    it('records the email key next to the discount, in one statement', async () => {
+      const key = 'a'.repeat(64);
+      await repository.recordRedemptions(client, 'b1', [
+        { discountId: 'd1', amountCents: 100, emailKey: key },
+        { discountId: 'd2', amountCents: 200, emailKey: null },
+      ]);
+      expect(clientQuery).toHaveBeenCalledTimes(1);
+      expect(clientQuery.mock.calls[0]?.[0]).toContain('email_key');
+      expect(clientQuery.mock.calls[0]?.[1]).toEqual(['b1', ['d1', 'd2'], [100, 200], [key, null]]);
+    });
+
+    it('asks which discounts are limited, and which a key has used outside the booking being replaced', async () => {
+      clientQuery.mockResolvedValueOnce({ rows: [{ id: 'd1' }] });
+      expect([...(await repository.onceOnlyIds(client, ['d1', 'd2']))]).toEqual(['d1']);
+      expect(await repository.onceOnlyIds(client, [])).toEqual(new Set());
+
+      clientQuery.mockResolvedValueOnce({ rows: [{ discount_id: 'd1' }] });
+      expect([...(await repository.usedByKey(client, ['d1'], 'key', 'old'))]).toEqual(['d1']);
+      expect(clientQuery.mock.calls[1]?.[0]).toContain('r.inventory_block_id <> $3::uuid');
+      expect(clientQuery.mock.calls[1]?.[1]).toEqual([['d1'], 'key', 'old']);
+      expect(await repository.usedByKey(client, [], 'key', null)).toEqual(new Set());
+    });
+
+    it('uses the pool, not a transaction client, for the check made before a booking is held', async () => {
+      dbQuery.mockResolvedValueOnce({ rows: [] });
+      await repository.usedByKey(undefined, ['d1'], 'key', null);
+      expect(dbQuery).toHaveBeenCalledTimes(1);
+      expect(clientQuery).not.toHaveBeenCalled();
+    });
+
+    it('reads a booking\'s email, null when it has none or was anonymised', async () => {
+      clientQuery.mockResolvedValueOnce({ rows: [{ booker_email: 'ada@example.com' }] });
+      expect(await repository.bookerEmailOf(client, 'b1')).toBe('ada@example.com');
+      clientQuery.mockResolvedValueOnce({ rows: [{ booker_email: null }] });
+      expect(await repository.bookerEmailOf(client, 'b1')).toBeNull();
+      clientQuery.mockResolvedValueOnce({ rows: [{ booker_email: '  ' }] });
+      expect(await repository.bookerEmailOf(client, 'b1')).toBeNull();
+      clientQuery.mockResolvedValueOnce({ rows: [] });
+      expect(await repository.bookerEmailOf(client, 'missing')).toBeNull();
     });
   });
 
@@ -108,19 +185,21 @@ describe('DiscountsRepository', () => {
         active: true,
         maxRedemptions: null,
         promoted: true,
+        oncePerGuest: false,
       };
 
       await repository.insert({ organizationId: 'o1', propertyId: 'p1' }, write);
       const insertParams = dbQuery.mock.calls[0]?.[1] ?? [];
       expect(dbQuery.mock.calls[0]?.[0]).toContain('promoted');
-      expect(insertParams[insertParams.length - 1]).toBe(true);
+      expect(insertParams[insertParams.length - 2]).toBe(true);
+      expect(insertParams[insertParams.length - 1]).toBe(false);
 
       dbQuery.mockReset();
       dbQuery.mockResolvedValueOnce({ rows: [], rowCount: 1 }).mockResolvedValueOnce({ rows: [row({ promoted: false })] });
       await repository.update('d1', { ...write, promoted: false });
       const updateParams = dbQuery.mock.calls[0]?.[1] ?? [];
       expect(dbQuery.mock.calls[0]?.[0]).toContain('promoted = $12');
-      expect(updateParams[updateParams.length - 1]).toBe(false);
+      expect(updateParams[updateParams.length - 2]).toBe(false);
     });
   });
 });

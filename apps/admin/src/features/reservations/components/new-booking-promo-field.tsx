@@ -135,6 +135,7 @@ export function NewBookingPromoField({
                     {summarizeEffect(option.discount.effect, currencyCode)} off · {status.label} ·{' '}
                     {summarizeUses(option.discount.redemptions, option.discount.maxRedemptions)} ·{' '}
                     {option.discount.promoted ? 'Advertised to guests' : 'Not advertised'}
+                    {option.discount.oncePerGuest ? ' · Once per guest' : ''}
                   </Typography>
                 </Stack>
               </Box>

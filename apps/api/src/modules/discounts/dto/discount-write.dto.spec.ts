@@ -42,6 +42,20 @@ describe('DiscountWriteDto promoted', () => {
   });
 });
 
+describe('DiscountWriteDto oncePerGuest', () => {
+  it('is optional so an older admin keeps working', async () => {
+    expect(await problems({})).toBe(0);
+  });
+
+  it.each([true, false])('accepts %s', async (oncePerGuest) => {
+    expect(await problems({ oncePerGuest })).toBe(0);
+  });
+
+  it.each(['yes', 'true', 1, 0, []])('refuses %j instead of converting it into a yes', async (oncePerGuest) => {
+    expect(await problems({ oncePerGuest })).toBeGreaterThan(0);
+  });
+});
+
 describe('DiscountWriteDto priority', () => {
   it('is optional: the admin no longer sends it', async () => {
     const withoutPriority = body();

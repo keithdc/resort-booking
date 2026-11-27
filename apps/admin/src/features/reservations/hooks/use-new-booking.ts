@@ -378,6 +378,14 @@ export function useNewBooking({ open, properties, defaultPropertyId, defaultDate
       });
       onCreated(booking);
     } catch (failure: unknown) {
+      if (failure instanceof ApiRequestError && failure.code === 'PROMO_ALREADY_USED') {
+        // A once-per-guest code this email already used: say so, and take the code off so the price is right and the
+        // booking can be made without it (the quote could not know the email, so this is the first time anyone could say).
+        setAppliedPromo('');
+        setPromoInputState('');
+        setError(`${failure.message}. The price now shows without it.`);
+        return;
+      }
       setError(failure instanceof ApiRequestError ? failure.message : 'Could not save the booking. Please try again.');
       if (failure instanceof ApiRequestError && failure.code === 'DATES_UNAVAILABLE') {
         // Someone took the dates since the price was shown: ask again so the form says so.

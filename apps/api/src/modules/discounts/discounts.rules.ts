@@ -248,6 +248,10 @@ export function validateDiscountWrite(write: DiscountWrite): string | null {
   if (write.conditions.filter((condition): boolean => condition.kind === 'promo_code').length > 1) {
     return 'A discount can have only one promo code';
   }
+  const couponProblem = validateCouponShape(write);
+  if (couponProblem !== null) {
+    return couponProblem;
+  }
   for (const condition of write.conditions) {
     const problem = validateCondition(condition);
     if (problem !== null) {
@@ -262,6 +266,24 @@ export function validateDiscountWrite(write: DiscountWrite): string | null {
   }
   if (write.maxRedemptions !== null && (!Number.isInteger(write.maxRedemptions) || write.maxRedemptions < 1)) {
     return 'The use limit must be at least 1, or left empty for unlimited';
+  }
+  return null;
+}
+
+/**
+ * A promo code (coupon) is its own kind of discount: it works with the code alone. The only other condition it may
+ * carry is when the code can be used (the "How long does it run?" dates, `booking_window`), because that is how long the
+ * voucher lives, not who or what qualifies. The use limit, the stays it covers, the website switch and stacking are not
+ * conditions and stay available. "Once per guest" needs a coupon. Discounts saved before this rule keep pricing as stored;
+ * this only judges what is being written now.
+ */
+export function validateCouponShape(write: Pick<DiscountWrite, 'conditions' | 'oncePerGuest'>): string | null {
+  const isCoupon = write.conditions.some((condition): boolean => condition.kind === 'promo_code');
+  if (!isCoupon) {
+    return write.oncePerGuest ? 'Once per guest needs a promo code' : null;
+  }
+  if (write.conditions.some((condition): boolean => condition.kind !== 'promo_code' && condition.kind !== 'booking_window')) {
+    return 'A promo code works on its own. Remove the other conditions (you can keep the dates it runs between).';
   }
   return null;
 }

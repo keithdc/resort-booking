@@ -33,6 +33,7 @@ function discount(id: string, overrides: Partial<Discount> = {}): Discount {
     active: true,
     maxRedemptions: null,
     promoted: false,
+    oncePerGuest: false,
     redemptions: 0,
     ...overrides,
   };

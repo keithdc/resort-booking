@@ -152,6 +152,8 @@ export interface ErasureReceipt {
   refundNotesScrubbed: number;
   changeNotesScrubbed: number;
   staffNotesScrubbed: number;
+  /** "Once per guest" email keys cleared (the same address can use such a code again). */
+  emailKeysCleared: number;
   forced: boolean;
   operator: string;
 }
@@ -175,6 +177,7 @@ export async function eraseGuest(db: PrivacyDb, options: EraseGuestOptions): Pro
     refundNotesScrubbed: 0,
     changeNotesScrubbed: 0,
     staffNotesScrubbed: 0,
+    emailKeysCleared: 0,
     forced: options.forceFuture && erased.some((item: GuestPlanItem): boolean => item.reasons.length > 0),
     operator: options.operator,
   };
@@ -184,7 +187,7 @@ export async function eraseGuest(db: PrivacyDb, options: EraseGuestOptions): Pro
   const ids = erased.map((item: GuestPlanItem): string => item.booking.id);
   await db.transaction(
     async (tx: PrivacyTx): Promise<void> => {
-      const result = await tx.query<{ n: number; refund_notes: number; change_notes: number; staff_notes: number }>(
+      const result = await tx.query<{ n: number; refund_notes: number; change_notes: number; staff_notes: number; email_keys: number }>(
         anonymiseBookingsSql('SELECT ib.id FROM inventory_blocks ib WHERE ib.id = ANY($3::uuid[]) AND ib.anonymised_at IS NULL FOR UPDATE OF ib'),
         [ANONYMISED_NAME, REMOVED_TEXT, ids],
       );
@@ -193,6 +196,7 @@ export async function eraseGuest(db: PrivacyDb, options: EraseGuestOptions): Pro
       receipt.refundNotesScrubbed = row?.refund_notes ?? 0;
       receipt.changeNotesScrubbed = row?.change_notes ?? 0;
       receipt.staffNotesScrubbed = row?.staff_notes ?? 0;
+      receipt.emailKeysCleared = row?.email_keys ?? 0;
       await tx.query(
         `INSERT INTO privacy_erasure_ledger (subject_kind, subject_hash, bookings_anonymised, forced, operator) VALUES ('guest', $1, $2, $3, $4)`,
         [hash, anonymised, receipt.forced, options.operator.slice(0, 80)],

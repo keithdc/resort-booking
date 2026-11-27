@@ -17,7 +17,7 @@ import { ListingHighlights } from './listing-highlights';
 
 const inventory = vi.hoisted(() => ({
   fetchQuote: vi.fn<(houseId: string, checkIn: string, checkOut: string, guestCount: number, promoCode?: string) => Promise<Quote>>(),
-  createHold: vi.fn<() => Promise<Hold>>(),
+  createHold: vi.fn<(body: Record<string, unknown>) => Promise<Hold>>(),
 }));
 
 const payments = vi.hoisted(() => ({
@@ -345,6 +345,35 @@ describe('CheckoutForm contact details', () => {
 
       await waitFor(() => expect(inventory.fetchQuote.mock.calls.at(-1)?.[4]).toBe(''));
       expect((screen.getByLabelText(/Promo code/) as HTMLInputElement).value).toBe('');
+    });
+
+    it('tells the guest plainly when this email already used a once-per-guest code, takes the code off, refreshes the price, and lets Pay continue without it', async () => {
+      inventory.createHold.mockRejectedValueOnce(new ApiRequestError('This code has already been used with this email address', 409, 'PROMO_ALREADY_USED'));
+      inventory.fetchQuote.mockImplementation((_house, _checkIn, _checkOut, _guests, promo = '') => Promise.resolve(promo === '' ? QUOTE : PROMO_QUOTE));
+      renderForm();
+      await screen.findByText('These dates are free.');
+      await userEvent.type(screen.getByLabelText(/Promo code/), 'WELCOME15');
+      await userEvent.click(screen.getByRole('button', { name: 'Apply' }));
+      expect(await screen.findByText('Code WELCOME15 applied')).toBeTruthy();
+      fill('ada@example.com', '0612345678');
+      const quoteCalls = inventory.fetchQuote.mock.calls.length;
+
+      await userEvent.click(screen.getByRole('button', { name: /^Pay / }));
+
+      const alert = await screen.findByRole('alert');
+      expect(alert.textContent).toContain('This code has already been used with this email address');
+      expect(alert.textContent).toContain('The price now shows without the code: press Pay to continue.');
+      expect(screen.queryByText(/Something went wrong|Could not hold/)).toBeNull();
+      expect((screen.getByLabelText(/Promo code/) as HTMLInputElement).value).toBe('');
+      await waitFor(() => expect(inventory.fetchQuote.mock.calls.length).toBeGreaterThan(quoteCalls));
+      expect(inventory.fetchQuote.mock.calls.at(-1)?.[4]).toBe('');
+      expect(screen.queryByRole('timer')).toBeNull();
+
+      // Pay again: the hold is made without the code.
+      await userEvent.click(holdButton());
+      await waitFor(() => expect(inventory.createHold).toHaveBeenCalledTimes(2));
+      expect(inventory.createHold.mock.calls[1]?.[0]).not.toHaveProperty('promoCode');
+      expect(await screen.findByRole('heading', { name: 'Complete your payment' })).toBeTruthy();
     });
 
     it('keeps a wrong code from blocking the booking', async () => {

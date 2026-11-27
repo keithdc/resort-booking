@@ -72,6 +72,7 @@ function windowOffer(): Discount {
     active: true,
     maxRedemptions: null,
     promoted: true,
+    oncePerGuest: false,
     redemptions: 0,
   };
 }

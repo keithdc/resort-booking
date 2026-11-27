@@ -11,6 +11,7 @@ import { DatabaseService } from '../../shared/database/database.service';
 import { RedisService } from '../../shared/redis/redis.service';
 import { DiscountsRepository } from '../discounts/discounts.repository';
 import { DiscountsService } from '../discounts/discounts.service';
+import { GuestEmailKeyService } from '../discounts/guest-email-key';
 import { PropertyRepository } from '../property/property.repository';
 import { RatesRepository } from '../rates/rates.repository';
 import { RatesService } from '../rates/rates.service';
@@ -88,6 +89,7 @@ function discountFor(overrides: Partial<Discount> = {}): Discount {
     active: true,
     maxRedemptions: null,
     promoted: false,
+    oncePerGuest: false,
     redemptions: 0,
     ...overrides,
   };
@@ -123,6 +125,7 @@ describe('InventoryService pricing', () => {
   const countActiveHolds = jest.fn<Promise<ActiveHoldCounts>, [string, string | null]>();
   const listForHouses = jest.fn<Promise<RatePeriod[]>, [readonly string[], string, string]>();
   const listDiscounts = jest.fn<Promise<Discount[]>, [readonly string[], boolean]>();
+  const usedByKey = jest.fn();
   const getHoldById = jest.fn<Promise<HoldRow | null>, [string]>();
   const getPolicySnapshot = jest.fn<Promise<PolicySnapshot>, [string]>();
   const confirmPaidHold = jest.fn<Promise<StayRow | null>, [PoolClient, string]>();
@@ -145,6 +148,7 @@ describe('InventoryService pricing', () => {
     hasOverlap.mockResolvedValue(false);
     listForHouses.mockResolvedValue([]);
     listDiscounts.mockResolvedValue([]);
+    usedByKey.mockResolvedValue(new Set<string>());
     getPolicySnapshot.mockResolvedValue(POLICY);
     insertBlockRequests.mockResolvedValue(undefined);
     countActiveHolds.mockResolvedValue({ byEmail: 0, byIp: 0 });
@@ -160,7 +164,8 @@ describe('InventoryService pricing', () => {
         { provide: ReservationsService, useValue: { getPolicySnapshot } },
         { provide: PropertyRepository, useValue: { getHouseById, listHousesByPropertySlug, listRequestOptions } },
         { provide: InventoryRepository, useValue: { expireOverdueHolds, countActiveHolds, hasOverlap, insertHold, insertBlockRequests, getHoldById, confirmPaidHold, getConfirmedStay, releaseHold } },
-        { provide: DiscountsRepository, useValue: { listForProperties: listDiscounts } },
+        { provide: DiscountsRepository, useValue: { listForProperties: listDiscounts, usedByKey } },
+        { provide: GuestEmailKeyService, useValue: { keyFor: (email: string): string => `key:${email}` } },
         { provide: RatesRepository, useValue: { listForHouses } },
         {
           provide: DatabaseService,
@@ -519,6 +524,19 @@ describe('InventoryService pricing', () => {
         await service.createHold(DTO, true);
 
         expect(getPolicySnapshot).toHaveBeenCalledTimes(1);
+      });
+
+      it('refuses with PROMO_ALREADY_USED, before holding any dates, when the code is once per guest and the email used it', async () => {
+        listDiscounts.mockResolvedValue([discountFor()]);
+        usedByKey.mockResolvedValue(new Set<string>([discountFor().id]));
+
+        await expect(service.createHold(DTO, true)).rejects.toMatchObject({
+          status: 409,
+          response: { code: 'PROMO_ALREADY_USED', message: 'This code has already been used with this email address' },
+        });
+
+        expect(usedByKey).toHaveBeenCalledWith(undefined, [discountFor().id], `key:${DTO.bookerEmail}`, null);
+        expect(insertHold).not.toHaveBeenCalled();
       });
 
       it('does not read the policy, or write anything, for dates that are already taken', async () => {

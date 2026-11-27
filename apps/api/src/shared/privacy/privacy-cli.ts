@@ -68,7 +68,7 @@ function printGuest(receipt: ErasureReceipt): void {
   line(`  skipped: ${String(receipt.skipped.length)}`);
   receipt.skipped.forEach((item: GuestPlanItem): void => line(row(item)));
   if (receipt.mode === 'apply') {
-    line(`  refund notes scrubbed: ${String(receipt.refundNotesScrubbed)}   date-change notes scrubbed: ${String(receipt.changeNotesScrubbed)}   staff notes scrubbed: ${String(receipt.staffNotesScrubbed)}`);
+    line(`  refund notes scrubbed: ${String(receipt.refundNotesScrubbed)}   date-change notes scrubbed: ${String(receipt.changeNotesScrubbed)}   staff notes scrubbed: ${String(receipt.staffNotesScrubbed)}   coupon email keys cleared: ${String(receipt.emailKeysCleared)}`);
     line('  Kept by law: dates, amounts, currency, status, payments, refunds and the booking reference (no name, email, phone or note).');
     line('  Backups made before today still hold this person until they expire; after a restore run `npm run privacy:reapply-erasures`.');
   }

@@ -29,11 +29,18 @@ import {
 import type { ReactNode } from 'react';
 import {
   AUTOMATIC_NOTE,
+  COUPON_OWN_NOTE,
   COUPON_STACK_HELP,
   COUPON_STACK_LABEL,
   describeRunWindow,
   isCouponDraft,
+  isMixedCouponDraft,
+  KEEP_CODE_ONLY,
+  KEEP_OTHER_RULES,
   LIMIT_HELP,
+  MIXED_COUPON_NOTE,
+  ONCE_PER_GUEST_HELP,
+  ONCE_PER_GUEST_LABEL,
   LIMIT_LABEL,
   RUN_WINDOW_HELP,
   RUN_WINDOW_TITLE,
@@ -110,6 +117,9 @@ export function DiscountDialog({
   const problems: DraftProblems = validateDraft(draft);
   const valid = Object.keys(problems).length === 0;
   const conditionsOff = draft.alwaysOn;
+  // A promo code is its own discount: while it is ticked the other qualifying rules are off and cannot be ticked.
+  const couponOn = draft.promoOn;
+  const mixed = isMixedCouponDraft(draft);
   const codeIsPublic = draft.promoOn && !draft.alwaysOn;
   const currencyLabel = currencyCode === 'EUR' ? '€' : currencyCode;
   const runWindow = describeRunWindow(draft, today);
@@ -239,16 +249,58 @@ export function DiscountDialog({
             <Typography variant="body2" color="text.secondary">
               Every condition you tick must be true for the discount to apply.
             </Typography>
+            {mixed ? (
+              <Alert
+                severity="warning"
+                action={
+                  <Stack direction={{ xs: 'column', sm: 'row' }} spacing={0.5}>
+                    <Button color="inherit" size="small" onClick={(): void => onChange(KEEP_CODE_ONLY)}>
+                      Keep the code only
+                    </Button>
+                    <Button color="inherit" size="small" onClick={(): void => onChange(KEEP_OTHER_RULES)}>
+                      Keep the other rules
+                    </Button>
+                  </Stack>
+                }
+              >
+                {MIXED_COUPON_NOTE}
+              </Alert>
+            ) : null}
             <FormControlLabel
-              control={<Checkbox checked={draft.alwaysOn} onChange={(event): void => onChange({ alwaysOn: event.target.checked })} />}
+              control={<Checkbox checked={draft.alwaysOn} disabled={couponOn} onChange={(event): void => onChange({ alwaysOn: event.target.checked })} />}
               label="Always on (no other conditions)"
             />
             {problems.conditions === undefined ? null : <FormHelperText error>{problems.conditions}</FormHelperText>}
 
             <ConditionSection
+              label="Promo code: the guest types a code"
+              checked={draft.promoOn}
+              disabled={conditionsOff && !draft.promoOn}
+              onToggle={(promoOn): void => onChange({ promoOn })}
+              problem={problems.promo}
+            >
+              <TextField
+                label="Promo code"
+                size="small"
+                value={draft.promoCode}
+                helperText="Not case-sensitive for guests"
+                onChange={(event): void => onChange({ promoCode: event.target.value })}
+              />
+              <FormControlLabel
+                control={<Checkbox checked={draft.oncePerGuest} onChange={(event): void => onChange({ oncePerGuest: event.target.checked })} />}
+                label={ONCE_PER_GUEST_LABEL}
+              />
+              <FormHelperText>{ONCE_PER_GUEST_HELP}</FormHelperText>
+              <Stack direction="row" spacing={1} alignItems="center" sx={{ color: 'text.secondary', pt: 0.5 }}>
+                <InfoOutlinedIcon fontSize="small" aria-hidden />
+                <Typography variant="body2">{COUPON_OWN_NOTE}</Typography>
+              </Stack>
+            </ConditionSection>
+
+            <ConditionSection
               label="Long booking: minimum nights"
               checked={draft.minNightsOn}
-              disabled={conditionsOff}
+              disabled={conditionsOff || couponOn}
               onToggle={(minNightsOn): void => onChange({ minNightsOn })}
               problem={problems.minNights}
             >
@@ -264,7 +316,7 @@ export function DiscountDialog({
             <ConditionSection
               label="Booked ahead (early bird / last minute)"
               checked={draft.leadOn}
-              disabled={conditionsOff}
+              disabled={conditionsOff || couponOn}
               onToggle={(leadOn): void => onChange({ leadOn })}
               problem={problems.lead}
             >
@@ -291,7 +343,7 @@ export function DiscountDialog({
             <ConditionSection
               label={STAY_DATES_LABEL}
               checked={draft.stayOn}
-              disabled={conditionsOff}
+              disabled={conditionsOff || couponOn}
               onToggle={(stayOn): void => onChange({ stayOn })}
               problem={problems.stay}
             >
@@ -321,7 +373,7 @@ export function DiscountDialog({
             <ConditionSection
               label="Weekdays: every night of the booking is one of these days"
               checked={draft.weekdayOn}
-              disabled={conditionsOff}
+              disabled={conditionsOff || couponOn}
               onToggle={(weekdayOn): void => onChange({ weekdayOn })}
               problem={problems.weekdays}
             >
@@ -342,21 +394,6 @@ export function DiscountDialog({
               </Stack>
             </ConditionSection>
 
-            <ConditionSection
-              label="Promo code: the guest types a code"
-              checked={draft.promoOn}
-              disabled={conditionsOff}
-              onToggle={(promoOn): void => onChange({ promoOn })}
-              problem={problems.promo}
-            >
-              <TextField
-                label="Promo code"
-                size="small"
-                value={draft.promoCode}
-                helperText="Not case-sensitive for guests"
-                onChange={(event): void => onChange({ promoCode: event.target.value })}
-              />
-            </ConditionSection>
           </Stack>
 
           <Stack spacing={1}>

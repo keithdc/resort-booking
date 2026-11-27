@@ -16,6 +16,8 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  InputAdornment,
+  MenuItem,
   Skeleton,
   Snackbar,
   Stack,
@@ -24,13 +26,16 @@ import {
   TableCell,
   TableHead,
   TableRow,
+  TextField,
   Typography,
 } from '@mui/material';
 import BlockOutlinedIcon from '@mui/icons-material/BlockOutlined';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
+import FilterAltOffOutlinedIcon from '@mui/icons-material/FilterAltOffOutlined';
 import EventBusyOutlinedIcon from '@mui/icons-material/EventBusyOutlined';
 import PowerSettingsNewIcon from '@mui/icons-material/PowerSettingsNew';
 import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
+import SearchIcon from '@mui/icons-material/Search';
 import { useState } from 'react';
 import { useCompactLayout } from '@/shared/hooks/use-compact-layout';
 import { localTodayIso } from '@/shared/utils/month-bounds';
@@ -43,6 +48,18 @@ import {
   summarizeUses,
   type DiscountStatusKind,
 } from '../utils/discount-draft';
+import {
+  DISCOUNT_PAGE_SIZE,
+  filterDiscounts,
+  guestLimitLabel,
+  hasActiveFilters,
+  NO_DISCOUNT_FILTERS,
+  STATUS_FILTER_OPTIONS,
+  TYPE_FILTER_OPTIONS,
+  type DiscountFilters,
+  type DiscountStatusFilter,
+  type DiscountTypeFilter,
+} from '../utils/discount-filter';
 import { AllHousesDiscountWarningDialog } from './all-houses-discount-warning-dialog';
 import { DiscountDialog } from './discount-dialog';
 
@@ -79,7 +96,21 @@ export function PropertyDiscountsPanel({ propertyId, houses, today }: PropertyDi
   const state = usePropertyDiscounts(propertyId);
   const compact = useCompactLayout();
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  // The filters are local to this screen (like the audit log): nothing is saved or put in the address.
+  const [filters, setFilters] = useState<DiscountFilters>(NO_DISCOUNT_FILTERS);
+  const [shown, setShown] = useState(DISCOUNT_PAGE_SIZE);
   const currencyCode = houses[0]?.currencyCode ?? 'EUR';
+  const matching = filterDiscounts(state.discounts, filters, todayIso);
+  const visible = matching.slice(0, shown);
+  const filtered = hasActiveFilters(filters);
+  const changeFilters = (patch: Partial<DiscountFilters>): void => {
+    setFilters((current): DiscountFilters => ({ ...current, ...patch }));
+    setShown(DISCOUNT_PAGE_SIZE);
+  };
+  const clearFilters = (): void => {
+    setFilters(NO_DISCOUNT_FILTERS);
+    setShown(DISCOUNT_PAGE_SIZE);
+  };
 
   return (
     <Stack spacing={2}>
@@ -97,14 +128,77 @@ export function PropertyDiscountsPanel({ propertyId, houses, today }: PropertyDi
       {!state.loading && state.discounts.length === 0 ? (
         <Typography>No discounts yet. Add one, for example 10% off bookings of 7 nights or more.</Typography>
       ) : null}
-      {state.discounts.length > 0 && compact ? (
+      {state.discounts.length > 0 ? (
+        <Stack spacing={1} component="section" aria-label="Filter discounts">
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+            <TextField
+              size="small"
+              fullWidth
+              label="Search by name or code"
+              value={filters.search}
+              onChange={(event): void => changeFilters({ search: event.target.value })}
+              slotProps={{
+                input: {
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <SearchIcon fontSize="small" aria-hidden />
+                    </InputAdornment>
+                  ),
+                },
+              }}
+            />
+            <TextField
+              select
+              size="small"
+              label="Type"
+              value={filters.type}
+              onChange={(event): void => changeFilters({ type: event.target.value as DiscountTypeFilter })}
+              sx={{ minWidth: { sm: 210 } }}
+            >
+              {TYPE_FILTER_OPTIONS.map((option): React.JSX.Element => (
+                <MenuItem key={option.value} value={option.value}>
+                  {option.label}
+                </MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              select
+              size="small"
+              label="Status"
+              value={filters.status}
+              onChange={(event): void => changeFilters({ status: event.target.value as DiscountStatusFilter })}
+              sx={{ minWidth: { sm: 170 } }}
+            >
+              {STATUS_FILTER_OPTIONS.map((option): React.JSX.Element => (
+                <MenuItem key={option.value} value={option.value}>
+                  {option.label}
+                </MenuItem>
+              ))}
+            </TextField>
+          </Stack>
+          <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
+            <Typography variant="body2" color="text.secondary" role="status">
+              Showing {String(visible.length)} of {String(matching.length)}
+              {filtered ? ` matching, ${String(state.discounts.length)} in all` : ''}
+            </Typography>
+            {filtered ? (
+              <Button size="small" startIcon={<FilterAltOffOutlinedIcon fontSize="small" />} onClick={clearFilters}>
+                Clear filters
+              </Button>
+            ) : null}
+          </Stack>
+        </Stack>
+      ) : null}
+      {state.discounts.length > 0 && matching.length === 0 ? <Typography>No discounts match these filters</Typography> : null}
+      {matching.length > 0 && compact ? (
         <Box component="ul" aria-label="Discounts" sx={{ listStyle: 'none', m: 0, p: 0, display: 'grid', gap: 1.5 }}>
-          {state.discounts.map((discount): React.JSX.Element => (
+          {visible.map((discount): React.JSX.Element => (
             <Box component="li" key={discount.id} sx={{ p: 1.5, border: 1, borderColor: 'divider', borderRadius: 2, bgcolor: 'background.paper' }}>
               <Typography sx={{ fontWeight: 600 }}>{discount.label}</Typography>
               <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" alignItems="center" sx={{ mt: 0.75 }}>
                 <StatusChip discount={discount} today={todayIso} />
                 {discount.promoted ? <Chip size="small" variant="outlined" color="primary" label="Promoted" /> : null}
+                {guestLimitLabel(discount) === null ? null : <Chip size="small" variant="outlined" label={guestLimitLabel(discount)} />}
               </Stack>
               <Typography sx={{ mt: 1, fontWeight: 600 }}>{summarizeEffect(discount.effect, currencyCode)}</Typography>
               <Typography variant="body2" color="text.secondary">
@@ -128,7 +222,7 @@ export function PropertyDiscountsPanel({ propertyId, houses, today }: PropertyDi
           ))}
         </Box>
       ) : null}
-      {state.discounts.length > 0 && !compact ? (
+      {matching.length > 0 && !compact ? (
         <Table size="small" aria-label="Discounts">
           <TableHead>
             <TableRow>
@@ -142,7 +236,7 @@ export function PropertyDiscountsPanel({ propertyId, houses, today }: PropertyDi
             </TableRow>
           </TableHead>
           <TableBody>
-            {state.discounts.map((discount): React.JSX.Element => (
+            {visible.map((discount): React.JSX.Element => (
               <TableRow
                 key={discount.id}
                 hover
@@ -158,6 +252,12 @@ export function PropertyDiscountsPanel({ propertyId, houses, today }: PropertyDi
                       <Chip size="small" variant="outlined" color="primary" label="Promoted" />
                     </>
                   ) : null}
+                  {guestLimitLabel(discount) === null ? null : (
+                    <>
+                      {' '}
+                      <Chip size="small" variant="outlined" label={guestLimitLabel(discount)} />
+                    </>
+                  )}
                 </TableCell>
                 <TableCell>{summarizeEffect(discount.effect, currencyCode)}</TableCell>
                 <TableCell>{summarizeConditions(discount)}</TableCell>
@@ -193,6 +293,11 @@ export function PropertyDiscountsPanel({ propertyId, houses, today }: PropertyDi
             ))}
           </TableBody>
         </Table>
+      ) : null}
+      {matching.length > shown ? (
+        <Button variant="outlined" onClick={(): void => setShown((count): number => count + DISCOUNT_PAGE_SIZE)}>
+          Show {String(Math.min(DISCOUNT_PAGE_SIZE, matching.length - shown))} more
+        </Button>
       ) : null}
       <Button variant="contained" onClick={state.openCreate}>
         Add a discount

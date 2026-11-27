@@ -21,6 +21,7 @@ Legend for the proposed retention: **P** = proposed, to confirm. "Anonymise" mea
 | `booking_changes.note` | Staff note on a date change | Audit of changes | Art. 6(1)(b)/(f) | Replaced with `[removed]` when the booking is anonymised; the row (dates, amounts) stays |
 | `inventory_block_requests` | Which on-request extras were asked for | Serve the stay | Art. 6(1)(b) | Not identifying on its own. Stays with the booking row |
 | `discount_redemptions` | Discount id and amount per booking | Accounting, promo limits | Art. 6(1)(c)/(f) | Financial record. Not personal on its own |
+| `discount_redemptions.email_key` | Keyed hash (HMAC-SHA-256) of the NORMALISED booking email, only for a coupon limited to once per guest. Never the address. | Stop the same email using a one-per-guest code twice | Art. 6(1)(f) abuse and fair use | Pseudonymous personal data. Set to NULL when the booking is anonymised (retention and `privacy:erase-guest` share the statement); after that the same address can use the code again. Counted in the erase receipt ("coupon email keys cleared"). The export lists whether a use was counted, not the hash |
 | Booking reference (`BK-` + 10 hex of the id) | Derived from the booking id | Lookup | - | Stays (it is the link between the booking and its refunds). With the email gone it identifies nobody |
 
 ### 1.2 Staff and operator

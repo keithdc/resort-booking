@@ -631,3 +631,23 @@ The owner said "go" on the recommended option for each open item below. Each has
 - **Owner decision recorded:** a channel booking counts as income (its typed total) in revenue and "Paid by guests". The commission the site keeps is not tracked; if the owner wants net figures later, add an optional "commission" amount per channel booking (docs/17).
 
 **Not done (on purpose).** No iCal import or export (docs/17 section 1.3a); a calendar block imported later can carry the source (the constraints allow `kind = 'block'` with a source and no payment method). No per-source price rules.
+
+## 13. Round 7: coupons are their own kind of discount, and once per guest (migration 046)
+
+**What it adds.** A promo code works with the code alone (the form and the API refuse a coupon that also carries minimum nights, booked-ahead, stay dates, weekdays or always-on; the dates it runs between, the use limit, the stays, the website switch and stacking stay), and a coupon can be limited to one use per guest, checked by email. Rules and wording are in `docs/04` (Discounts). Manual steps: `docs/16` section 19.
+
+### R7-01 Coupon mixed with other rules (Low, correctness, fixed)
+
+**Status: fixed.** A coupon that also carried eligibility rules priced oddly and was hard to reason about (the owner could not tell who qualified). `validateCouponShape` (API, on create and update, plain 400) and `applyDraftPatch` (admin form) now keep a coupon to the code plus the voucher's own limits. **Existing discounts are not rewritten:** pricing reads them as stored (no change to `applyDiscounts`), and editing one requires choosing "Keep the code only" or "Keep the other rules" first. A database CHECK for this was deliberately not added: a CHECK cannot read inside the JSON array without a function, and it would block updates of the older rows. Tests: `discounts.rules.spec.ts`, `discounts.service.spec.ts`, `discount-draft.test.ts`, `discount-dialog.test.tsx`.
+
+### R7-02 Coupon abuse with many email addresses (Low, accepted residual risk)
+
+**Status: accepted.** Guests have no accounts, so "once per guest" is "once per email". Someone who types a different address (a new mailbox, or another provider) can use a one-per-guest code again. The normalisation closes the cheap tricks (`+tag`, Gmail dots, googlemail.com, case, Unicode forms) but not a genuinely new address. The help text in the form says so. Existing brakes: the per-IP and per-code rate limits on code attempts, the use limit (`max_redemptions`), a run window, and the fact that a booking costs real money. Ideas for later, in `docs/17` section 1.7: also limit by phone, by the card fingerprint when real Stripe is live, and one-time codes sent by us.
+
+### R7-03 What the email key stores and who can read it (Low, checked)
+
+**Status: checked.** `discount_redemptions.email_key` is an HMAC-SHA-256 of the normalised email under `IP_HASH_SALT` (required, 32+ characters, outside development, so a server never starts with a guessable key; a different message prefix keeps it apart from the audit hashes), 64 hex characters (a CHECK refuses anything else, so an address can never be stored there by mistake). It is written only for a coupon with the limit, is never returned by any API (the staff discount routes, the guest quote, the report views and the export show at most "a use was counted"), and the read-only database role cannot read the table. It is personal data in hashed form: `anonymiseBookingsSql` sets it to NULL with the booking (retention and `privacy:erase-guest`), the receipt counts it, and `docs/15` lists it. Rotating `IP_HASH_SALT` makes old keys stop matching new ones, so every guest could use a limited code once more: keep the secret with the backups' key material, as for the audit hashes.
+
+### R7-04 Races and the real-database proof (Info, checked)
+
+Two checkouts with the same address racing for the same code: the unique partial index `(discount_id, email_key)` lets one through; the other becomes `409 PROMO_ALREADY_USED` and its transaction rolls back (a card payment that already succeeded is refused by the existing late-payment path and refunded, `docs/14`). `coupon-once-per-guest.integration.spec.ts` proves this against a real Postgres, with the date-change move, the cancelled-booking rule, the missing-email case and the anonymise step.

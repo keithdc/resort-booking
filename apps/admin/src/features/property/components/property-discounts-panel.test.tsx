@@ -61,6 +61,7 @@ function discount(id: string, overrides: Partial<Discount> = {}): Discount {
     active: true,
     maxRedemptions: null,
     promoted: false,
+    oncePerGuest: false,
     redemptions: 0,
     ...overrides,
   };
@@ -356,6 +357,131 @@ describe('PropertyDiscountsPanel', () => {
 
       await waitFor(() => expect(api.updateDiscount).toHaveBeenCalledWith('long', expect.objectContaining({ label: 'Long stay plus' })));
       expect(screen.queryByRole('dialog', { name: 'Apply this discount to every stay?' })).toBeNull();
+    });
+  });
+
+  describe('filtering a long list', () => {
+    const coupon = (id: string, label: string, code: string, overrides: Partial<Discount> = {}): Discount =>
+      discount(id, { label, conditions: [{ kind: 'promo_code', code }], ...overrides });
+    const many = (count: number): Discount[] => Array.from({ length: count }, (_, index) => coupon(`c${String(index)}`, `Guest code ${String(index).padStart(2, '0')}`, `ONE${String(index).padStart(3, '0')}`, { oncePerGuest: true }));
+    const rowsOf = (): HTMLElement[] => within(screen.getByRole('table', { name: 'Discounts' })).getAllByRole('row').slice(1);
+    const search = (): HTMLElement => screen.getByLabelText('Search by name or code');
+
+    it('searches the name and the promo code, any case', async () => {
+      api.fetchDiscounts.mockResolvedValue([LONG_STAY, WELCOME]);
+      renderPanel();
+      await screen.findByRole('table', { name: 'Discounts' });
+
+      fireEvent.change(search(), { target: { value: 'welcome15' } });
+      expect(rowsOf()).toHaveLength(1);
+      expect(rowsOf()[0]?.textContent).toContain('Welcome code');
+
+      fireEvent.change(search(), { target: { value: 'LONG' } });
+      expect(rowsOf()).toHaveLength(1);
+      expect(rowsOf()[0]?.textContent).toContain('Long stay');
+    });
+
+    it('filters by type and by status', async () => {
+      api.fetchDiscounts.mockResolvedValue([LONG_STAY, WELCOME]);
+      renderPanel();
+      await screen.findByRole('table', { name: 'Discounts' });
+
+      await userEvent.click(screen.getByRole('combobox', { name: 'Type' }));
+      await userEvent.click(await screen.findByRole('option', { name: 'Coupons (with a code)' }));
+      expect(rowsOf().map((entry) => entry.textContent)).toEqual([expect.stringContaining('Welcome code')]);
+
+      await userEvent.click(screen.getByRole('combobox', { name: 'Type' }));
+      await userEvent.click(await screen.findByRole('option', { name: 'Automatic' }));
+      expect(rowsOf().map((entry) => entry.textContent)).toEqual([expect.stringContaining('Long stay')]);
+
+      await userEvent.click(screen.getByRole('combobox', { name: 'Status' }));
+      await userEvent.click(await screen.findByRole('option', { name: 'Off' }));
+      expect(screen.getByText('No discounts match these filters')).toBeTruthy();
+      expect(screen.queryByRole('table', { name: 'Discounts' })).toBeNull();
+    });
+
+    it('lists the live ones first, then those that start later, then the rest', async () => {
+      const later = discount('later', { label: 'Summer sale', conditions: [{ kind: 'booking_window', startDate: '2027-06-01', endDate: '2027-06-30' }] });
+      api.fetchDiscounts.mockResolvedValue([WELCOME, later, LONG_STAY]);
+      renderPanel();
+      await screen.findByRole('table', { name: 'Discounts' });
+
+      expect(rowsOf().map((entry) => /Long stay|Summer sale|Welcome code/.exec(entry.textContent ?? '')?.[0])).toEqual(['Long stay', 'Summer sale', 'Welcome code']);
+    });
+
+    it('says how many show, and clears the filters', async () => {
+      api.fetchDiscounts.mockResolvedValue([LONG_STAY, WELCOME]);
+      renderPanel();
+      await screen.findByRole('table', { name: 'Discounts' });
+      expect(screen.getByRole('status').textContent).toBe('Showing 2 of 2');
+      expect(screen.queryByRole('button', { name: 'Clear filters' })).toBeNull();
+
+      fireEvent.change(search(), { target: { value: 'welcome' } });
+      expect(screen.getByRole('status').textContent).toBe('Showing 1 of 1 matching, 2 in all');
+
+      await userEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+      expect(rowsOf()).toHaveLength(2);
+      expect((search() as HTMLInputElement).value).toBe('');
+      expect(screen.queryByRole('button', { name: 'Clear filters' })).toBeNull();
+    });
+
+    it('shows the first 20 rows and adds 20 more at a time, so a long list never makes the page endless', async () => {
+      api.fetchDiscounts.mockResolvedValue(many(87));
+      renderPanel();
+      await screen.findByRole('table', { name: 'Discounts' });
+
+      expect(rowsOf()).toHaveLength(20);
+      expect(screen.getByRole('status').textContent).toBe('Showing 20 of 87');
+      await userEvent.click(screen.getByRole('button', { name: 'Show 20 more' }));
+      expect(rowsOf()).toHaveLength(40);
+      await userEvent.click(screen.getByRole('button', { name: 'Show 20 more' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Show 20 more' }));
+      expect(rowsOf()).toHaveLength(80);
+      await userEvent.click(screen.getByRole('button', { name: 'Show 7 more' }));
+      expect(rowsOf()).toHaveLength(87);
+      expect(screen.queryByRole('button', { name: /Show .* more/ })).toBeNull();
+    });
+
+    it('starts again at 20 rows when a filter changes', async () => {
+      api.fetchDiscounts.mockResolvedValue(many(87));
+      renderPanel();
+      await screen.findByRole('table', { name: 'Discounts' });
+      await userEvent.click(screen.getByRole('button', { name: 'Show 20 more' }));
+      expect(rowsOf()).toHaveLength(40);
+
+      fireEvent.change(search(), { target: { value: 'guest code' } });
+
+      expect(rowsOf()).toHaveLength(20);
+      expect(screen.getByRole('status').textContent).toBe('Showing 20 of 87 matching, 87 in all');
+    });
+
+    it('finds one code among many', async () => {
+      api.fetchDiscounts.mockResolvedValue(many(87));
+      renderPanel();
+      await screen.findByRole('table', { name: 'Discounts' });
+
+      fireEvent.change(search(), { target: { value: 'one042' } });
+
+      expect(rowsOf()).toHaveLength(1);
+      expect(rowsOf()[0]?.textContent).toContain('Guest code 42');
+    });
+
+    it('marks a coupon limited to once per guest and keeps the row actions working', async () => {
+      api.fetchDiscounts.mockResolvedValue([coupon('o', 'Welcome code', 'WELCOME15', { oncePerGuest: true })]);
+      api.deleteDiscount.mockResolvedValue(null);
+      renderPanel();
+      await screen.findByRole('table', { name: 'Discounts' });
+
+      expect(rowsOf()[0]?.textContent).toContain('Once per guest');
+      await userEvent.click(within(rowsOf()[0] as HTMLElement).getByRole('button', { name: 'Edit' }));
+      expect(await screen.findByRole('dialog', { name: 'Edit discount' })).toBeTruthy();
+    });
+
+    it('shows no filter bar before there is a discount', async () => {
+      api.fetchDiscounts.mockResolvedValue([]);
+      renderPanel();
+      await screen.findByText(/No discounts yet/);
+      expect(screen.queryByLabelText('Search by name or code')).toBeNull();
     });
   });
 });

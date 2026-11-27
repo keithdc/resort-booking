@@ -119,6 +119,9 @@ export class StaffBookingCreator {
     const quote: StaffBookingQuote = channel
       ? { ...priced, totalCents: channelTotal, subtotalCents: channelTotal, discountCents: 0, discounts: [], lines: [], extras: [], extrasCents: 0, promoCode: null }
       : priced;
+    // A coupon limited to one use per guest: tell the staff member before anything is saved (it is re-checked inside the
+    // transaction below, which also catches two bookings made at the same moment).
+    await this.discounts.assertGuestMayUse(quote.discounts, request.bookerEmail);
     const house = await this.houses.getHouseById(request.houseId);
     if (house === null) {
       throw new NotFoundException({ message: 'Stay not found', code: 'HOUSE_NOT_FOUND' });
