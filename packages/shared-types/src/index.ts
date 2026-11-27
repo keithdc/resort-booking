@@ -508,6 +508,8 @@ export interface StaffBookingQuoteRequest {
   guestCount: number;
   /** Optional: published extras of the stay's property. Left out means none. */
   extras?: StaffBookingExtraChoice[];
+  /** Optional: a promo code the guest gave. The answer says whether it applied (`promoCode` on the quote). */
+  promoCode?: string;
 }
 
 /** One extra on a staff quote: what it adds now (nothing for an on-request extra). */

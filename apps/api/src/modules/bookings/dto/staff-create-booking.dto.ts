@@ -72,6 +72,13 @@ export class StaffBookingQuoteDto implements StaffBookingQuoteRequest {
   @ValidateNested({ each: true })
   @Type(() => StaffBookingExtraChoiceDto)
   public extras?: StaffBookingExtraChoiceDto[];
+
+  /** Optional promo code the guest gave. A wrong code never blocks the booking: the quote says it did not apply. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  @Transform(({ value }: { value: unknown }): unknown => (typeof value === 'string' ? value.trim() : value))
+  public promoCode?: string;
 }
 
 /**

@@ -119,7 +119,14 @@ describe('StaffBookingQuoteDto', () => {
     const { houseId, checkIn, checkOut, guestCount } = BODY;
     expect(accepted(await run(StaffBookingQuoteDto, { houseId, checkIn, checkOut, guestCount }))).toBe(true);
     expect(accepted(await run(StaffBookingQuoteDto, { houseId, checkIn, checkOut }))).toBe(false);
-    expect(accepted(await run(StaffBookingQuoteDto, { houseId, checkIn, checkOut, guestCount, promoCode: 'X' }))).toBe(false);
+    expect(accepted(await run(StaffBookingQuoteDto, { houseId, checkIn, checkOut, guestCount, other: 'X' }))).toBe(false);
+  });
+
+  it('takes an optional promo code, up to 40 characters, text only', async () => {
+    const { houseId, checkIn, checkOut, guestCount } = BODY;
+    expect(accepted(await run(StaffBookingQuoteDto, { houseId, checkIn, checkOut, guestCount, promoCode: 'SUMMER10' }))).toBe(true);
+    expect(accepted(await run(StaffBookingQuoteDto, { houseId, checkIn, checkOut, guestCount, promoCode: 'X'.repeat(41) }))).toBe(false);
+    expect(accepted(await run(StaffBookingQuoteDto, { houseId, checkIn, checkOut, guestCount, promoCode: 5 }))).toBe(false);
   });
 });
 

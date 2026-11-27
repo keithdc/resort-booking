@@ -152,6 +152,8 @@ Needs migrations `040`, `041` and `042` (restart the API first). Use a stay with
 29. **Rate limit on New booking (optional).** Press the quote refresh quickly more than about 120 times a minute, or create more than 20 bookings in a minute with a script using your session. **Expected:** a "Too many ... Wait a moment" message and a Retry-After; normal use never sees it.
 30. **Free dates are not refused for a stale guest hold.** On the guest site start a checkout for dates and let it run out of time (15 minutes) without paying. As staff, book the same dates at once. **Expected:** the booking is accepted (not "no longer available").
 
+**Promo code on a staff booking.** In New booking (not for Airbnb or other-site bookings), type a code the property has under Discounts into "Promo code (optional)" and press Apply. **Expected:** the price drops and the field says the code was applied. A wrong code says why it did not apply and the price stays. Remove clears it. The saved booking keeps the discount and counts toward the code's use limit. Offers that apply by themselves (long stay, early bird) show in the price without a code.
+
 ## 15. Guest page spacing and staff notes
 
 Section 15 needs migration `043` (restart the API first) for the notes. Steps 1-2 are only layout and need no data.

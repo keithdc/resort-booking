@@ -226,6 +226,45 @@ export function NewBookingDialog({ open, properties, defaultPropertyId, defaultD
             </Box>
           ) : null}
 
+          {!state.isChannel && state.house !== null ? (
+            <Stack direction="row" spacing={1} alignItems="flex-start">
+              <TextField
+                label="Promo code (optional)"
+                value={state.promoInput}
+                onChange={(event): void => state.setPromoInput(event.target.value)}
+                onKeyDown={(event): void => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    if (state.promoInput.trim() !== '' && state.promoInput.trim() !== state.appliedPromo) {
+                      state.applyPromo();
+                    }
+                  }
+                }}
+                error={state.appliedPromo !== '' && state.quote?.promoCode?.applied === false}
+                helperText={
+                  state.appliedPromo !== '' && state.quote?.promoCode !== null && state.quote?.promoCode !== undefined
+                    ? state.quote.promoCode.message
+                    : 'Only if the guest gave you a code. Offers that apply by themselves are already in the price.'
+                }
+                fullWidth
+                slotProps={{ htmlInput: { maxLength: 40, autoCapitalize: 'characters', autoComplete: 'off', autoCorrect: 'off', spellCheck: false } }}
+              />
+              {state.appliedPromo !== '' ? (
+                <Button sx={{ height: 56, flexShrink: 0 }} onClick={state.removePromo}>
+                  Remove
+                </Button>
+              ) : null}
+              <Button
+                variant="outlined"
+                sx={{ height: 56, flexShrink: 0 }}
+                disabled={state.promoInput.trim() === '' || state.promoInput.trim() === state.appliedPromo}
+                onClick={state.applyPromo}
+              >
+                Apply
+              </Button>
+            </Stack>
+          ) : null}
+
           {state.isChannel ? (
             <Stack spacing={1}>
               {quote !== null ? (

@@ -131,6 +131,30 @@ describe('NewBookingDialog', () => {
     });
   });
 
+  it('applies a promo code to the price and the saved booking, shows the answer, and lets it be removed', async () => {
+    api.quoteStaffBooking.mockImplementation((request: { promoCode?: string }) =>
+      Promise.resolve(
+        request.promoCode === 'SUMMER10'
+          ? quote({ discountCents: 9600, totalCents: 86400, promoCode: { code: 'SUMMER10', applied: true, message: 'SUMMER10 applied: 10% off' } })
+          : quote(),
+      ),
+    );
+    api.createStaffBooking.mockResolvedValue(staffReservation({ id: 'new-2' }));
+    renderDialog();
+    await screen.findByLabelText('Price of the stay');
+    await userEvent.type(screen.getByLabelText(/Promo code/), ' SUMMER10 ');
+    await userEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    expect(await screen.findByText('SUMMER10 applied: 10% off')).toBeTruthy();
+    expect(api.quoteStaffBooking).toHaveBeenLastCalledWith(expect.objectContaining({ promoCode: 'SUMMER10' }));
+
+    await fillGuest();
+    await userEvent.click(bookButton());
+    await waitFor(() => expect(api.createStaffBooking).toHaveBeenCalledWith(expect.objectContaining({ promoCode: 'SUMMER10' })));
+
+    await userEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    await waitFor(() => expect(api.quoteStaffBooking.mock.calls.at(-1)?.[0]).not.toHaveProperty('promoCode'));
+  });
+
   it('says so and blocks saving when the dates are not free', async () => {
     api.quoteStaffBooking.mockResolvedValue(quote({ available: false }));
     renderDialog();

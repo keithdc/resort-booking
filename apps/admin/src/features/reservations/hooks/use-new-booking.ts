@@ -55,6 +55,10 @@ export interface NewBookingState {
   extras: ExtraService[];
   /** How many of each offered extra are ticked, by extra id (absent or 0: not chosen). */
   extraQuantities: Record<string, number>;
+  /** What has been typed in the promo field. */
+  promoInput: string;
+  /** The code the price was last worked out with ("" when none). */
+  appliedPromo: string;
   quote: StaffBookingQuote | null;
   quoting: boolean;
   quoteError: string | null;
@@ -66,6 +70,9 @@ export interface NewBookingState {
   error: string | null;
   today: string;
   house: HouseSummary | null;
+  setPromoInput: (value: string) => void;
+  applyPromo: () => void;
+  removePromo: () => void;
   setPropertyId: (id: string) => void;
   setHouseId: (id: string) => void;
   setCheckIn: (date: string) => void;
@@ -104,6 +111,8 @@ export function useNewBooking({ open, properties, defaultPropertyId, defaultDate
   const [channelTotal, setChannelTotalState] = useState('');
   const [extras, setExtras] = useState<ExtraService[]>([]);
   const [extraQuantities, setExtraQuantities] = useState<Record<string, number>>({});
+  const [promoInput, setPromoInputState] = useState('');
+  const [appliedPromo, setAppliedPromo] = useState('');
   const [quote, setQuote] = useState<StaffBookingQuote | null>(null);
   const [quoting, setQuoting] = useState(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
@@ -137,6 +146,8 @@ export function useNewBooking({ open, properties, defaultPropertyId, defaultDate
     setChannelTotalState('');
     setExtras([]);
     setExtraQuantities({});
+    setPromoInputState('');
+    setAppliedPromo('');
     setQuote(null);
     setQuoteError(null);
     setError(null);
@@ -210,6 +221,9 @@ export function useNewBooking({ open, properties, defaultPropertyId, defaultDate
   // A booking made on another site has no extras (the other site sold it as it is).
   const choices = useMemo(() => (isChannel ? [] : extraChoices(extraQuantities, extras)), [isChannel, extraQuantities, extras]);
 
+  // A promo code applies to the property's own bookings only: a booking from another site was sold as it is.
+  const promoSent = isChannel ? '' : appliedPromo;
+
   // The live price.
   useEffect((): (() => void) => {
     setQuote(null);
@@ -222,7 +236,7 @@ export function useNewBooking({ open, properties, defaultPropertyId, defaultDate
     quoteRun.current = run;
     setQuoting(true);
     const timer = setTimeout((): void => {
-      quoteStaffBooking(choices.length === 0 ? stay : { ...stay, extras: choices })
+      quoteStaffBooking({ ...stay, ...(choices.length === 0 ? {} : { extras: choices }), ...(promoSent === '' ? {} : { promoCode: promoSent }) })
         .then((result): void => {
           if (quoteRun.current === run) {
             setQuote(result);
@@ -244,7 +258,7 @@ export function useNewBooking({ open, properties, defaultPropertyId, defaultDate
       // This form changed (or closed): an answer for it is no longer wanted.
       quoteRun.current += 1;
     };
-  }, [open, stay, choices]);
+  }, [open, stay, choices, promoSent]);
 
   const contactReady = name.trim().length > 0 && isValidEmail(email.trim()) && (phone === '' || isValidPhone(phone)) && note.length <= NEW_BOOKING_MAX_NOTE;
   const canSave = stay !== null && quote !== null && quote.available && !quoting && contactReady && !saving && (!isChannel || channelTotalCents !== null);
@@ -262,9 +276,21 @@ export function useNewBooking({ open, properties, defaultPropertyId, defaultDate
     forget();
   }, [forget]);
 
+  const applyPromo = useCallback((): void => {
+    setAppliedPromo(promoInput.trim());
+    setError(null);
+  }, [promoInput]);
+  const removePromo = useCallback((): void => {
+    setPromoInputState('');
+    setAppliedPromo('');
+    setError(null);
+  }, []);
   const setPropertyId = useCallback((id: string): void => {
     setPropertyIdState(id);
     setHouseIdState('');
+    // Codes belong to one property: a code typed for another one must not follow the person.
+    setPromoInputState('');
+    setAppliedPromo('');
     forget();
   }, [forget]);
   const setHouseId = useCallback((id: string): void => {
@@ -301,6 +327,7 @@ export function useNewBooking({ open, properties, defaultPropertyId, defaultDate
       const booking = await createStaffBooking({
         ...stay,
         ...(choices.length === 0 ? {} : { extras: choices }),
+        ...(promoSent === '' ? {} : { promoCode: promoSent }),
         paymentMethod: isChannel ? 'paid_by_channel' : 'pay_at_hotel',
         bookingSource,
         channelTotalCents: isChannel ? channelTotalCents : null,
@@ -320,7 +347,7 @@ export function useNewBooking({ open, properties, defaultPropertyId, defaultDate
       setSaving(false);
       savingNow.current = false;
     }
-  }, [bookingSource, canSave, channelTotalCents, choices, email, isChannel, name, note, onCreated, phone, stay]);
+  }, [bookingSource, canSave, channelTotalCents, choices, email, isChannel, name, note, onCreated, phone, promoSent, stay]);
 
   return {
     propertyId,
@@ -341,6 +368,8 @@ export function useNewBooking({ open, properties, defaultPropertyId, defaultDate
     channelTotalCents,
     extras,
     extraQuantities,
+    promoInput,
+    appliedPromo,
     quote,
     quoting,
     quoteError,
@@ -351,6 +380,9 @@ export function useNewBooking({ open, properties, defaultPropertyId, defaultDate
     error,
     today,
     house,
+    setPromoInput: setPromoInputState,
+    applyPromo,
+    removePromo,
     setPropertyId,
     setHouseId,
     setCheckIn,

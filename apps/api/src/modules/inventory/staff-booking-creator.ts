@@ -86,7 +86,13 @@ export class StaffBookingCreator {
       throw new BadRequestException({ message: 'That date is too far ahead to book yet', code: 'CHECK_IN_TOO_FAR' });
     }
     const stay = await this.quotes.getQuote(
-      { houseId: request.houseId, checkIn: request.checkIn, checkOut: request.checkOut, guestCount: request.guestCount },
+      {
+        houseId: request.houseId,
+        checkIn: request.checkIn,
+        checkOut: request.checkOut,
+        guestCount: request.guestCount,
+        ...(request.promoCode === undefined || request.promoCode.trim() === '' ? {} : { promoCode: request.promoCode.trim() }),
+      },
       false,
     );
     const priced = await this.priceChosenExtras(house.propertyId, house.organizationId, request.extras ?? [], stay.currencyCode);

@@ -112,6 +112,13 @@ describe('StaffBookingCreator', () => {
       expect(getQuote).toHaveBeenCalledWith({ houseId: 'house', checkIn: REQUEST.checkIn, checkOut: REQUEST.checkOut, guestCount: 2 }, false);
     });
 
+    it('passes a promo code the guest gave to the pricing, trimmed, and nothing when it is blank', async () => {
+      await creator.quote(STAFF, { ...REQUEST, promoCode: ' SUMMER10 ' });
+      expect(getQuote).toHaveBeenLastCalledWith(expect.objectContaining({ promoCode: 'SUMMER10' }), false);
+      await creator.quote(STAFF, { ...REQUEST, promoCode: '   ' });
+      expect(getQuote.mock.calls.at(-1)?.[0]).not.toHaveProperty('promoCode');
+    });
+
     it('answers 404 for a stay of another organization or an unknown one', async () => {
       getHouseById.mockResolvedValueOnce({ id: 'house', propertyId: 'p', organizationId: 'other', propertyTimezone: 'Europe/Paris' });
       await expect(creator.quote(STAFF, REQUEST)).rejects.toBeInstanceOf(NotFoundException);
