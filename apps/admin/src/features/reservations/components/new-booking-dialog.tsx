@@ -34,6 +34,7 @@ import { useNewBooking } from '../hooks/use-new-booking';
 import { extraPriceText, NEW_BOOKING_MAX_EXTRA_QUANTITY, NEW_BOOKING_MAX_NIGHTS, NEW_BOOKING_MAX_NOTE, NEW_BOOKING_PAYMENT_OPTIONS } from '../utils/new-booking';
 import { bookingSourceLabel, PICKABLE_SOURCES } from '@/shared/utils/booking-source';
 import { formatCents } from '@/shared/utils/money';
+import { NewBookingPromotions } from './new-booking-promotions';
 import { NewBookingQuoteSummary } from './new-booking-quote-summary';
 
 interface NewBookingDialogProps {
@@ -263,6 +264,15 @@ export function NewBookingDialog({ open, properties, defaultPropertyId, defaultD
                 Apply
               </Button>
             </Stack>
+          ) : null}
+          {!state.isChannel && state.house !== null ? (
+            <NewBookingPromotions
+              promotions={state.promotions}
+              currencyCode={state.house.currencyCode}
+              today={state.today}
+              appliedCode={state.appliedPromo}
+              onPick={state.pickPromo}
+            />
           ) : null}
 
           {state.isChannel ? (

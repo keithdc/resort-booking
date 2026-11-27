@@ -6,14 +6,14 @@
 
 'use client';
 
-import type { BookingSource, ExtraService, HouseSummary, PropertySummary, StaffBookingQuote, StaffReservation } from '@resort-booking/shared-types';
+import type { BookingSource, Discount, ExtraService, HouseSummary, PropertySummary, StaffBookingQuote, StaffReservation } from '@resort-booking/shared-types';
 import { isValidEmail, isValidPhone } from '@resort-booking/ui/contact';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fetchStaffHouses } from '@/features/property/services/staff-property-api';
 import { ApiRequestError } from '@/shared/services/api-client';
 import { isChannelSource } from '@/shared/utils/booking-source';
 import { parseEurosToCents } from '@/shared/utils/money';
-import { createStaffBooking, fetchStaffBookingExtras, quoteStaffBooking } from '../services/staff-reservations-api';
+import { createStaffBooking, fetchStaffBookingExtras, fetchStaffPromotions, quoteStaffBooking } from '../services/staff-reservations-api';
 import { todayLocalIso } from '../utils/dates';
 import { extraChoices, NEW_BOOKING_MAX_EXTRA_QUANTITY, NEW_BOOKING_MAX_NOTE, stayFromDraft, stayProblem } from '../utils/new-booking';
 
@@ -55,6 +55,10 @@ export interface NewBookingState {
   extras: ExtraService[];
   /** How many of each offered extra are ticked, by extra id (absent or 0: not chosen). */
   extraQuantities: Record<string, number>;
+  /** The property's promotions that can apply to the chosen stay (any state), for picking a coupon. */
+  promotions: Discount[];
+  /** Types the code into the promo field and applies it. */
+  pickPromo: (code: string) => void;
   /** What has been typed in the promo field. */
   promoInput: string;
   /** The code the price was last worked out with ("" when none). */
@@ -111,6 +115,7 @@ export function useNewBooking({ open, properties, defaultPropertyId, defaultDate
   const [channelTotal, setChannelTotalState] = useState('');
   const [extras, setExtras] = useState<ExtraService[]>([]);
   const [extraQuantities, setExtraQuantities] = useState<Record<string, number>>({});
+  const [promotionRows, setPromotionRows] = useState<Discount[]>([]);
   const [promoInput, setPromoInputState] = useState('');
   const [appliedPromo, setAppliedPromo] = useState('');
   const [quote, setQuote] = useState<StaffBookingQuote | null>(null);
@@ -209,7 +214,34 @@ export function useNewBooking({ open, properties, defaultPropertyId, defaultDate
     };
   }, [open, propertyId]);
 
+  // The property's promotions, so a coupon can be picked here. A failure only hides the list: a booking does not need one.
+  useEffect((): (() => void) => {
+    let cancelled = false;
+    setPromotionRows([]);
+    if (!open || propertyId === '') {
+      return (): void => undefined;
+    }
+    fetchStaffPromotions(propertyId)
+      .then((rows): void => {
+        if (!cancelled) {
+          setPromotionRows(rows);
+        }
+      })
+      .catch((): void => {
+        if (!cancelled) {
+          setPromotionRows([]);
+        }
+      });
+    return (): void => {
+      cancelled = true;
+    };
+  }, [open, propertyId]);
+
   const house = useMemo((): HouseSummary | null => houses.find((row): boolean => row.id === houseId) ?? null, [houses, houseId]);
+  const promotions = useMemo(
+    (): Discount[] => promotionRows.filter((row): boolean => row.houseIds === null || (houseId !== '' && row.houseIds.includes(houseId))),
+    [promotionRows, houseId],
+  );
   const draft = useMemo(() => ({ houseId, checkIn, nights, guests }), [houseId, checkIn, nights, guests]);
   const stay = useMemo(() => stayFromDraft(draft, house, today), [draft, house, today]);
   const problem = stayProblem(draft, house, today);
@@ -280,6 +312,11 @@ export function useNewBooking({ open, properties, defaultPropertyId, defaultDate
     setAppliedPromo(promoInput.trim());
     setError(null);
   }, [promoInput]);
+  const pickPromo = useCallback((code: string): void => {
+    setPromoInputState(code);
+    setAppliedPromo(code.trim());
+    setError(null);
+  }, []);
   const removePromo = useCallback((): void => {
     setPromoInputState('');
     setAppliedPromo('');
@@ -368,6 +405,8 @@ export function useNewBooking({ open, properties, defaultPropertyId, defaultDate
     channelTotalCents,
     extras,
     extraQuantities,
+    promotions,
+    pickPromo,
     promoInput,
     appliedPromo,
     quote,

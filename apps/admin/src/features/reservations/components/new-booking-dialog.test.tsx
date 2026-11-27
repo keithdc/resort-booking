@@ -4,7 +4,16 @@
  * @feature reservations
  */
 
-import type { ExtraService, HouseSummary, PropertySummary, StaffBookingQuote, StaffBookingQuoteRequest, StaffCreateBookingRequest, StaffReservation } from '@resort-booking/shared-types';
+import type {
+  Discount,
+  ExtraService,
+  HouseSummary,
+  PropertySummary,
+  StaffBookingQuote,
+  StaffBookingQuoteRequest,
+  StaffCreateBookingRequest,
+  StaffReservation,
+} from '@resort-booking/shared-types';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -15,6 +24,7 @@ import { NewBookingDialog } from './new-booking-dialog';
 const api = vi.hoisted(() => ({
   quoteStaffBooking: vi.fn<(body: StaffBookingQuoteRequest) => Promise<StaffBookingQuote>>(),
   fetchStaffBookingExtras: vi.fn<(propertyId: string) => Promise<ExtraService[]>>(),
+  fetchStaffPromotions: vi.fn<(propertyId: string) => Promise<Discount[]>>(),
   createStaffBooking: vi.fn<(body: StaffCreateBookingRequest) => Promise<StaffReservation>>(),
 }));
 const houses = vi.hoisted(() => ({ fetchStaffHouses: vi.fn<(propertyId: string) => Promise<HouseSummary[]>>() }));
@@ -71,6 +81,8 @@ describe('NewBookingDialog', () => {
     api.createStaffBooking.mockReset();
     api.fetchStaffBookingExtras.mockReset();
     api.fetchStaffBookingExtras.mockResolvedValue([]);
+    api.fetchStaffPromotions.mockReset();
+    api.fetchStaffPromotions.mockResolvedValue([]);
     houses.fetchStaffHouses.mockReset();
     houses.fetchStaffHouses.mockResolvedValue([house()]);
     api.quoteStaffBooking.mockResolvedValue(quote());
@@ -153,6 +165,31 @@ describe('NewBookingDialog', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Remove' }));
     await waitFor(() => expect(api.quoteStaffBooking.mock.calls.at(-1)?.[0]).not.toHaveProperty('promoCode'));
+  });
+
+  it('lists the property\'s promotions for the chosen stay and applies a coupon in one click', async () => {
+    const base = { alwaysOn: false, houseIds: null, combinable: false, priority: 100, active: true, propertyId: 'p1', promoted: false } as const;
+    api.fetchStaffPromotions.mockResolvedValue([
+      { ...base, id: 'd1', label: 'Friends and family', effect: { kind: 'percent', percent: 15 }, conditions: [{ kind: 'promo_code', code: 'FRIEND15' }], redemptions: 0, maxRedemptions: 1 },
+      { ...base, id: 'd2', label: 'Long stay', effect: { kind: 'percent', percent: 10 }, conditions: [{ kind: 'min_nights', nights: 7 }], redemptions: 3, maxRedemptions: null },
+      { ...base, id: 'd3', label: 'Switched off', active: false, effect: { kind: 'percent', percent: 5 }, conditions: [{ kind: 'promo_code', code: 'OLD5' }], redemptions: 0, maxRedemptions: null },
+      { ...base, id: 'd4', label: 'Other stay only', houseIds: ['other'], effect: { kind: 'percent', percent: 5 }, conditions: [{ kind: 'promo_code', code: 'ELSEWHERE' }], redemptions: 0, maxRedemptions: null },
+    ] as Discount[]);
+    api.createStaffBooking.mockResolvedValue(staffReservation({ id: 'new-3' }));
+    renderDialog();
+    const list = await screen.findByRole('region', { name: 'Promotions for this stay' });
+    expect(list.textContent).toContain('Friends and family');
+    expect(list.textContent).toContain('0 of 1 used');
+    expect(list.textContent).toContain('Not advertised');
+    expect(list.textContent).toContain('Long stay');
+    expect(list.textContent).toContain('Applies by itself');
+    expect(list.textContent).not.toContain('Switched off');
+    expect(list.textContent).not.toContain('Other stay only');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Use code FRIEND15' }));
+    await waitFor(() => expect(api.quoteStaffBooking).toHaveBeenLastCalledWith(expect.objectContaining({ promoCode: 'FRIEND15' })));
+    expect((screen.getByLabelText(/Promo code/) as HTMLInputElement).value).toBe('FRIEND15');
+    expect(screen.getByRole('button', { name: 'FRIEND15 is applied' })).toBeTruthy();
   });
 
   it('says so and blocks saving when the dates are not free', async () => {

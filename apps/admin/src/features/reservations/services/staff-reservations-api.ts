@@ -7,6 +7,7 @@
 import type {
   ArrivalStatus,
   BookingSource,
+  Discount,
   ExtraService,
   PropertyBookingConfig,
   RebookQuote,
@@ -138,6 +139,13 @@ export function changeStaffReservationDates(
  */
 export function quoteStaffBooking(body: StaffBookingQuoteRequest): Promise<StaffBookingQuote> {
   return mutateStaffApiOk<StaffBookingQuote>('/staff/reservations/quote', 'POST', body);
+}
+
+/**
+ * The property's promotions (coupons and automatic offers) for the New booking form. Admins and employees can both read it.
+ */
+export function fetchStaffPromotions(propertyId: string): Promise<Discount[]> {
+  return getStaffApiOk<Discount[]>(`/staff/properties/${encodeURIComponent(propertyId)}/promotions`);
 }
 
 /**

@@ -12,10 +12,11 @@ import { DiscountsRepository } from './discounts.repository';
 import { DiscountsService } from './discounts.service';
 import { OffersController } from './offers.controller';
 import { OffersService } from './offers.service';
+import { StaffPromotionsController } from './staff-promotions.controller';
 
 @Module({
   imports: [IdentityModule, PropertyModule],
-  controllers: [DiscountsController, OffersController],
+  controllers: [DiscountsController, OffersController, StaffPromotionsController],
   providers: [DiscountsService, DiscountsRepository, OffersService],
   exports: [DiscountsService],
 })

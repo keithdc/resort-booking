@@ -132,6 +132,7 @@ const ROLE_MATRIX: Record<string, StaffRole[]> = {
   'GET /staff/refunds': BOTH,
   // The published extras of a property, for the New booking form (the full list with unpublished ones stays admin-only).
   'GET /staff/properties/:propertyId/booking-extras': BOTH,
+  'GET /staff/properties/:propertyId/promotions': BOTH,
   'GET /staff/properties': BOTH,
   'GET /staff/me': BOTH,
   'PATCH /staff/me': BOTH,
