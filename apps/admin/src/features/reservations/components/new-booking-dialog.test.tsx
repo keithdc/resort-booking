@@ -107,7 +107,7 @@ describe('NewBookingDialog', () => {
     expect((screen.getByLabelText(/^Check-in/) as HTMLInputElement).value).toBe(FUTURE);
     expect(await screen.findByLabelText('Price of the stay')).toBeTruthy();
     expect(houses.fetchStaffHouses).toHaveBeenCalledWith('p1');
-    await waitFor(() => expect(api.quoteStaffBooking).toHaveBeenCalledWith({ houseId: 'h1', checkIn: FUTURE, checkOut: '2999-07-12', guestCount: 2 }));
+    await waitFor(() => expect(api.quoteStaffBooking).toHaveBeenCalledWith({ houseId: 'h1', checkIn: FUTURE, checkOut: '2999-07-11', guestCount: 2 }));
     await waitFor(() => expect(within(screen.getByLabelText('Price of the stay')).getAllByText(/960,00/).length).toBeGreaterThan(0));
   });
 
@@ -168,7 +168,7 @@ describe('NewBookingDialog', () => {
 
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith(created));
     expect(api.createStaffBooking).toHaveBeenCalledWith({
-      houseId: 'h1', checkIn: FUTURE, checkOut: '2999-07-12', guestCount: 2, paymentMethod: 'pay_at_hotel', bookingSource: 'phone_email', channelTotalCents: null,
+      houseId: 'h1', checkIn: FUTURE, checkOut: '2999-07-11', guestCount: 2, paymentMethod: 'pay_at_hotel', bookingSource: 'phone_email', channelTotalCents: null,
       bookerName: 'Grace Hopper', bookerEmail: 'grace@example.com', bookerPhone: '', guestNote: 'late arrival',
     });
   });
@@ -420,7 +420,7 @@ describe('NewBookingDialog', () => {
 
       await waitFor(() => {
         expect(api.quoteStaffBooking).toHaveBeenLastCalledWith({
-          houseId: 'h1', checkIn: FUTURE, checkOut: '2999-07-12', guestCount: 2, extras: [{ extraId: 'x1', quantity: 2 }],
+          houseId: 'h1', checkIn: FUTURE, checkOut: '2999-07-11', guestCount: 2, extras: [{ extraId: 'x1', quantity: 2 }],
         });
       });
       const summary = await priceArea();
@@ -450,7 +450,7 @@ describe('NewBookingDialog', () => {
       await userEvent.click(box);
 
       await waitFor(() => {
-        expect(api.quoteStaffBooking).toHaveBeenLastCalledWith({ houseId: 'h1', checkIn: FUTURE, checkOut: '2999-07-12', guestCount: 2 });
+        expect(api.quoteStaffBooking).toHaveBeenLastCalledWith({ houseId: 'h1', checkIn: FUTURE, checkOut: '2999-07-11', guestCount: 2 });
       });
     });
 

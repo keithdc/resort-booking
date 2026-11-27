@@ -105,7 +105,7 @@ export function useNewBooking({ open, properties, defaultPropertyId, defaultDate
   const [housesLoading, setHousesLoading] = useState(false);
   const [houseId, setHouseIdState] = useState('');
   const [checkIn, setCheckInState] = useState(today);
-  const [nights, setNightsState] = useState('2');
+  const [nights, setNightsState] = useState('1');
   const [guests, setGuestsState] = useState('2');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -141,7 +141,7 @@ export function useNewBooking({ open, properties, defaultPropertyId, defaultDate
     setHouses([]);
     setHouseIdState('');
     setCheckInState(day >= today ? day : today);
-    setNightsState('2');
+    setNightsState('1');
     setGuestsState('2');
     setName('');
     setEmail('');
