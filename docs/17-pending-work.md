@@ -82,6 +82,32 @@ The code side is done (`docs/04`, "Search visibility"). These steps need the own
 - **"Things to do near" area page** for the property (searches people make before choosing a stay).
 - **Book direct card for the property** (printed card or QR code: "Book direct next time and save X%") and the matching discount code. Not code, but plan it with the owner.
 
+### 1.8 Guest accounts and stricter coupons (someday, billed separately)
+
+Not built, and **not planned for now**. The owner will offer it to the client as a separate paid feature. Until then a coupon is limited by "once per guest (checked by email)" and by its maximum number of uses; a person with another email address can reuse a public code (accepted risk, `docs/13` R7-02).
+
+**Why accounts alone do not make a coupon strict:** a person can register again with another email. Strictness comes from proof of a real email address or card plus a limit on use, not from the account itself. Accounts earn their cost only for loyalty features (saved details, booking history, member prices).
+
+**Options for the client, cheapest first**
+
+- **A. Nothing extra** (what exists): once per email plus a maximum number of uses.
+- **B. Unique one-time codes sent by email:** strict for welcome offers, no accounts (design note in section 1.7). Smaller job. The recommended first step.
+- **C. Verified email at checkout:** a 6-digit code sent to the guest's email before a coupon applies. No account. Needs the guest emails (section 1.3).
+- **D. Full guest accounts:** everything below.
+- **Later, with real Stripe:** block the same card (payment provider card fingerprint) on a coupon. Strong and invisible to the guest.
+
+**What full guest accounts (D) would include**
+
+1. Sign-up and sign-in by email and password, or by a one-time email link (simpler and safer for guests who book once or twice a year).
+2. Email verification before a coupon can be used.
+3. Coupon rules: usable only by a signed-in verified guest, once per account.
+4. A guest area: "My bookings" with cancel and change dates (the guest manage page becomes part of it).
+5. Account tools the EU privacy rules need: forgot login, change email, delete my account, download my data (`docs/15`).
+6. Security and admin side: rate limits, bot protection on sign-up, block an account, merge duplicates, audit.
+7. Emails: verification, login link, welcome (depends on section 1.3).
+
+Size: medium to large, a few weeks, plus ongoing support (lost logins, duplicate accounts, privacy requests). Questions for the client: how much a reused coupon really costs them; whether they want repeat-guest features; whether guests must have an account to book or only to use a coupon; who answers guest support.
+
 ## 2. Waiting for an owner decision
 
 Numbers refer to the doc that explains the question.
